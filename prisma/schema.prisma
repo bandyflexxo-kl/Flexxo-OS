@@ -1,0 +1,730 @@
+// ============================================================
+// FLEXXO SALES OS — ENTERPRISE PRISMA SCHEMA v1.0
+// Conservative enterprise design: staging-first, approval-gated,
+// fully audited. QNE is system of record. AI suggests only.
+// All PKs are UUIDs. All FKs are explicit named relations.
+// Sensitive tables are audit-logged via PostgreSQL triggers.
+// ============================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// DOMAIN 1 — IDENTITY
+// ============================================================
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  userRoles                 UserRole[]
+  companyAssignments        CompanyAssignment[]
+  activitiesPerformed       Activity[]
+  quotationsCreated         Quotation[]              @relation("QuotationCreatedBy")
+  quotationsApproved        Quotation[]              @relation("QuotationApprovedBy")
+  approvalRequestsMade      ApprovalRequest[]        @relation("ApprovalRequestedBy")
+  approvalRequestsAssigned  ApprovalRequest[]        @relation("ApprovalAssignedTo")
+  stageChanges              PipelineStageHistory[]
+  companyTags               CompanyTag[]
+  auditLogs                 AuditLog[]
+  priceVersionsApproved     SupplierPriceVersion[]
+  priceFilesUploaded        SupplierPriceFile[]
+  priceStagingReviewed      SupplierPriceStaging[]
+  qneSyncsTriggered         QneSyncLog[]
+  qneStagingReviewed        QneCustomerStaging[]
+  duplicatesResolved        DuplicateDetectionQueue[]
+  companiesCreated          Company[]
+  contactsCreated           Contact[]
+  productsCreated           Product[]
+  ordersCreated             Order[]
+  matchesConfirmed          ProductSupplierMatch[]
+  quotationStatusChanges    QuotationStatusHistory[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+
+  userRoles   UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  roleId    String    @map("role_id")
+  grantedAt DateTime  @default(now()) @map("granted_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user      User      @relation(fields: [userId], references: [id])
+  role      Role      @relation(fields: [roleId], references: [id])
+
+  @@map("user_roles")
+}
+
+// ============================================================
+// DOMAIN 2 — CRM: COMPANIES & CONTACTS
+// ============================================================
+
+model Company {
+  id                 String    @id @default(uuid())
+  name               String
+  nameNormalized     String    @map("name_normalized")
+  regNumber          String?   @map("reg_number")
+  industry           String?
+  companySize        String?   @map("company_size")
+  generalEmail       String?   @map("general_email")
+  mainPhone          String?   @map("main_phone")
+  website            String?
+  leadSource         String?   @map("lead_source")
+  leadTemperature    String?   @map("lead_temperature")
+  status             String    @default("Lead") @map("status")
+  qneCustomerCode    String?   @unique @map("qne_customer_code")
+  qneSynced          Boolean   @default(false) @map("qne_synced")
+  qneLastSyncedAt    DateTime? @map("qne_last_synced_at")
+  isDuplicateSuspect Boolean   @default(false) @map("is_duplicate_suspect")
+  mergedIntoId       String?   @map("merged_into_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  createdById        String    @map("created_by")
+
+  createdBy           User                      @relation(fields: [createdById], references: [id])
+  mergedInto          Company?                  @relation("CompanyMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom          Company[]                 @relation("CompanyMerge")
+  contacts            Contact[]
+  addresses           CompanyAddress[]
+  tags                CompanyTag[]
+  productInterests    CompanyProductInterest[]
+  assignments         CompanyAssignment[]
+  pipelineHistory     PipelineStageHistory[]
+  activities          Activity[]
+  quotations          Quotation[]
+  orders              Order[]
+  duplicateCandidateA DuplicateDetectionQueue[] @relation("DuplicateCandidateA")
+  duplicateCandidateB DuplicateDetectionQueue[] @relation("DuplicateCandidateB")
+  qneStagingMatches   QneCustomerStaging[]
+
+  @@map("companies")
+}
+
+model Contact {
+  id              String    @id @default(uuid())
+  companyId       String    @map("company_id")
+  name            String
+  position        String?
+  department      String?
+  email           String?
+  phone           String?
+  whatsapp        String?
+  isDecisionMaker Boolean   @default(false) @map("is_decision_maker")
+  influenceLevel  String?   @map("influence_level")
+  dataQualityFlag String?   @map("data_quality_flag")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  createdById     String    @map("created_by")
+
+  company     Company    @relation(fields: [companyId], references: [id])
+  createdBy   User       @relation(fields: [createdById], references: [id])
+  activities  Activity[]
+  quotations  Quotation[]
+
+  @@map("contacts")
+}
+
+model CompanyAddress {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  addressType String   @map("address_type")
+  label       String?
+  line1       String?
+  line2       String?
+  city        String?
+  state       String?
+  postcode    String?
+  country     String   @default("Malaysia")
+  isDefault   Boolean  @default(false) @map("is_default")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company     Company  @relation(fields: [companyId], references: [id])
+
+  @@map("company_addresses")
+}
+
+model Tag {
+  id       String       @id @default(uuid())
+  name     String       @unique
+  colorHex String?      @map("color_hex")
+  isActive Boolean      @default(true) @map("is_active")
+
+  companies CompanyTag[]
+
+  @@map("tags")
+}
+
+model CompanyTag {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  tagId      String   @map("tag_id")
+  taggedById String   @map("tagged_by")
+  taggedAt   DateTime @default(now()) @map("tagged_at")
+
+  company  Company @relation(fields: [companyId], references: [id])
+  tag      Tag     @relation(fields: [tagId], references: [id])
+  taggedBy User    @relation(fields: [taggedById], references: [id])
+
+  @@unique([companyId, tagId])
+  @@map("company_tags")
+}
+
+model CompanyProductInterest {
+  id         String          @id @default(uuid())
+  companyId  String          @map("company_id")
+  categoryId String          @map("category_id")
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  company  Company         @relation(fields: [companyId], references: [id])
+  category ProductCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([companyId, categoryId])
+  @@map("company_product_interests")
+}
+
+model CompanyAssignment {
+  id            String    @id @default(uuid())
+  companyId     String    @map("company_id")
+  userId        String    @map("user_id")
+  roleInAccount String?   @map("role_in_account")
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  assignedAt    DateTime  @default(now()) @map("assigned_at")
+  unassignedAt  DateTime? @map("unassigned_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("company_assignments")
+}
+
+// ============================================================
+// DOMAIN 3 — PIPELINE & ACTIVITIES
+// ============================================================
+
+model PipelineStageDefinition {
+  id          String                 @id @default(uuid())
+  name        String                 @unique
+  sortOrder   Int                    @map("sort_order")
+  colorHex    String?                @map("color_hex")
+  description String?
+  isActive    Boolean                @default(true) @map("is_active")
+
+  history PipelineStageHistory[]
+
+  @@map("pipeline_stage_definitions")
+}
+
+model PipelineStageHistory {
+  id          String    @id @default(uuid())
+  companyId   String    @map("company_id")
+  stageId     String    @map("stage_id")
+  changedById String    @map("changed_by")
+  notes       String?
+  enteredAt   DateTime  @default(now()) @map("entered_at")
+  exitedAt    DateTime? @map("exited_at")
+
+  company   Company                 @relation(fields: [companyId], references: [id])
+  stage     PipelineStageDefinition @relation(fields: [stageId], references: [id])
+  changedBy User                    @relation(fields: [changedById], references: [id])
+
+  @@map("pipeline_stage_history")
+}
+
+model Activity {
+  id               String    @id @default(uuid())
+  companyId        String    @map("company_id")
+  contactId        String?   @map("contact_id")
+  userId           String    @map("user_id")
+  activityType     String    @map("activity_type")
+  subject          String
+  body             String?   @db.Text
+  outcome          String?
+  direction        String?
+  scheduledAt      DateTime? @map("scheduled_at")
+  completedAt      DateTime? @map("completed_at")
+  followUpAt       DateTime? @map("follow_up_at")
+  followUpStatus   String?   @map("follow_up_status")
+  linkedEntityType String?   @map("linked_entity_type")
+  linkedEntityId   String?   @map("linked_entity_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  contact  Contact? @relation(fields: [contactId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}
+
+// ============================================================
+// DOMAIN 4 — PRODUCT CATALOGUE
+// ============================================================
+
+model ProductCategory {
+  id               String    @id @default(uuid())
+  name             String    @unique
+  slug             String    @unique
+  parentCategoryId String?   @map("parent_category_id")
+  isActive         Boolean   @default(true) @map("is_active")
+
+  parentCategory   ProductCategory?         @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
+  subCategories    ProductCategory[]        @relation("CategoryHierarchy")
+  products         Product[]
+  companyInterests CompanyProductInterest[]
+  stagingSuggested SupplierPriceStaging[]
+
+  @@map("product_categories")
+}
+
+model Product {
+  id              String    @id @default(uuid())
+  categoryId      String    @map("category_id")
+  name            String
+  brand           String?
+  unit            String?
+  packDescription String?   @map("pack_description")
+  internalSku     String?   @unique @map("internal_sku")
+  qneItemCode     String?   @map("qne_item_code")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  createdById     String    @map("created_by")
+
+  category        ProductCategory        @relation(fields: [categoryId], references: [id])
+  createdBy       User                   @relation(fields: [createdById], references: [id])
+  supplierMatches ProductSupplierMatch[]
+  priceVersions   SupplierPriceVersion[]
+  stagingMatches  SupplierPriceStaging[]
+  quotationItems  QuotationItem[]
+  orderItems      OrderItem[]
+
+  @@map("products")
+}
+
+// ============================================================
+// DOMAIN 5 — SUPPLIER & PRICING PIPELINE
+// ============================================================
+
+model Supplier {
+  id             String    @id @default(uuid())
+  name           String
+  nameNormalized String    @map("name_normalized")
+  regNumber      String?   @map("reg_number")
+  paymentTerm    String?   @map("payment_term")
+  currency       String    @default("MYR")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  contacts        SupplierContact[]
+  priceFiles      SupplierPriceFile[]
+  priceVersions   SupplierPriceVersion[]
+  supplierMatches ProductSupplierMatch[]
+
+  @@map("suppliers")
+}
+
+model SupplierContact {
+  id         String   @id @default(uuid())
+  supplierId String   @map("supplier_id")
+  name       String
+  position   String?
+  email      String?
+  phone      String?
+  isPrimary  Boolean  @default(false) @map("is_primary")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@map("supplier_contacts")
+}
+
+model SupplierPriceFile {
+  id                String    @id @default(uuid())
+  supplierId        String    @map("supplier_id")
+  fileName          String    @map("file_name")
+  googleDriveFileId String?   @map("google_drive_file_id")
+  googleDriveUrl    String?   @map("google_drive_url")
+  fileType          String    @map("file_type")
+  importStatus      String    @default("pending") @map("import_status")
+  totalRowsDetected Int?      @map("total_rows_detected")
+  rowsExtracted     Int?      @map("rows_extracted")
+  rowsFailed        Int?      @map("rows_failed")
+  uploadedById      String    @map("uploaded_by")
+  uploadedAt        DateTime  @default(now()) @map("uploaded_at")
+  processedAt       DateTime? @map("processed_at")
+
+  supplier     Supplier               @relation(fields: [supplierId], references: [id])
+  uploadedBy   User                   @relation(fields: [uploadedById], references: [id])
+  stagingRows  SupplierPriceStaging[]
+  importErrors ImportErrorLog[]
+
+  @@map("supplier_price_files")
+}
+
+model SupplierPriceStaging {
+  id                    String    @id @default(uuid())
+  fileId                String    @map("file_id")
+  supplierId            String    @map("supplier_id")
+  rawRowNumber          Int?      @map("raw_row_number")
+  rawItemName           String?   @map("raw_item_name")
+  rawBrand              String?   @map("raw_brand")
+  rawUnit               String?   @map("raw_unit")
+  rawPackSize           String?   @map("raw_pack_size")
+  rawPrice              String?   @map("raw_price")
+  rawCurrency           String?   @map("raw_currency")
+  rawMoq                String?   @map("raw_moq")
+  rawValidity           String?   @map("raw_validity")
+  parsedPrice           Decimal?  @map("parsed_price") @db.Decimal(12, 4)
+  parsedCurrency        String?   @map("parsed_currency")
+  parsedMoq             Int?      @map("parsed_moq")
+  parsedValidUntil      DateTime? @map("parsed_valid_until")
+  aiConfidenceScore     Float?    @map("ai_confidence_score")
+  aiSuggestedCategoryId String?   @map("ai_suggested_category_id")
+  aiSuggestedProductName String?  @map("ai_suggested_product_name")
+  matchedProductId      String?   @map("matched_product_id")
+  matchStatus           String?   @map("match_status")
+  stagingStatus         String    @default("pending_review") @map("staging_status")
+  rejectionReason       String?   @map("rejection_reason")
+  reviewedById          String?   @map("reviewed_by")
+  reviewedAt            DateTime? @map("reviewed_at")
+  extractedAt           DateTime  @default(now()) @map("extracted_at")
+
+  file                 SupplierPriceFile    @relation(fields: [fileId], references: [id])
+  aiSuggestedCategory  ProductCategory?     @relation(fields: [aiSuggestedCategoryId], references: [id])
+  matchedProduct       Product?             @relation(fields: [matchedProductId], references: [id])
+  reviewedBy           User?                @relation(fields: [reviewedById], references: [id])
+  promotedVersions     SupplierPriceVersion[]
+
+  @@map("supplier_price_staging")
+}
+
+model SupplierPriceVersion {
+  id              String    @id @default(uuid())
+  supplierId      String    @map("supplier_id")
+  productId       String    @map("product_id")
+  stagingRowId    String    @map("staging_row_id")
+  versionNumber   Int       @map("version_number")
+  costPrice       Decimal   @map("cost_price") @db.Decimal(12, 4)
+  currency        String    @default("MYR")
+  minOrderQty     Int       @default(1) @map("min_order_qty")
+  unit            String?
+  priceValidFrom  DateTime? @map("price_valid_from")
+  priceValidUntil DateTime? @map("price_valid_until")
+  isCurrent       Boolean   @default(true) @map("is_current")
+  sourceFileName  String?   @map("source_file_name")
+  approvedById    String    @map("approved_by")
+  approvedAt      DateTime  @map("approved_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  supplier        Supplier             @relation(fields: [supplierId], references: [id])
+  product         Product              @relation(fields: [productId], references: [id])
+  stagingRow      SupplierPriceStaging @relation(fields: [stagingRowId], references: [id])
+  approvedBy      User                 @relation(fields: [approvedById], references: [id])
+  supplierMatches ProductSupplierMatch[]
+  quotationItems  QuotationItem[]
+
+  @@unique([supplierId, productId, versionNumber])
+  @@map("supplier_price_versions")
+}
+
+model ProductSupplierMatch {
+  id                     String    @id @default(uuid())
+  productId              String    @map("product_id")
+  supplierPriceVersionId String    @map("supplier_price_version_id")
+  supplierId             String    @map("supplier_id")
+  isPreferred            Boolean   @default(false) @map("is_preferred")
+  matchConfidence        String?   @map("match_confidence")
+  confirmedById          String?   @map("confirmed_by")
+  confirmedAt            DateTime? @map("confirmed_at")
+
+  product              Product              @relation(fields: [productId], references: [id])
+  supplierPriceVersion SupplierPriceVersion @relation(fields: [supplierPriceVersionId], references: [id])
+  supplier             Supplier             @relation(fields: [supplierId], references: [id])
+  confirmedBy          User?                @relation(fields: [confirmedById], references: [id])
+
+  @@map("product_supplier_matches")
+}
+
+// ============================================================
+// DOMAIN 6 — APPROVAL WORKFLOW
+// ============================================================
+
+model ApprovalRequest {
+  id              String    @id @default(uuid())
+  entityType      String    @map("entity_type")
+  entityId        String    @map("entity_id")
+  actionRequested String    @map("action_requested")
+  status          String    @default("pending")
+  requestedById   String    @map("requested_by")
+  assignedToId    String?   @map("assigned_to")
+  requestNotes    String?   @map("request_notes") @db.Text
+  reviewerNotes   String?   @map("reviewer_notes") @db.Text
+  requestedAt     DateTime  @default(now()) @map("requested_at")
+  reviewedAt      DateTime? @map("reviewed_at")
+  expiresAt       DateTime? @map("expires_at")
+
+  requestedByUser User  @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  assignedToUser  User? @relation("ApprovalAssignedTo", fields: [assignedToId], references: [id])
+
+  @@map("approval_requests")
+}
+
+// ============================================================
+// DOMAIN 7 — QUOTATION
+// ============================================================
+
+model Quotation {
+  id                String    @id @default(uuid())
+  companyId         String    @map("company_id")
+  contactId         String?   @map("contact_id")
+  createdById       String    @map("created_by")
+  approvedById      String?   @map("approved_by")
+  parentQuotationId String?   @map("parent_quotation_id")
+  versionNumber     Int       @default(1) @map("version_number")
+  referenceNo       String    @map("reference_no")
+  status            String    @default("draft")
+  currency          String    @default("MYR")
+  subtotal          Decimal?  @db.Decimal(14, 4)
+  discountAmount    Decimal?  @map("discount_amount") @db.Decimal(14, 4)
+  taxAmount         Decimal?  @map("tax_amount") @db.Decimal(14, 4)
+  totalAmount       Decimal?  @map("total_amount") @db.Decimal(14, 4)
+  termsConditions   String?   @map("terms_conditions") @db.Text
+  internalNotes     String?   @map("internal_notes") @db.Text
+  sentAt            DateTime? @map("sent_at")
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  company          Company                  @relation(fields: [companyId], references: [id])
+  contact          Contact?                 @relation(fields: [contactId], references: [id])
+  createdBy        User                     @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  approvedBy       User?                    @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
+  parentQuotation  Quotation?               @relation("QuotationRevision", fields: [parentQuotationId], references: [id])
+  revisedVersions  Quotation[]              @relation("QuotationRevision")
+  items            QuotationItem[]
+  statusHistory    QuotationStatusHistory[]
+  orders           Order[]
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id                     String    @id @default(uuid())
+  quotationId            String    @map("quotation_id")
+  productId              String?   @map("product_id")
+  supplierPriceVersionId String?   @map("supplier_price_version_id")
+  description            String
+  brand                  String?
+  unit                   String?
+  qty                    Decimal   @db.Decimal(12, 4)
+  unitCost               Decimal?  @map("unit_cost") @db.Decimal(12, 4)
+  unitPrice              Decimal   @map("unit_price") @db.Decimal(12, 4)
+  marginPct              Decimal?  @map("margin_pct") @db.Decimal(6, 4)
+  discountPct            Decimal?  @map("discount_pct") @db.Decimal(6, 4)
+  lineTotal              Decimal   @map("line_total") @db.Decimal(14, 4)
+  sortOrder              Int       @default(0) @map("sort_order")
+
+  quotation            Quotation             @relation(fields: [quotationId], references: [id])
+  product              Product?              @relation(fields: [productId], references: [id])
+  supplierPriceVersion SupplierPriceVersion? @relation(fields: [supplierPriceVersionId], references: [id])
+  orderItems           OrderItem[]
+
+  @@map("quotation_items")
+}
+
+model QuotationStatusHistory {
+  id          String   @id @default(uuid())
+  quotationId String   @map("quotation_id")
+  fromStatus  String?  @map("from_status")
+  toStatus    String   @map("to_status")
+  changedById String   @map("changed_by")
+  notes       String?  @db.Text
+  changedAt   DateTime @default(now()) @map("changed_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  changedBy User      @relation(fields: [changedById], references: [id])
+
+  @@map("quotation_status_history")
+}
+
+// ============================================================
+// DOMAIN 8 — ORDERS
+// ============================================================
+
+model Order {
+  id               String    @id @default(uuid())
+  companyId        String    @map("company_id")
+  quotationId      String?   @map("quotation_id")
+  source           String    @default("Quotation")
+  referenceNo      String?   @map("reference_no")
+  customerPoNumber String?   @map("customer_po_number")
+  status           String    @default("Confirmed")
+  currency         String    @default("MYR")
+  totalAmount      Decimal?  @map("total_amount") @db.Decimal(14, 4)
+  qneInvoiceRef    String?   @map("qne_invoice_ref")
+  qneDoRef         String?   @map("qne_do_ref")
+  deliveredAt      DateTime? @map("delivered_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  createdById      String    @map("created_by")
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  quotation Quotation? @relation(fields: [quotationId], references: [id])
+  createdBy User       @relation(fields: [createdById], references: [id])
+  items     OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String    @id @default(uuid())
+  orderId         String    @map("order_id")
+  productId       String?   @map("product_id")
+  quotationItemId String?   @map("quotation_item_id")
+  qty             Decimal   @db.Decimal(12, 4)
+  unitPrice       Decimal   @map("unit_price") @db.Decimal(12, 4)
+  lineTotal       Decimal   @map("line_total") @db.Decimal(14, 4)
+
+  order         Order          @relation(fields: [orderId], references: [id])
+  product       Product?       @relation(fields: [productId], references: [id])
+  quotationItem QuotationItem? @relation(fields: [quotationItemId], references: [id])
+
+  @@map("order_items")
+}
+
+// ============================================================
+// DOMAIN 9 — QNE INTEGRATION
+// ============================================================
+
+model QneSyncLog {
+  id              String    @id @default(uuid())
+  syncType        String    @map("sync_type")
+  syncMethod      String    @map("sync_method")
+  status          String    @default("started")
+  recordsReceived Int?      @map("records_received")
+  recordsStaged   Int?      @map("records_staged")
+  recordsFailed   Int?      @map("records_failed")
+  recordsSkipped  Int?      @map("records_skipped")
+  errorSummary    String?   @map("error_summary") @db.Text
+  triggeredById   String    @map("triggered_by")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+
+  triggeredBy    User                 @relation(fields: [triggeredById], references: [id])
+  stagingRecords QneCustomerStaging[]
+  importErrors   ImportErrorLog[]
+
+  @@map("qne_sync_log")
+}
+
+model QneCustomerStaging {
+  id               String    @id @default(uuid())
+  syncLogId        String    @map("sync_log_id")
+  qneCustomerCode  String    @map("qne_customer_code")
+  rawName          String?   @map("raw_name")
+  rawAddress       String?   @map("raw_address")
+  rawContact       String?   @map("raw_contact")
+  rawPhone         String?   @map("raw_phone")
+  rawEmail         String?   @map("raw_email")
+  rawPaymentTerm   String?   @map("raw_payment_term")
+  rawCreditLimit   Decimal?  @map("raw_credit_limit") @db.Decimal(14, 2)
+  rawCurrency      String?   @map("raw_currency")
+  rawIndustry      String?   @map("raw_industry")
+  rawLastOrderDate DateTime? @map("raw_last_order_date")
+  rawTotalSales    Decimal?  @map("raw_total_sales") @db.Decimal(16, 2)
+  stagingStatus    String    @default("pending_review") @map("staging_status")
+  matchedCompanyId String?   @map("matched_company_id")
+  matchType        String?   @map("match_type")
+  matchConfidence  Float?    @map("match_confidence")
+  duplicateFlag    String?   @map("duplicate_flag")
+  rejectionReason  String?   @map("rejection_reason")
+  reviewedById     String?   @map("reviewed_by")
+  reviewedAt       DateTime? @map("reviewed_at")
+  stagedAt         DateTime  @default(now()) @map("staged_at")
+
+  syncLog        QneSyncLog @relation(fields: [syncLogId], references: [id])
+  matchedCompany Company?   @relation(fields: [matchedCompanyId], references: [id])
+  reviewedBy     User?      @relation(fields: [reviewedById], references: [id])
+
+  @@map("qne_customer_staging")
+}
+
+// ============================================================
+// DOMAIN 10 — GOVERNANCE
+// ============================================================
+
+model DuplicateDetectionQueue {
+  id              String    @id @default(uuid())
+  entityType      String    @map("entity_type")
+  candidateAId    String    @map("candidate_a_id")
+  candidateBId    String    @map("candidate_b_id")
+  similarityScore Float     @map("similarity_score")
+  detectionMethod String    @map("detection_method")
+  status          String    @default("pending")
+  resolvedById    String?   @map("resolved_by")
+  resolution      String?
+  detectedAt      DateTime  @default(now()) @map("detected_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  candidateA  Company @relation("DuplicateCandidateA", fields: [candidateAId], references: [id])
+  candidateB  Company @relation("DuplicateCandidateB", fields: [candidateBId], references: [id])
+  resolvedBy  User?   @relation(fields: [resolvedById], references: [id])
+
+  @@map("duplicate_detection_queue")
+}
+
+model ImportErrorLog {
+  id              String    @id @default(uuid())
+  sourceType      String    @map("source_type")
+  qneSyncLogId    String?   @map("qne_sync_log_id")
+  priceFileId     String?   @map("price_file_id")
+  errorCode       String    @map("error_code")
+  errorMessage    String    @map("error_message") @db.Text
+  rawDataSnapshot String?   @map("raw_data_snapshot") @db.Text
+  rowNumber       Int?      @map("row_number")
+  occurredAt      DateTime  @default(now()) @map("occurred_at")
+
+  qneSyncLog QneSyncLog?        @relation(fields: [qneSyncLogId], references: [id])
+  priceFile  SupplierPriceFile? @relation(fields: [priceFileId], references: [id])
+
+  @@map("import_error_log")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  schemaName String   @default("public") @map("schema_name")
+  tableName  String   @map("table_name")
+  recordId   String   @map("record_id")
+  action     String
+  fieldName  String?  @map("field_name")
+  oldValue   String?  @map("old_value") @db.Text
+  newValue   String?  @map("new_value") @db.Text
+  actorId    String?  @map("actor_id")
+  actorRole  String?  @map("actor_role")
+  ipAddress  String?  @map("ip_address")
+  sessionId  String?  @map("session_id")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@map("audit_log")
+}
