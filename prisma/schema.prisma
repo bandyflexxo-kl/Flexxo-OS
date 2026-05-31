@@ -649,6 +649,7 @@ model QneCustomerStaging {
   rawCreditLimit   Decimal?  @map("raw_credit_limit") @db.Decimal(14, 2)
   rawCurrency      String?   @map("raw_currency")
   rawIndustry      String?   @map("raw_industry")
+  rawSalesPerson   String?   @map("raw_sales_person")
   rawLastOrderDate DateTime? @map("raw_last_order_date")
   rawTotalSales    Decimal?  @map("raw_total_sales") @db.Decimal(16, 2)
   stagingStatus    String    @default("pending_review") @map("staging_status")
