@@ -53,6 +53,26 @@ export async function POST(
     action    = 'created'
   }
 
+  // Assign salesperson if we have a name and no active assignment yet.
+  let assignedUserId: string | null = null
+  if (row.rawSalesPerson) {
+    const salesperson = await prisma.user.findFirst({
+      where: { name: { equals: row.rawSalesPerson, mode: 'insensitive' }, isActive: true },
+      select: { id: true },
+    })
+    if (salesperson) {
+      const existing = await prisma.companyAssignment.findFirst({
+        where: { companyId, userId: salesperson.id, unassignedAt: null },
+      })
+      if (!existing) {
+        await prisma.companyAssignment.create({
+          data: { companyId, userId: salesperson.id, roleInAccount: 'Primary', isPrimary: true },
+        })
+      }
+      assignedUserId = salesperson.id
+    }
+  }
+
   await prisma.qneCustomerStaging.update({
     where: { id },
     data: {
@@ -65,5 +85,5 @@ export async function POST(
     },
   })
 
-  return Response.json({ companyId, action })
+  return Response.json({ companyId, action, assignedUserId })
 }

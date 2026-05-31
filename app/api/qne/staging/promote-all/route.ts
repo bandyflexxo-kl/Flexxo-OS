@@ -22,6 +22,13 @@ export async function POST() {
   })
   const codeMap = new Map(existingCodes.map(c => [c.qneCustomerCode!, c.id]))
 
+  // Build salesperson name → userId lookup (case-insensitive, active users only).
+  const allUsers = await prisma.user.findMany({
+    where:  { isActive: true },
+    select: { id: true, name: true },
+  })
+  const userByName = new Map(allUsers.map(u => [u.name.toLowerCase(), u.id]))
+
   await prisma.$executeRaw`SELECT set_config('app.current_user_id', ${session.userId}, false)`
 
   let promoted = 0
@@ -62,6 +69,21 @@ export async function POST() {
           })
           companyId = company.id
           action    = 'created'
+        }
+
+        // Assign salesperson if matched to a CRM user.
+        if (row.rawSalesPerson) {
+          const userId = userByName.get(row.rawSalesPerson.toLowerCase())
+          if (userId) {
+            const existing = await prisma.companyAssignment.findFirst({
+              where: { companyId, userId, unassignedAt: null },
+            })
+            if (!existing) {
+              await prisma.companyAssignment.create({
+                data: { companyId, userId, roleInAccount: 'Primary', isPrimary: true },
+              })
+            }
+          }
         }
 
         await prisma.qneCustomerStaging.update({

@@ -11,6 +11,7 @@ type Row = {
   rawPaymentTerm:      string | null
   rawAddress:          string | null
   rawIndustry:         string | null
+  rawSalesPerson:      string | null
   stagedAt:            string
   existingCompanyName: string | null
 }
@@ -252,6 +253,7 @@ export default function QneReviewTable({
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Term</th>
                   <th className="px-4 py-3 font-medium">Industry</th>
+                  <th className="px-4 py-3 font-medium">Salesperson</th>
                   <th className="px-4 py-3 font-medium">Note</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -299,6 +301,9 @@ export default function QneReviewTable({
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{row.rawPaymentTerm ?? '—'}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{row.rawIndustry ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs font-medium text-gray-700 whitespace-nowrap">
+                        {row.rawSalesPerson ?? <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-xs">
                         <div className="flex flex-col gap-1">
                           {isDupe && (

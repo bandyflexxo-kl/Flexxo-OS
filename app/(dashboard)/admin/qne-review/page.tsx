@@ -33,6 +33,7 @@ export default async function QneReviewPage() {
         rawPaymentTerm:  true,
         rawAddress:      true,
         rawIndustry:     true,
+        rawSalesPerson:  true,
         stagedAt:        true,
       },
     }),
@@ -58,6 +59,7 @@ export default async function QneReviewPage() {
     ...row,
     stagedAt:            row.stagedAt.toISOString(),
     existingCompanyName: codeToName.get(row.qneCustomerCode) ?? null,
+    rawSalesPerson:      row.rawSalesPerson ?? null,
   }))
 
   return (
