@@ -2,9 +2,11 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import KanbanBoard from '@/components/pipeline/KanbanBoard'
+import { companyOwnerFilter } from '@/lib/authorization'
 
 export default async function PipelinePage() {
-  await verifySession()
+  const session = await verifySession()
+  const ownerFilter = companyOwnerFilter(session)
 
   const stages = await prisma.pipelineStageDefinition.findMany({
     where: { isActive: true },
@@ -13,7 +15,7 @@ export default async function PipelinePage() {
 
   // Get all companies in their current pipeline stage
   const currentHistories = await prisma.pipelineStageHistory.findMany({
-    where: { exitedAt: null },
+    where: { exitedAt: null, company: ownerFilter },
     include: {
       company: {
         include: {

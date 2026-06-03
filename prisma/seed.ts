@@ -19,7 +19,7 @@ async function main() {
   console.log('Seeding Flexxo Sales OS...')
 
   // --- Roles ---
-  const roles = ['Admin', 'Manager', 'Salesperson', 'Viewer']
+  const roles = ['Admin', 'Manager', 'Salesperson', 'Viewer', 'B2B Client']
   for (const name of roles) {
     await prisma.role.upsert({
       where: { name },
@@ -103,6 +103,22 @@ async function main() {
     }
   }
   console.log('✓ Admin user seeded')
+
+  // --- System Settings ---
+  const systemSettings = [
+    { key: 'default_margin_pct', value: '30' },   // internal quotation builder default
+    { key: 'retail_margin_pct',  value: '30' },   // shop guest price (global, no overrides)
+    { key: 'b2b_margin_pct',     value: '20' },   // shop B2B price (hierarchy: product→category→this)
+  ]
+  for (const s of systemSettings) {
+    await prisma.systemSetting.upsert({
+      where:  { key: s.key },
+      update: {},
+      create: s,
+    })
+  }
+  console.log('✓ System settings seeded (retail: 30%, B2B: 20%)')
+
   console.log('\nSeed complete. Login: ' + (process.env.ADMIN_EMAIL || 'admin@flexxo.com.my'))
 }
 

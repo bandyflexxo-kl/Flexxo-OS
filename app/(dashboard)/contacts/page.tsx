@@ -3,18 +3,21 @@ import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Badge from '@/components/ui/Badge'
 import Link from 'next/link'
+import { companyOwnerFilter } from '@/lib/authorization'
 
 export default async function ContactsPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string }>
 }) {
-  await verifySession()
+  const session = await verifySession()
   const { q } = await searchParams
+  const ownerFilter = companyOwnerFilter(session)
 
   const contacts = await prisma.contact.findMany({
     where: {
       isActive: true,
+      company:  ownerFilter,
       ...(q ? {
         OR: [
           { name: { contains: q, mode: 'insensitive' } },

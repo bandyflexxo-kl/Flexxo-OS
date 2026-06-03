@@ -4,6 +4,7 @@ import Topbar from '@/components/layout/Topbar'
 import Badge, { statusColor, temperatureColor } from '@/components/ui/Badge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { isPrivilegedRole } from '@/lib/authorization'
 
 export default async function CompanyDetailPage({
   params,
@@ -12,7 +13,7 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ tab?: string }>
 }) {
-  await verifySession()
+  const session = await verifySession()
   const { id } = await params
   const { tab = 'overview' } = await searchParams
 
@@ -45,6 +46,14 @@ export default async function CompanyDetailPage({
   })
 
   if (!company) notFound()
+
+  // Salesperson can only access companies assigned to them
+  if (!isPrivilegedRole(session.role)) {
+    const hasAccess = company.assignments.some(
+      a => a.userId === session.userId && a.unassignedAt === null
+    )
+    if (!hasAccess) notFound()
+  }
 
   const tabs = ['overview', 'contacts', 'addresses', 'pipeline', 'activities', 'quotations']
 

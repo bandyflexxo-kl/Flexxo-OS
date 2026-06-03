@@ -54,7 +54,14 @@ export async function loginAction(state: LoginState, formData: FormData): Promis
   })
 
   const role = user.userRoles[0]?.role?.name ?? 'Viewer'
-  await createSession({ userId: user.id, name: user.name, email: user.email, role, expiresAt: new Date() })
+  await createSession({
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role,
+    mustChangePassword: user.mustChangePassword,
+    expiresAt: new Date(),
+  })
 
   redirect('/')
 }

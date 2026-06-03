@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { verifySession } from '@/lib/session'
 import { normalizeName } from '@/lib/normalize'
+import { companyOwnerFilter } from '@/lib/authorization'
 
 const CompanySchema = z.object({
   name: z.string().min(1, { error: 'Name is required.' }),
@@ -22,8 +23,11 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q')
   const status = searchParams.get('status')
 
+  const ownerFilter = companyOwnerFilter(session)
+
   const companies = await prisma.company.findMany({
     where: {
+      ...ownerFilter,
       ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }] } : {}),
       ...(status ? { status } : {}),
     },

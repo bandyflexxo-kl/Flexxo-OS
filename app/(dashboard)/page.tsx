@@ -3,15 +3,35 @@ import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Badge, { statusColor } from '@/components/ui/Badge'
 import Link from 'next/link'
+import { isPrivilegedRole } from '@/lib/authorization'
 
 export default async function DashboardPage() {
   const session = await verifySession()
+  const isPrivileged = isPrivilegedRole(session.role)
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
+
+  // For Salesperson: scope all queries to their assigned companies only
+  let assignedCompanyIds: string[] | null = null
+  if (!isPrivileged) {
+    const assignments = await prisma.companyAssignment.findMany({
+      where:  { userId: session.userId, unassignedAt: null },
+      select: { companyId: true },
+    })
+    assignedCompanyIds = assignments.map(a => a.companyId)
+  }
+
+  const companyIdFilter = assignedCompanyIds !== null
+    ? { id: { in: assignedCompanyIds } }
+    : {}
+
+  const companyFkFilter = assignedCompanyIds !== null
+    ? { companyId: { in: assignedCompanyIds } }
+    : {}
 
   const [
     statusCounts,
@@ -20,28 +40,35 @@ export default async function DashboardPage() {
     recentActivities,
     inactiveCompanies,
   ] = await Promise.all([
-    prisma.company.groupBy({ by: ['status'], _count: { id: true } }),
+    prisma.company.groupBy({ by: ['status'], where: companyIdFilter, _count: { id: true } }),
     prisma.pipelineStageHistory.groupBy({
       by: ['stageId'],
-      where: { exitedAt: null },
+      where: { exitedAt: null, ...companyFkFilter },
       _count: { id: true },
     }),
     prisma.activity.findMany({
       where: {
         followUpAt: { gte: today, lt: tomorrow },
         OR: [{ followUpStatus: 'Pending' }, { followUpStatus: null }],
+        ...companyFkFilter,
+        ...(!isPrivileged ? { userId: session.userId } : {}),
       },
       include: { company: true, contact: true },
       orderBy: { followUpAt: 'asc' },
       take: 10,
     }),
     prisma.activity.findMany({
+      where: {
+        ...companyFkFilter,
+        ...(!isPrivileged ? { userId: session.userId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: { company: true, user: true },
     }),
     prisma.company.findMany({
       where: {
+        ...companyIdFilter,
         status: { in: ['Lead', 'Contacted', 'Active Customer'] },
         activities: { none: { createdAt: { gte: thirtyDaysAgo } } },
       },

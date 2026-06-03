@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { verifySession } from '@/lib/session'
+import { assertCompanyAccess } from '@/lib/authorization'
 
 const MoveSchema = z.object({
   companyId: z.string(),
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return Response.json({ error: 'Invalid input' }, { status: 400 })
 
   const { companyId, toStageId, fromHistoryId } = parsed.data
+
+  const denied = await assertCompanyAccess(companyId, session)
+  if (denied) return denied
 
   await prisma.$executeRaw`SELECT set_config('app.current_user_id', ${session.userId}, false)`
 

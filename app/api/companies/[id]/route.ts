@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { verifySession } from '@/lib/session'
 import { normalizeName } from '@/lib/normalize'
+import { assertCompanyAccess } from '@/lib/authorization'
 
 const UpdateSchema = z.object({
   name: z.string().optional(),
@@ -18,6 +19,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext<'/api/companies/[
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await ctx.params
+  const denied = await assertCompanyAccess(id, session)
+  if (denied) return denied
+
   const company = await prisma.company.findUnique({
     where: { id },
     include: { contacts: true, addresses: true },
@@ -32,6 +36,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<'/api/companies/
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await ctx.params
+  const denied = await assertCompanyAccess(id, session)
+  if (denied) return denied
+
   const body = await req.json()
   const parsed = UpdateSchema.safeParse(body)
   if (!parsed.success) {

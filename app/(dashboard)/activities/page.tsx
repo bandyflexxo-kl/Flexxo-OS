@@ -3,14 +3,16 @@ import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Badge from '@/components/ui/Badge'
 import Link from 'next/link'
+import { isPrivilegedRole } from '@/lib/authorization'
 
 export default async function ActivitiesPage({
   searchParams,
 }: {
   searchParams: Promise<{ type?: string; followUpStatus?: string; userId?: string }>
 }) {
-  await verifySession()
+  const session = await verifySession()
   const sp = await searchParams
+  const isPrivileged = isPrivilegedRole(session.role)
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -20,13 +22,20 @@ export default async function ActivitiesPage({
   const where: Record<string, unknown> = {}
   if (sp.type) where.activityType = sp.type
   if (sp.followUpStatus) where.followUpStatus = sp.followUpStatus
-  if (sp.userId) where.userId = sp.userId
+
+  // Salesperson always sees only their own activities — ignore userId URL param
+  if (!isPrivileged) {
+    where.userId = session.userId
+  } else if (sp.userId) {
+    where.userId = sp.userId
+  }
 
   const [followUpsDue, activities, users] = await Promise.all([
     prisma.activity.findMany({
       where: {
         followUpAt: { gte: today, lt: tomorrow },
         OR: [{ followUpStatus: 'Pending' }, { followUpStatus: null }],
+        ...(!isPrivileged ? { userId: session.userId } : {}),
       },
       include: { company: true, contact: true, user: true },
       orderBy: { followUpAt: 'asc' },
@@ -77,10 +86,12 @@ export default async function ActivitiesPage({
             <option value="">All Follow-up Statuses</option>
             {['Pending', 'Done', 'Snoozed'].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select name="userId" defaultValue={sp.userId ?? ''} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All Users</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+          {isPrivileged && (
+            <select name="userId" defaultValue={sp.userId ?? ''} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">All Users</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          )}
           <button type="submit" className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Filter</button>
           <Link href="/activities" className="text-sm text-gray-400 flex items-center px-2">Clear</Link>
         </form>

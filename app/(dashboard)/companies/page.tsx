@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Badge, { statusColor, temperatureColor } from '@/components/ui/Badge'
 import Link from 'next/link'
+import { companyOwnerFilter } from '@/lib/authorization'
 
 interface SearchParams {
   q?: string
@@ -19,10 +20,11 @@ export default async function CompaniesPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
-  await verifySession()
+  const session = await verifySession()
   const sp = await searchParams
+  const ownerFilter = companyOwnerFilter(session)
 
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { ...ownerFilter }
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: 'insensitive' } },
@@ -60,7 +62,7 @@ export default async function CompaniesPage({
   })
 
   const industries = await prisma.company.findMany({
-    where: { industry: { not: null } },
+    where: { industry: { not: null }, ...ownerFilter },
     select: { industry: true },
     distinct: ['industry'],
   })

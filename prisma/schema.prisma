@@ -24,9 +24,13 @@ model User {
   name         String
   email        String    @unique
   passwordHash String    @map("password_hash")
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  isActive            Boolean   @default(true) @map("is_active")
+  mustChangePassword  Boolean   @default(false) @map("must_change_password")
+  mobileNo            String?   @map("mobile_no")
+  googleRefreshToken  String?   @map("google_refresh_token")
+  customerCompanyId   String?   @map("customer_company_id")
+  lastLoginAt         DateTime? @map("last_login_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   userRoles                 UserRole[]
   companyAssignments        CompanyAssignment[]
@@ -50,6 +54,7 @@ model User {
   ordersCreated             Order[]
   matchesConfirmed          ProductSupplierMatch[]
   quotationStatusChanges    QuotationStatusHistory[]
+  customerCompany           Company?                  @relation("CustomerPortalUser", fields: [customerCompanyId], references: [id])
 
   @@map("users")
 }
@@ -118,6 +123,7 @@ model Company {
   duplicateCandidateA DuplicateDetectionQueue[] @relation("DuplicateCandidateA")
   duplicateCandidateB DuplicateDetectionQueue[] @relation("DuplicateCandidateB")
   qneStagingMatches   QneCustomerStaging[]
+  portalUsers         User[]                    @relation("CustomerPortalUser")
 
   @@map("companies")
 }
@@ -288,6 +294,7 @@ model ProductCategory {
   slug             String    @unique
   parentCategoryId String?   @map("parent_category_id")
   isActive         Boolean   @default(true) @map("is_active")
+  defaultMarginPct Decimal?  @db.Decimal(6, 2) @map("default_margin_pct")
 
   parentCategory   ProductCategory?         @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
   subCategories    ProductCategory[]        @relation("CategoryHierarchy")
@@ -306,10 +313,14 @@ model Product {
   unit            String?
   packDescription String?   @map("pack_description")
   internalSku     String?   @unique @map("internal_sku")
-  qneItemCode     String?   @map("qne_item_code")
-  isActive        Boolean   @default(true) @map("is_active")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  createdById     String    @map("created_by")
+  qneItemCode          String?   @map("qne_item_code")
+  isActive             Boolean   @default(true) @map("is_active")
+  catalogDescription   String?   @db.Text @map("catalog_description")
+  defaultMarginPct     Decimal?  @db.Decimal(6, 2) @map("default_margin_pct")
+  googleDrivePhotoId   String?   @map("google_drive_photo_id")
+  isVisibleToCustomers Boolean   @default(false) @map("is_visible_to_customers")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  createdById          String    @map("created_by")
 
   category        ProductCategory        @relation(fields: [categoryId], references: [id])
   createdBy       User                   @relation(fields: [createdById], references: [id])
@@ -728,4 +739,16 @@ model AuditLog {
   actor User? @relation(fields: [actorId], references: [id])
 
   @@map("audit_log")
+}
+
+// ============================================================
+// DOMAIN 11 — SYSTEM CONFIGURATION
+// ============================================================
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
 }

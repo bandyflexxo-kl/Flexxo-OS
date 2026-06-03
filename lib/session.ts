@@ -5,11 +5,13 @@ import { redirect } from 'next/navigation'
 import { cache } from 'react'
 
 export type SessionPayload = {
-  userId: string
-  name: string
-  email: string
-  role: string
-  expiresAt: Date
+  userId:            string
+  name:              string
+  email:             string
+  role:              string
+  mustChangePassword: boolean
+  customerCompanyId?: string   // set for B2B Client portal users
+  expiresAt:         Date
 }
 
 const secretKey = process.env.SESSION_SECRET ?? process.env.NEXTAUTH_SECRET
