@@ -20,16 +20,20 @@ export default async function QuotationDetailPage({
   const quotation = await prisma.quotation.findUnique({
     where:   { id },
     include: {
-      company:   { select: { id: true, name: true } },
-      contact:   { select: { id: true, name: true } },
-      createdBy: { select: { name: true } },
+      company:    { select: { id: true, name: true } },
+      contact:    { select: { id: true, name: true } },
+      createdBy:  { select: { name: true } },
+      approvedBy: { select: { name: true } },
       items: {
         include: {
           product: { select: { id: true, name: true, brand: true, unit: true, qneItemCode: true } },
         },
         orderBy: { sortOrder: 'asc' },
       },
-      statusHistory: { orderBy: { changedAt: 'asc' } },
+      statusHistory: {
+        orderBy: { changedAt: 'asc' },
+        include: { changedBy: { select: { name: true } } },
+      },
     },
   })
 
@@ -43,16 +47,19 @@ export default async function QuotationDetailPage({
     referenceNo:     quotation.referenceNo,
     status:          quotation.status,
     currency:        quotation.currency,
-    subtotal:        quotation.subtotal?.toString()     ?? null,
-    totalAmount:     quotation.totalAmount?.toString()  ?? null,
+    subtotal:        quotation.subtotal?.toString()        ?? null,
+    discountAmount:  quotation.discountAmount?.toString()  ?? null,
+    totalAmount:     quotation.totalAmount?.toString()     ?? null,
     termsConditions: quotation.termsConditions,
     internalNotes:   quotation.internalNotes,
-    expiresAt:       quotation.expiresAt?.toISOString() ?? null,
+    expiresAt:       quotation.expiresAt?.toISOString()    ?? null,
     createdAt:       quotation.createdAt.toISOString(),
-    sentAt:          quotation.sentAt?.toISOString()    ?? null,
+    sentAt:          quotation.sentAt?.toISOString()       ?? null,
     company:         quotation.company,
     contact:         quotation.contact,
     createdBy:       quotation.createdBy,
+    approvedBy:      quotation.approvedBy,
+    userRole:        session.role,
     items: quotation.items.map(i => ({
       id:          i.id,
       description: i.description,
@@ -71,12 +78,24 @@ export default async function QuotationDetailPage({
       toStatus:   h.toStatus,
       notes:      h.notes,
       changedAt:  h.changedAt.toISOString(),
+      changedBy:  h.changedBy,
     })),
   }
 
   return (
     <div>
-      <Topbar title={quotation.referenceNo} />
+      <Topbar
+        title={quotation.referenceNo}
+        actions={
+          <Link
+            href={`/quotations/${id}/print`}
+            target="_blank"
+            className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            🖨 Print / PDF
+          </Link>
+        }
+      />
       <div className="p-6 max-w-5xl">
         <Link
           href="/quotations"

@@ -5,6 +5,7 @@ import Badge, { statusColor, temperatureColor } from '@/components/ui/Badge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { isPrivilegedRole } from '@/lib/authorization'
+import QneFinancialTab from '@/components/companies/QneFinancialTab'
 
 export default async function CompanyDetailPage({
   params,
@@ -42,6 +43,11 @@ export default async function CompanyDetailPage({
         include: { createdBy: true },
         take: 20,
       },
+      orders: {
+        orderBy: { createdAt: 'desc' },
+        include: { quotation: { select: { referenceNo: true } } },
+        take: 20,
+      },
     },
   })
 
@@ -55,7 +61,10 @@ export default async function CompanyDetailPage({
     if (!hasAccess) notFound()
   }
 
-  const tabs = ['overview', 'contacts', 'addresses', 'pipeline', 'activities', 'quotations']
+  const tabs = [
+    'overview', 'contacts', 'addresses', 'pipeline', 'activities', 'quotations', 'orders',
+    ...(company.qneCustomerCode ? ['qne'] : []),
+  ]
 
   const currentStage = company.pipelineHistory.find((h) => !h.exitedAt)
 
@@ -88,18 +97,18 @@ export default async function CompanyDetailPage({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-0 border-b border-gray-200 mb-6">
+        <div className="flex gap-0 border-b border-gray-200 mb-6 overflow-x-auto">
           {tabs.map((t) => (
             <Link
               key={t}
               href={`/companies/${id}?tab=${t}`}
-              className={`px-4 py-2 text-sm capitalize transition-colors border-b-2 -mb-px ${
+              className={`px-4 py-2 text-sm whitespace-nowrap capitalize transition-colors border-b-2 -mb-px ${
                 tab === t
                   ? 'border-blue-600 text-blue-600 font-medium'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t}
+              {t === 'qne' ? '📊 QNE Financial' : t}
             </Link>
           ))}
         </div>
@@ -241,7 +250,9 @@ export default async function CompanyDetailPage({
                 <tbody>
                   {company.quotations.map((q) => (
                     <tr key={q.id} className="border-b border-gray-50">
-                      <td className="py-2 font-mono text-blue-600">{q.referenceNo}</td>
+                      <td className="py-2 font-mono">
+                        <Link href={`/quotations/${q.id}`} className="text-blue-600 hover:underline">{q.referenceNo}</Link>
+                      </td>
                       <td className="py-2"><Badge>{q.status}</Badge></td>
                       <td className="py-2 text-gray-700">{q.totalAmount ? `MYR ${Number(q.totalAmount).toFixed(2)}` : '—'}</td>
                       <td className="py-2 text-gray-500">{q.createdBy.name}</td>
@@ -252,6 +263,47 @@ export default async function CompanyDetailPage({
               </table>
             )}
           </div>
+        )}
+
+        {tab === 'orders' && (
+          <div>
+            {company.orders.length === 0 ? (
+              <p className="text-sm text-gray-400">No orders yet. Orders are created when a customer accepts a quotation.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                    <th className="pb-2 font-medium">Order Ref</th>
+                    <th className="pb-2 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Quotation</th>
+                    <th className="pb-2 font-medium">Total</th>
+                    <th className="pb-2 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {company.orders.map((o) => (
+                    <tr key={o.id} className="border-b border-gray-50">
+                      <td className="py-2 font-mono">
+                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                          {o.referenceNo ?? o.id.slice(0, 8)}
+                        </Link>
+                      </td>
+                      <td className="py-2"><Badge>{o.status}</Badge></td>
+                      <td className="py-2 text-gray-500 font-mono text-xs">{o.quotation?.referenceNo ?? '—'}</td>
+                      <td className="py-2 text-gray-700">
+                        {o.totalAmount ? `${o.currency} ${Number(o.totalAmount).toFixed(2)}` : '—'}
+                      </td>
+                      <td className="py-2 text-gray-400">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === 'qne' && company.qneCustomerCode && (
+          <QneFinancialTab companyId={id} />
         )}
       </div>
     </div>

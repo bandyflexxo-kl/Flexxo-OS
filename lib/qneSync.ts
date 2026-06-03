@@ -1,9 +1,5 @@
 import { prisma } from './prisma'
-
-const QNE_API_URL  = process.env.QNE_API_URL  ?? 'http://26.255.19.220:82/api'
-const QNE_DB_CODE  = process.env.QNE_DB_CODE  ?? 'FKLSB'
-const QNE_USERNAME = process.env.QNE_USERNAME ?? 'SALES 6'
-const QNE_PASSWORD = process.env.QNE_PASSWORD ?? '12345'
+import { qneLogin, qneHeaders, QNE_API_URL, QNE_DB_CODE } from './qneClient'
 
 interface QneCustomer {
   companyCode:    string
@@ -30,25 +26,8 @@ interface QneAgent {
   [key: string]: unknown
 }
 
-async function qneLogin(): Promise<string> {
-  const res = await fetch(`${QNE_API_URL}/Users/Login`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ dbCode: QNE_DB_CODE, userName: QNE_USERNAME, password: QNE_PASSWORD }),
-  })
-  if (!res.ok) throw new Error(`QNE login failed: HTTP ${res.status}`)
-  const body = (await res.json()) as { token?: string }
-  if (!body.token) throw new Error('QNE login: no token in response')
-  return body.token
-}
-
 async function fetchAllQneCustomers(token: string): Promise<QneCustomer[]> {
-  const res = await fetch(`${QNE_API_URL}/Customers`, {
-    headers: {
-      DbCode:        QNE_DB_CODE,
-      Authorization: `Bearer ${token}`,
-    },
-  })
+  const res = await fetch(`${QNE_API_URL}/Customers`, { headers: qneHeaders(token) })
   if (!res.ok) throw new Error(`QNE /Customers failed: HTTP ${res.status}`)
   const data = await res.json()
   return Array.isArray(data)
@@ -57,12 +36,7 @@ async function fetchAllQneCustomers(token: string): Promise<QneCustomer[]> {
 }
 
 async function fetchAgentsByStaffCode(token: string): Promise<Map<string, QneAgent>> {
-  const res = await fetch(`${QNE_API_URL}/Agents`, {
-    headers: {
-      DbCode:        QNE_DB_CODE,
-      Authorization: `Bearer ${token}`,
-    },
-  })
+  const res = await fetch(`${QNE_API_URL}/Agents`, { headers: qneHeaders(token) })
   if (!res.ok) return new Map()
   const data = await res.json()
   const agents: QneAgent[] = Array.isArray(data)

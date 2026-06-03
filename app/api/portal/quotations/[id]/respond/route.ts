@@ -23,7 +23,14 @@ export async function POST(
 
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
-    select: { id: true, status: true, companyId: true },
+    include: {
+      items: {
+        select: {
+          id: true, productId: true,
+          qty: true, unitPrice: true, lineTotal: true,
+        },
+      },
+    },
   })
 
   if (!quotation) return Response.json({ error: 'Not found' }, { status: 404 })
@@ -37,9 +44,10 @@ export async function POST(
 
   const newStatus = parsed.data.action === 'accept' ? 'accepted' : 'declined'
 
-  await prisma.$transaction([
-    prisma.quotation.update({ where: { id }, data: { status: newStatus } }),
-    prisma.quotationStatusHistory.create({
+  await prisma.$transaction(async tx => {
+    await tx.quotation.update({ where: { id }, data: { status: newStatus } })
+
+    await tx.quotationStatusHistory.create({
       data: {
         quotationId: id,
         fromStatus:  'sent',
@@ -47,8 +55,42 @@ export async function POST(
         changedById: session.userId,
         notes:       `Customer ${parsed.data.action}d via portal`,
       },
-    }),
-  ])
+    })
+
+    // Auto-create an Order when the customer accepts
+    if (parsed.data.action === 'accept') {
+      const year     = new Date().getFullYear()
+      const count    = await tx.order.count()
+      const orderRef = `ORD-${year}-${String(count + 1).padStart(4, '0')}`
+
+      const order = await tx.order.create({
+        data: {
+          companyId:   quotation.companyId,
+          quotationId: quotation.id,
+          referenceNo: orderRef,
+          source:      'Quotation',
+          status:      'Confirmed',
+          currency:    quotation.currency,
+          totalAmount: quotation.totalAmount,
+          createdById: session.userId,
+        },
+      })
+
+      // Copy quotation items to order items
+      if (quotation.items.length > 0) {
+        await tx.orderItem.createMany({
+          data: quotation.items.map(item => ({
+            orderId:        order.id,
+            productId:      item.productId,
+            quotationItemId: item.id,
+            qty:            item.qty,
+            unitPrice:      item.unitPrice,
+            lineTotal:      item.lineTotal,
+          })),
+        })
+      }
+    }
+  })
 
   return Response.json({ ok: true, status: newStatus })
 }

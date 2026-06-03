@@ -1,6 +1,7 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
+import { sendQuotationEmail } from '@/lib/quotationEmail'
 
 export async function POST(
   _request: Request,
@@ -13,16 +14,34 @@ export async function POST(
 
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
-    select: { id: true, status: true, companyId: true },
+    select: {
+      id: true, status: true, companyId: true,
+      referenceNo: true, currency: true, totalAmount: true, expiresAt: true,
+      company: {
+        select: { name: true, generalEmail: true },
+      },
+      contact: {
+        select: { name: true, email: true },
+      },
+      createdBy: { select: { name: true } },
+    },
   })
 
   if (!quotation) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  if (!['draft', 'approved', 'pending_review'].includes(quotation.status)) {
-    return Response.json({ error: `Cannot send a quotation with status "${quotation.status}".` }, { status: 400 })
+  // Only approved quotations can be sent
+  if (quotation.status !== 'approved') {
+    return Response.json(
+      { error: quotation.status === 'pending_review'
+          ? 'This quotation is awaiting manager approval before it can be sent.'
+          : quotation.status === 'draft'
+          ? 'Submit this quotation for approval before sending.'
+          : `Cannot send a quotation with status "${quotation.status}".`
+      },
+      { status: 400 },
+    )
   }
 
-  // Check it has at least one item
   const itemCount = await prisma.quotationItem.count({ where: { quotationId: id } })
   if (itemCount === 0) {
     return Response.json({ error: 'Add at least one item before sending.' }, { status: 400 })
@@ -31,7 +50,8 @@ export async function POST(
   const denied = await assertCompanyAccess(quotation.companyId, session)
   if (denied) return denied
 
-  const prevStatus = quotation.status
+  // Determine recipient email
+  const recipientEmail = quotation.contact?.email ?? quotation.company.generalEmail
 
   await prisma.$transaction(async tx => {
     await tx.quotation.update({
@@ -41,12 +61,45 @@ export async function POST(
     await tx.quotationStatusHistory.create({
       data: {
         quotationId: id,
-        fromStatus:  prevStatus,
+        fromStatus:  'approved',
         toStatus:    'sent',
         changedById: session.userId,
       },
     })
+    // Log as outbound email activity
+    if (recipientEmail) {
+      await tx.activity.create({
+        data: {
+          companyId:    quotation.companyId,
+          activityType: 'email',
+          direction:    'outbound',
+          subject:      `Quotation ${quotation.referenceNo} sent to customer`,
+          body:         `Quotation sent to ${recipientEmail}`,
+          userId:       session.userId,
+        },
+      })
+    }
   })
 
-  return Response.json({ ok: true, status: 'sent' })
+  // Send email (outside transaction — email failure should not roll back status change)
+  if (recipientEmail) {
+    try {
+      await sendQuotationEmail({
+        to:              recipientEmail,
+        contactName:     quotation.contact?.name ?? null,
+        salespersonName: quotation.createdBy.name,
+        companyName:     quotation.company.name,
+        referenceNo:     quotation.referenceNo,
+        currency:        quotation.currency,
+        totalAmount:     quotation.totalAmount?.toString() ?? '0',
+        expiresAt:       quotation.expiresAt?.toISOString() ?? null,
+        quotationId:     id,
+      })
+    } catch (err) {
+      // Email failure is non-fatal — quotation is already marked sent
+      console.error('Failed to send quotation email:', err)
+    }
+  }
+
+  return Response.json({ ok: true, status: 'sent', emailSent: !!recipientEmail })
 }

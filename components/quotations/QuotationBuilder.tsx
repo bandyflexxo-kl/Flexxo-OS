@@ -24,6 +24,7 @@ type StatusHistory = {
   toStatus:   string
   notes:      string | null
   changedAt:  string
+  changedBy:  { name: string } | null
 }
 
 export type QuotationBuilderProps = {
@@ -32,6 +33,7 @@ export type QuotationBuilderProps = {
   status:          string
   currency:        string
   subtotal:        string | null
+  discountAmount:  string | null
   totalAmount:     string | null
   termsConditions: string | null
   internalNotes:   string | null
@@ -41,8 +43,10 @@ export type QuotationBuilderProps = {
   company:         { id: string; name: string }
   contact:         { id: string; name: string } | null
   createdBy:       { name: string }
+  approvedBy:      { name: string } | null
   items:           QuotationItem[]
   statusHistory:   StatusHistory[]
+  userRole:        string
 }
 
 type ProductSuggestion = {
@@ -81,6 +85,8 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
 
   const [items,           setItems]           = useState<QuotationItem[]>(initial.items)
   const [totalAmount,     setTotalAmount]      = useState<string | null>(initial.totalAmount)
+  const [discountAmount,  setDiscountAmount]   = useState<string | null>(initial.discountAmount)
+  const [discountPct,     setDiscountPct]      = useState('')
   const [status,          setStatus]           = useState(initial.status)
   const [terms,           setTerms]            = useState(initial.termsConditions ?? '')
   const [notes,           setNotes]            = useState(initial.internalNotes   ?? '')
@@ -110,6 +116,14 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   const [sending,         setSending]          = useState(false)
   const [sendError,       setSendError]        = useState<string | null>(null)
   const [savingMeta,      setSavingMeta]       = useState(false)
+  const [submitting,      setSubmitting]       = useState(false)
+  const [approving,       setApproving]        = useState(false)
+  const [rejecting,       setRejecting]        = useState(false)
+  const [rejectNotes,     setRejectNotes]      = useState('')
+  const [showRejectForm,  setShowRejectForm]   = useState(false)
+  const [actionError,     setActionError]      = useState<string | null>(null)
+
+  const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -253,8 +267,83 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
     }
   }
 
+  // ── Submit for approval ───────────────────────────────────────────────────
+
+  async function submitForApproval() {
+    setActionError(null)
+    setSubmitting(true)
+    try {
+      const res  = await fetch(`/api/quotations/${initial.id}/submit`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
+      if (!res.ok) { setActionError(data.error ?? 'Failed'); return }
+      setStatus('pending_review')
+      router.refresh()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Approve / Reject ─────────────────────────────────────────────────────
+
+  async function approveQuotation() {
+    setActionError(null)
+    setApproving(true)
+    try {
+      const res  = await fetch(`/api/quotations/${initial.id}/approve`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({}),
+      })
+      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
+      if (!res.ok) { setActionError(data.error ?? 'Failed'); return }
+      setStatus('approved')
+      router.refresh()
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  async function rejectQuotation() {
+    if (!rejectNotes.trim()) { setActionError('Please provide a reason for rejection.'); return }
+    setActionError(null)
+    setRejecting(true)
+    try {
+      const res  = await fetch(`/api/quotations/${initial.id}/reject`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ notes: rejectNotes }),
+      })
+      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
+      if (!res.ok) { setActionError(data.error ?? 'Failed'); return }
+      setStatus('draft')
+      setShowRejectForm(false)
+      setRejectNotes('')
+      router.refresh()
+    } finally {
+      setRejecting(false)
+    }
+  }
+
+  // ── Save discount ─────────────────────────────────────────────────────────
+
+  async function saveDiscount() {
+    const pct = parseFloat(discountPct)
+    if (isNaN(pct) || pct < 0 || pct > 100) return
+    const res  = await fetch(`/api/quotations/${initial.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ discountPct: pct }),
+    })
+    if (!res.ok) return
+    // Refresh to get updated totals
+    const qt   = await fetch(`/api/quotations/${initial.id}`)
+    const data = await qt.json() as QuotationBuilderProps
+    setTotalAmount(data.totalAmount)
+    setDiscountAmount(data.discountAmount)
+  }
+
   const canEdit = ['draft', 'pending_review'].includes(status)
-  const canSend = canEdit || status === 'approved'
+  const canSend = status === 'approved'
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -372,6 +461,26 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
               ))}
             </tbody>
             <tfoot>
+              {discountAmount && Number(discountAmount) > 0 && (
+                <tr className="border-t border-gray-100">
+                  <td colSpan={canEdit ? 4 : 3} className="px-4 py-2 text-right text-sm text-gray-500">Subtotal</td>
+                  <td className="px-4 py-2 text-right text-sm text-gray-700">
+                    {initial.currency} {initial.subtotal ? Number(initial.subtotal).toFixed(2) : '0.00'}
+                  </td>
+                  {canEdit && <td />}
+                </tr>
+              )}
+              {discountAmount && Number(discountAmount) > 0 && (
+                <tr>
+                  <td colSpan={canEdit ? 4 : 3} className="px-4 py-1 text-right text-sm text-green-700">
+                    Discount {discountPct ? `(${discountPct}%)` : ''}
+                  </td>
+                  <td className="px-4 py-1 text-right text-sm text-green-700">
+                    − {initial.currency} {Number(discountAmount).toFixed(2)}
+                  </td>
+                  {canEdit && <td />}
+                </tr>
+              )}
               <tr className="border-t border-gray-200 bg-gray-50">
                 <td colSpan={canEdit ? 4 : 3} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</td>
                 <td className="px-4 py-3 text-right text-lg font-bold text-gray-900">
@@ -507,7 +616,24 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
       {canEdit && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-gray-700">Details</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Discount %</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min="0" max="100" step="0.5"
+                  placeholder="0"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  value={discountPct}
+                  onChange={e => setDiscountPct(e.target.value)}
+                  onBlur={saveDiscount}
+                />
+                <span className="text-sm text-gray-400 flex-shrink-0">%</span>
+              </div>
+              {discountAmount && Number(discountAmount) > 0 && (
+                <p className="text-xs text-green-600 mt-1">−{initial.currency} {Number(discountAmount).toFixed(2)}</p>
+              )}
+            </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Expires At</label>
               <input
@@ -564,32 +690,112 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
       )}
 
       {/* ── Actions bar ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-wrap items-center gap-3">
-        {canSend && (
-          <>
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+        {actionError && (
+          <p className="text-sm text-red-600 font-medium">{actionError}</p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Draft → Submit for Approval */}
+          {status === 'draft' && (
             <button
-              onClick={sendQuotation}
-              disabled={sending || items.length === 0}
-              className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              onClick={submitForApproval}
+              disabled={submitting || items.length === 0}
+              className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {sending ? 'Sending…' : status === 'pending_review' ? 'Approve & Send to Customer' : 'Send to Customer'}
+              {submitting ? 'Submitting…' : '→ Submit for Approval'}
             </button>
-            {items.length === 0 && (
-              <p className="text-xs text-gray-400">Add at least one item to send.</p>
-            )}
-          </>
-        )}
-        {sendError && <p className="text-sm text-red-600">{sendError}</p>}
-        {status === 'sent' && (
-          <p className="text-sm text-purple-700 font-medium">
-            ✓ Sent {initial.sentAt ? `on ${new Date(initial.sentAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-          </p>
-        )}
-        {status === 'accepted' && (
-          <p className="text-sm text-green-700 font-medium">✓ Customer accepted this quotation.</p>
-        )}
-        {status === 'declined' && (
-          <p className="text-sm text-red-700 font-medium">✕ Customer declined this quotation.</p>
+          )}
+
+          {/* Pending Review → Approve / Reject (Manager/Admin only) */}
+          {status === 'pending_review' && isPrivileged && !showRejectForm && (
+            <>
+              <button
+                onClick={approveQuotation}
+                disabled={approving}
+                className="px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                {approving ? 'Approving…' : '✓ Approve'}
+              </button>
+              <button
+                onClick={() => setShowRejectForm(true)}
+                className="px-5 py-2.5 bg-white border border-red-300 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-50 transition-colors"
+              >
+                ✕ Reject
+              </button>
+            </>
+          )}
+
+          {/* Pending Review (salesperson view) */}
+          {status === 'pending_review' && !isPrivileged && (
+            <p className="text-sm text-yellow-700 font-medium">
+              ⏳ Awaiting manager approval…
+            </p>
+          )}
+
+          {/* Approved → Send to Customer */}
+          {canSend && (
+            <>
+              <button
+                onClick={sendQuotation}
+                disabled={sending || items.length === 0}
+                className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              >
+                {sending ? 'Sending…' : '✉ Send to Customer'}
+              </button>
+              {items.length === 0 && (
+                <p className="text-xs text-gray-400">Add at least one item to send.</p>
+              )}
+            </>
+          )}
+
+          {sendError && <p className="text-sm text-red-600">{sendError}</p>}
+
+          {status === 'approved' && initial.approvedBy && (
+            <p className="text-sm text-green-700">
+              ✓ Approved by {initial.approvedBy.name}
+            </p>
+          )}
+          {status === 'sent' && (
+            <p className="text-sm text-purple-700 font-medium">
+              ✓ Sent {initial.sentAt ? `on ${new Date(initial.sentAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+            </p>
+          )}
+          {status === 'accepted' && (
+            <p className="text-sm text-green-700 font-medium">✓ Customer accepted this quotation.</p>
+          )}
+          {status === 'declined' && (
+            <p className="text-sm text-red-700 font-medium">✕ Customer declined this quotation.</p>
+          )}
+        </div>
+
+        {/* Reject form (inline) */}
+        {showRejectForm && (
+          <div className="border border-red-200 rounded-xl p-4 bg-red-50 space-y-3">
+            <p className="text-sm font-semibold text-red-800">Reason for rejection (required)</p>
+            <textarea
+              rows={2}
+              className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-400 bg-white resize-none"
+              placeholder="e.g. Pricing too high, needs revision…"
+              value={rejectNotes}
+              onChange={e => setRejectNotes(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={rejectQuotation}
+                disabled={rejecting || !rejectNotes.trim()}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {rejecting ? 'Rejecting…' : 'Confirm Rejection'}
+              </button>
+              <button
+                onClick={() => { setShowRejectForm(false); setRejectNotes(''); setActionError(null) }}
+                className="px-4 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -604,6 +810,7 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
                 <div>
                   <span className="text-gray-500">{h.fromStatus ? `${statusLabel(h.fromStatus)} → ` : ''}</span>
                   <span className="font-medium text-gray-900">{statusLabel(h.toStatus)}</span>
+                  {h.changedBy && <span className="ml-1.5 text-xs text-gray-400">by {h.changedBy.name}</span>}
                   <span className="ml-2 text-xs text-gray-400">
                     {new Date(h.changedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
