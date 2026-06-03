@@ -1,5 +1,6 @@
 import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
+import { sendPushToUser } from '@/lib/webpush'
 
 export async function POST() {
   const session = await getOptionalSession()
@@ -39,6 +40,20 @@ export async function POST() {
     })
     return updated
   })
+
+  // Push: notify the salesperson assigned to this company (fire-and-forget)
+  const assignment = await prisma.companyAssignment.findFirst({
+    where:   { companyId: session.customerCompanyId, unassignedAt: null },
+    select:  { userId: true },
+    orderBy: { assignedAt: 'desc' },
+  })
+  if (assignment) {
+    sendPushToUser(assignment.userId, {
+      title: '🛒 New Quote Request',
+      body:  `${refNo} — a client just submitted a new quote request from the portal.`,
+      url:   `/quotations/${quotation.id}`,
+    }).catch(() => undefined)
+  }
 
   return Response.json({ quotationId: quotation.id, referenceNo: refNo })
 }

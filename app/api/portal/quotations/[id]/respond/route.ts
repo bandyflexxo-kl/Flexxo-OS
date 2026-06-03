@@ -1,6 +1,7 @@
 import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertPortalCompanyAccess } from '@/lib/authorization'
+import { sendPushToUser } from '@/lib/webpush'
 import { z } from 'zod'
 
 const Schema = z.object({
@@ -91,6 +92,18 @@ export async function POST(
       }
     }
   })
+
+  // Push: notify the salesperson who created the quote (fire-and-forget)
+  if (quotation.createdById) {
+    const isAccepted = parsed.data.action === 'accept'
+    sendPushToUser(quotation.createdById, {
+      title: isAccepted ? '🎉 Quote Accepted!' : '❌ Quote Declined',
+      body:  isAccepted
+        ? `${quotation.referenceNo ?? 'Your quotation'} was accepted by the client — an order has been created.`
+        : `${quotation.referenceNo ?? 'Your quotation'} was declined by the client.`,
+      url: `/quotations/${id}`,
+    }).catch(() => undefined)
+  }
 
   return Response.json({ ok: true, status: newStatus })
 }

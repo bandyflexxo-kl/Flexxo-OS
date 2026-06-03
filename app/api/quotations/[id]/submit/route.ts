@@ -1,6 +1,7 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
+import { sendPushToManagers } from '@/lib/webpush'
 
 /** Salesperson submits a draft quotation for manager approval. draft → pending_review */
 export async function POST(
@@ -19,7 +20,7 @@ export async function POST(
 
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
-    select: { id: true, status: true, companyId: true },
+    select: { id: true, status: true, companyId: true, referenceNo: true },
   })
   if (!quotation) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -53,6 +54,13 @@ export async function POST(
       },
     })
   })
+
+  // Push: notify all managers/admins a quote is waiting for approval (fire-and-forget)
+  sendPushToManagers({
+    title: '⏳ Quote Needs Approval',
+    body:  `${quotation.referenceNo ?? 'A quotation'} has been submitted and is waiting for your review.`,
+    url:   `/quotations/${id}`,
+  }).catch(() => undefined)
 
   return Response.json({ ok: true, status: 'pending_review' })
 }

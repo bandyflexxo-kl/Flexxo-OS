@@ -1,6 +1,7 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { isPrivilegedRole } from '@/lib/authorization'
+import { sendPushToUser } from '@/lib/webpush'
 import { z } from 'zod'
 
 const Schema = z.object({
@@ -26,7 +27,7 @@ export async function POST(
 
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, referenceNo: true, createdById: true },
   })
   if (!quotation) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -52,6 +53,15 @@ export async function POST(
       },
     })
   })
+
+  // Push: notify the salesperson who created the quote (fire-and-forget)
+  if (quotation.createdById) {
+    sendPushToUser(quotation.createdById, {
+      title: '✅ Quote Approved',
+      body:  `${quotation.referenceNo ?? 'Your quotation'} has been approved — ready to send to client.`,
+      url:   `/quotations/${id}`,
+    }).catch(() => undefined)
+  }
 
   return Response.json({ ok: true, status: 'approved' })
 }

@@ -55,6 +55,7 @@ model User {
   matchesConfirmed          ProductSupplierMatch[]
   quotationStatusChanges    QuotationStatusHistory[]
   customerCompany           Company?                  @relation("CustomerPortalUser", fields: [customerCompanyId], references: [id])
+  pushSubscriptions         PushSubscription[]
 
   @@map("users")
 }
@@ -751,4 +752,21 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+}
+
+// ============================================================
+// DOMAIN 11 — PUSH NOTIFICATIONS
+// ============================================================
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String   @map("p256dh")
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
 }

@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import NotificationBell from '@/components/layout/NotificationBell'
+import PushNotificationToggle from '@/components/layout/PushNotificationToggle'
 
 const navItems = [
   { href: '/',            label: 'Dashboard',  icon: '◻' },
@@ -22,6 +24,9 @@ export default function Sidebar() {
       <div className="px-6 py-5 border-b border-gray-200">
         <span className="font-bold text-gray-900 text-lg tracking-tight">Flexxo OS</span>
         <p className="text-xs text-gray-400 mt-0.5">Sales Operations</p>
+      </div>
+      <div className="px-3 pt-3 pb-1 border-b border-gray-100">
+        <NotificationBell />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {navItems.map((item) => {
@@ -44,7 +49,8 @@ export default function Sidebar() {
           )
         })}
       </nav>
-      <div className="px-3 py-4 border-t border-gray-200">
+      <div className="px-3 py-4 border-t border-gray-200 space-y-1">
+        <PushNotificationToggle />
         <form action="/api/auth/logout" method="POST">
           <button
             type="submit"
