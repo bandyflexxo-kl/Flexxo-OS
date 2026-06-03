@@ -2,94 +2,60 @@ import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
 
 // ── Response types ────────────────────────────────────────────────────────────
 
-export type QneAgingBucket = {
-  current:   number
-  days30:    number
-  days60:    number
-  days90:    number
-  over90:    number
-}
-
-export type QneAgingSummary = {
-  totalOutstanding: number
-  overdueAmount:    number
-  aging:            QneAgingBucket
-}
-
 export type QneCustomerFinancials = {
-  creditLimit:  number | null
-  paymentTerm:  string | null
-  currency:     string
+  creditLimit:      number | null   // Not available via SALES 6 — always null
+  paymentTerm:      string | null   // e.g. "30 DAYS", "C.O.D."
+  currency:         string
+  currentBalance:   number          // Outstanding balance from QNE
 }
 
 export type QneInvoice = {
   invoiceNo:   string
   invoiceDate: string
-  dueDate:     string | null
+  dueDate:     string | null        // Calculated from invoiceDate + term
   amount:      number
-  balance:     number
-  status:      string
+  isCancelled: boolean
 }
 
 export type QneFinancialData = {
-  aging:          QneAgingSummary
   customer:       QneCustomerFinancials
   recentInvoices: QneInvoice[]
   fetchedAt:      string
 }
 
-// ── Raw QNE shapes (permissive — QNE field names vary) ────────────────────────
+// ── Raw QNE shapes ────────────────────────────────────────────────────────────
 
-type RawAgingRow = Record<string, unknown>
-type RawCustomer = Record<string, unknown>
-type RawInvoice  = Record<string, unknown>
-
-function num(v: unknown): number {
-  if (v === null || v === undefined) return 0
-  const n = Number(v)
-  return isNaN(n) ? 0 : n
+type RawCustomer = {
+  id:             string
+  companyCode:    string
+  term?:          string | null
+  currency?:      string | null
+  currentBalance?: number | null
+  [key: string]:  unknown
 }
 
-function str(v: unknown): string | null {
-  if (v === null || v === undefined || v === '') return null
-  return String(v)
+type RawInvoice = {
+  invoiceCode?:  string | null
+  invoiceDate?:  string | null
+  totalAmount?:  number | null
+  isCancelled?:  boolean
+  term?:         string | null      // payment term on invoice e.g. "30 DAYS"
+  customer?:     string             // companyCode of the customer
+  [key: string]: unknown
 }
 
-function parseAgingRow(row: RawAgingRow): { outstanding: number; aging: QneAgingBucket } {
-  // QNE AgingSummary returns one row per customer with fields like:
-  // outstandingBalance / totalBalance / balance
-  // current / current_amt / currentAmt
-  // overDue30 / aging30 / days1to30
-  const outstanding = num(row['outstandingBalance'] ?? row['totalBalance'] ?? row['balance'] ?? row['Outstanding'])
-  return {
-    outstanding,
-    aging: {
-      current: num(row['current'] ?? row['currentAmt'] ?? row['Current'] ?? row['Current_Amt']),
-      days30:  num(row['overDue30'] ?? row['aging30'] ?? row['Days1to30'] ?? row['day30'] ?? row['Month1']),
-      days60:  num(row['overDue60'] ?? row['aging60'] ?? row['Days31to60'] ?? row['day60'] ?? row['Month2']),
-      days90:  num(row['overDue90'] ?? row['aging90'] ?? row['Days61to90'] ?? row['day90'] ?? row['Month3']),
-      over90:  num(row['overDue90Plus'] ?? row['agingOver90'] ?? row['DaysOver90'] ?? row['day90Plus'] ?? row['Month4']),
-    },
-  }
+/** Parse "30 DAYS" or "60 DAYS" → add N days to a date string */
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
 }
 
-function parseCustomer(c: RawCustomer): QneCustomerFinancials {
-  return {
-    creditLimit: c['creditLimit'] != null ? num(c['creditLimit']) : null,
-    paymentTerm: str(c['term'] ?? c['paymentTerm'] ?? c['Terms']),
-    currency:    str(c['currency'] ?? c['Currency']) ?? 'MYR',
-  }
-}
-
-function parseInvoice(inv: RawInvoice): QneInvoice {
-  return {
-    invoiceNo:   str(inv['invoiceNo'] ?? inv['docNo'] ?? inv['DocNo'] ?? inv['InvoiceNo']) ?? '—',
-    invoiceDate: str(inv['invoiceDate'] ?? inv['docDate'] ?? inv['DocDate'] ?? inv['InvoiceDate']) ?? '',
-    dueDate:     str(inv['dueDate'] ?? inv['DueDate'] ?? inv['due_date']),
-    amount:      num(inv['amount'] ?? inv['totalAmount'] ?? inv['Amount'] ?? inv['TotalAmount']),
-    balance:     num(inv['balance'] ?? inv['outstandingBalance'] ?? inv['Balance']),
-    status:      str(inv['status'] ?? inv['paymentStatus'] ?? inv['Status']) ?? 'Unknown',
-  }
+function calcDueDate(invoiceDate: string | null | undefined, term: string | null | undefined): string | null {
+  if (!invoiceDate || !term) return null
+  const match = /(\d+)\s*DAYS?/i.exec(term)
+  if (!match) return null
+  return addDays(invoiceDate, parseInt(match[1], 10))
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -97,61 +63,73 @@ function parseInvoice(inv: RawInvoice): QneInvoice {
 /**
  * Fetches live financial data for a customer from QNE.
  * Throws QneUnavailableError if QNE (Radmin VPN) is not reachable.
+ *
+ * Data sources:
+ *  - Outstanding balance + payment term: GET /Customers (filter by companyCode)
+ *  - Invoice history:                    GET /SalesInvoices (filter by customer field)
  */
 export async function fetchQneFinancialData(qneCustomerCode: string): Promise<QneFinancialData> {
   const token = await qneLogin().catch(err => {
     throw new QneUnavailableError(`Cannot reach QNE: ${err instanceof Error ? err.message : String(err)}`)
   })
 
-  const [agingRaw, customerRaw, invoicesRaw] = await Promise.allSettled([
-    qneGet<unknown>(`/Customers/AgingSummary?customerCode=${encodeURIComponent(qneCustomerCode)}`, token),
-    qneGet<unknown>(`/Customers/${encodeURIComponent(qneCustomerCode)}`, token),
-    qneGet<unknown>(`/SalesInvoices?customerCode=${encodeURIComponent(qneCustomerCode)}&$top=10&$orderby=invoiceDate desc`, token),
-  ])
-
-  // Parse aging
-  let agingSummary: QneAgingSummary = {
-    totalOutstanding: 0,
-    overdueAmount:    0,
-    aging:            { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 },
+  // ── 1. Fetch customer details (balance + term) ────────────────────────────
+  let customerInfo: QneCustomerFinancials = {
+    creditLimit:    null,
+    paymentTerm:    null,
+    currency:       'MYR',
+    currentBalance: 0,
   }
-  if (agingRaw.status === 'fulfilled') {
-    const raw   = agingRaw.value
-    const rows: RawAgingRow[] = Array.isArray(raw) ? (raw as RawAgingRow[]) : (raw as { value?: RawAgingRow[] })?.value ?? []
-    const row   = rows.find(r => {
-      const code = String(r['customerCode'] ?? r['companyCode'] ?? r['CustomerCode'] ?? r['CompanyCode'] ?? '')
-      return code === qneCustomerCode
-    }) ?? rows[0]
-    if (row) {
-      const parsed       = parseAgingRow(row)
-      const overdueAmt   = parsed.aging.days30 + parsed.aging.days60 + parsed.aging.days90 + parsed.aging.over90
-      agingSummary = {
-        totalOutstanding: parsed.outstanding,
-        overdueAmount:    overdueAmt,
-        aging:            parsed.aging,
+
+  try {
+    // Fetch ALL customers and find matching one by companyCode
+    // QNE doesn't support filtering by companyCode on the list endpoint
+    const raw = await qneGet<unknown>('/Customers', token)
+    const all: RawCustomer[] = Array.isArray(raw)
+      ? (raw as RawCustomer[])
+      : ((raw as { value?: RawCustomer[] })?.value ?? [])
+
+    const match = all.find(c => c.companyCode === qneCustomerCode)
+    if (match) {
+      customerInfo = {
+        creditLimit:    null, // Not available via SALES 6 account
+        paymentTerm:    match.term ?? null,
+        currency:       String(match.currency ?? 'MYR'),
+        currentBalance: Number(match.currentBalance ?? 0),
       }
     }
+  } catch {
+    // Non-fatal — continue without customer detail
   }
 
-  // Parse customer detail
-  let customerInfo: QneCustomerFinancials = { creditLimit: null, paymentTerm: null, currency: 'MYR' }
-  if (customerRaw.status === 'fulfilled') {
-    const raw = customerRaw.value
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      customerInfo = parseCustomer(raw as RawCustomer)
-    }
-  }
-
-  // Parse invoices
+  // ── 2. Fetch recent invoices ──────────────────────────────────────────────
   let invoices: QneInvoice[] = []
-  if (invoicesRaw.status === 'fulfilled') {
-    const raw = invoicesRaw.value
-    const list: RawInvoice[] = Array.isArray(raw) ? (raw as RawInvoice[]) : (raw as { value?: RawInvoice[] })?.value ?? []
-    invoices = list.slice(0, 10).map(parseInvoice)
+
+  try {
+    // Fetch recent invoices globally then filter client-side by customer code.
+    // QNE's filter params on /SalesInvoices are not consistent — we fetch
+    // recent invoices and filter by the 'customer' field (= companyCode).
+    const raw = await qneGet<unknown>(`/SalesInvoices?$top=200&$orderby=invoiceDate desc`, token)
+    const all: RawInvoice[] = Array.isArray(raw)
+      ? (raw as RawInvoice[])
+      : ((raw as { value?: RawInvoice[] })?.value ?? [])
+
+    const customerInvoices = all
+      .filter(inv => inv.customer === qneCustomerCode && !inv.isCancelled)
+      .slice(0, 10)
+
+    invoices = customerInvoices.map(inv => ({
+      invoiceNo:   inv.invoiceCode ?? '—',
+      invoiceDate: inv.invoiceDate ?? '',
+      dueDate:     calcDueDate(inv.invoiceDate, inv.term),
+      amount:      Number(inv.totalAmount ?? 0),
+      isCancelled: Boolean(inv.isCancelled),
+    }))
+  } catch {
+    // Non-fatal — show empty invoice list
   }
 
   return {
-    aging:          agingSummary,
     customer:       customerInfo,
     recentInvoices: invoices,
     fetchedAt:      new Date().toISOString(),

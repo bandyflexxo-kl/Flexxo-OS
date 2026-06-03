@@ -38,8 +38,6 @@ export default function QneFinancialTab({ companyId }: { companyId: string }) {
     }
   }
 
-  const hasOverdue = (data?.aging.overdueAmount ?? 0) > 0
-
   return (
     <div className="space-y-5">
       {/* Header row */}
@@ -66,18 +64,14 @@ export default function QneFinancialTab({ companyId }: { companyId: string }) {
         </button>
       </div>
 
-      {/* VPN error */}
+      {/* Error states */}
       {error === 'qne_unavailable' && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-5 py-4 space-y-2">
           <p className="text-sm font-semibold text-amber-800">⚠ QNE is unreachable</p>
           <p className="text-sm text-amber-700">
             Ensure <strong>Radmin VPN</strong> is connected to the <em>Flexxokl</em> network, then try again.
           </p>
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="text-sm text-amber-800 underline hover:no-underline"
-          >
+          <button onClick={refresh} disabled={loading} className="text-sm text-amber-800 underline hover:no-underline">
             Retry
           </button>
         </div>
@@ -107,81 +101,36 @@ export default function QneFinancialTab({ companyId }: { companyId: string }) {
       {/* Data panels */}
       {data && (
         <>
-          {/* Outstanding Balance */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Outstanding Balance</h3>
-            <div className="flex items-end gap-6 flex-wrap">
-              <div>
-                <p className="text-3xl font-bold text-gray-900">{MYR(data.aging.totalOutstanding)}</p>
-                <p className="text-xs text-gray-400 mt-1">Total outstanding</p>
-              </div>
-              {hasOverdue && (
-                <div>
-                  <p className="text-xl font-bold text-red-600">{MYR(data.aging.overdueAmount)}</p>
-                  <p className="text-xs text-red-500 mt-1">Overdue</p>
-                </div>
-              )}
-              {!hasOverdue && data.aging.totalOutstanding > 0 && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                  ✓ No overdue amount
+          {/* Outstanding Balance + Account Info */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Outstanding Balance</h3>
+              <p className={`text-3xl font-bold ${data.customer.currentBalance > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                {MYR(data.customer.currentBalance)}
+              </p>
+              {data.customer.currentBalance === 0 && (
+                <span className="inline-flex items-center mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                  ✓ No outstanding balance
                 </span>
               )}
+              {data.customer.currentBalance > 0 && (
+                <p className="text-xs text-red-500 mt-1.5">Amount owed to Flexxo</p>
+              )}
             </div>
 
-            {/* Aging breakdown */}
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {[
-                { label: 'Current',  value: data.aging.aging.current },
-                { label: '1–30 days', value: data.aging.aging.days30, warn: true },
-                { label: '31–60 days', value: data.aging.aging.days60, warn: true },
-                { label: '61–90 days', value: data.aging.aging.days90, warn: true },
-                { label: '90+ days',  value: data.aging.aging.over90,  danger: true },
-              ].map(bucket => (
-                <div
-                  key={bucket.label}
-                  className={`rounded-lg px-3 py-2.5 text-center ${
-                    bucket.value > 0 && bucket.danger
-                      ? 'bg-red-50 border border-red-200'
-                      : bucket.value > 0 && bucket.warn
-                      ? 'bg-amber-50 border border-amber-200'
-                      : 'bg-gray-50 border border-gray-200'
-                  }`}
-                >
-                  <p className={`text-sm font-semibold ${
-                    bucket.value > 0 && bucket.danger
-                      ? 'text-red-700'
-                      : bucket.value > 0 && bucket.warn
-                      ? 'text-amber-700'
-                      : 'text-gray-700'
-                  }`}>{MYR(bucket.value)}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{bucket.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Account Info */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Account Information</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-gray-400">Credit Limit</p>
-                <p className="text-sm font-semibold text-gray-900 mt-0.5">
-                  {data.customer.creditLimit != null ? MYR(data.customer.creditLimit) : '—'}
-                </p>
-                {data.customer.creditLimit != null && data.aging.totalOutstanding > 0 && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {MYR(Math.max(0, data.customer.creditLimit - data.aging.totalOutstanding))} remaining
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Account Information</h3>
+              <div className="space-y-2.5">
+                <div>
+                  <p className="text-xs text-gray-400">Payment Term</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                    {data.customer.paymentTerm ?? '—'}
                   </p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Payment Term</p>
-                <p className="text-sm font-semibold text-gray-900 mt-0.5">{data.customer.paymentTerm ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Currency</p>
-                <p className="text-sm font-semibold text-gray-900 mt-0.5">{data.customer.currency}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">Currency</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5">{data.customer.currency}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -189,63 +138,58 @@ export default function QneFinancialTab({ companyId }: { companyId: string }) {
           {/* Recent Invoices */}
           {data.recentInvoices.length > 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recent Invoices</h3>
+                <span className="text-xs text-gray-400">{data.recentInvoices.length} invoices</span>
               </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
                     <th className="px-4 py-2.5 font-medium">Invoice No</th>
-                    <th className="px-4 py-2.5 font-medium">Date</th>
-                    <th className="px-4 py-2.5 font-medium">Due</th>
+                    <th className="px-4 py-2.5 font-medium">Invoice Date</th>
+                    <th className="px-4 py-2.5 font-medium">Due Date</th>
                     <th className="px-4 py-2.5 font-medium text-right">Amount</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Balance</th>
-                    <th className="px-4 py-2.5 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recentInvoices.map((inv, i) => (
-                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-gray-800">{inv.invoiceNo}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        {inv.invoiceDate
-                          ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {inv.dueDate ? (
-                          <span className={new Date(inv.dueDate) < new Date() && inv.balance > 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                            {new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{MYR(inv.amount)}</td>
-                      <td className="px-4 py-3 text-right font-semibold">
-                        <span className={inv.balance > 0 ? 'text-red-600' : 'text-green-600'}>
-                          {MYR(inv.balance)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                          inv.status.toLowerCase().includes('paid') || inv.balance === 0
-                            ? 'bg-green-100 text-green-700'
-                            : inv.balance > 0
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {inv.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.recentInvoices.map((inv, i) => {
+                    const isOverdue = inv.dueDate
+                      ? new Date(inv.dueDate) < new Date()
+                      : false
+                    return (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-medium text-gray-800">{inv.invoiceNo}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">
+                          {inv.invoiceDate
+                            ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          {inv.dueDate ? (
+                            <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                              {new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {isOverdue && ' ⚠'}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                          {MYR(inv.amount)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 px-5 py-8 text-center">
-              <p className="text-sm text-gray-400">No invoice history found in QNE.</p>
+              <p className="text-sm text-gray-400">No recent invoices found for this customer.</p>
             </div>
           )}
+
+          <p className="text-xs text-gray-400 text-right">
+            ⓘ Outstanding balance from QNE customer record · Invoices from last 200 transactions
+          </p>
         </>
       )}
     </div>
