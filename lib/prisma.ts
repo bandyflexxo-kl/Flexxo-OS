@@ -2,7 +2,11 @@ import { PrismaClient } from '@/app/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
+  // Use DIRECT_URL for the pg adapter — the pg library doesn't understand
+  // ?pgbouncer=true and works best with the session-mode pooler (port 5432).
+  // Fall back to DATABASE_URL if DIRECT_URL is not set (local dev).
+  const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL
+  const adapter = new PrismaPg({ connectionString })
   return new PrismaClient({ adapter, log: ['error'] })
 }
 
