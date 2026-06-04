@@ -77,6 +77,16 @@ export default function ShopNav({
               My Quotations
             </Link>
           )}
+          {isLoggedIn && (
+            <Link
+              href="/shop/orders"
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                pathname.startsWith('/shop/orders') ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              My Orders
+            </Link>
+          )}
         </nav>
 
         {/* Right side */}

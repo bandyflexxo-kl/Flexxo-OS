@@ -1,6 +1,7 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess, isPrivilegedRole } from '@/lib/authorization'
+import { sendOrderStatusWhatsApp } from '@/lib/wabaMessages'
 import { z } from 'zod'
 
 export async function GET(
@@ -96,7 +97,7 @@ export async function PATCH(
 
   const order = await prisma.order.findUnique({
     where:  { id },
-    select: { id: true, companyId: true, status: true },
+    select: { id: true, companyId: true, status: true, referenceNo: true },
   })
   if (!order) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -138,6 +139,17 @@ export async function PATCH(
       })
     }
   })
+
+  // Send WhatsApp status notification via WABA (fire-and-forget)
+  if (newStatus && newStatus !== prevStatus) {
+    sendOrderStatusWhatsApp({
+      companyId:  order.companyId,
+      orderId:    id,
+      orderRef:   order.referenceNo ?? id.slice(0, 8),
+      newStatus,
+      userId:     session.userId,
+    }).catch(() => undefined)
+  }
 
   return Response.json({ ok: true, status: newStatus ?? prevStatus })
 }

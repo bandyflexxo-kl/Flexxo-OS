@@ -2,6 +2,7 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
 import { sendQuotationEmail } from '@/lib/quotationEmail'
+import { sendQuotationWhatsApp } from '@/lib/wabaMessages'
 
 export async function POST(
   _request: Request,
@@ -21,7 +22,7 @@ export async function POST(
         select: { name: true, generalEmail: true },
       },
       contact: {
-        select: { name: true, email: true },
+        select: { id: true, name: true, email: true, whatsapp: true },
       },
       createdBy: { select: { name: true } },
     },
@@ -50,7 +51,7 @@ export async function POST(
   const denied = await assertCompanyAccess(quotation.companyId, session)
   if (denied) return denied
 
-  // Determine recipient email
+  // Determine recipient email and WhatsApp
   const recipientEmail = quotation.contact?.email ?? quotation.company.generalEmail
 
   await prisma.$transaction(async tx => {
@@ -99,6 +100,19 @@ export async function POST(
       // Email failure is non-fatal — quotation is already marked sent
       console.error('Failed to send quotation email:', err)
     }
+  }
+
+  // Send WhatsApp via WABA (fire-and-forget — never blocks or fails the response)
+  if (quotation.contact?.whatsapp) {
+    sendQuotationWhatsApp({
+      contactName:  quotation.contact.name,
+      contactPhone: quotation.contact.whatsapp,
+      companyId:    quotation.companyId,
+      contactId:    quotation.contact.id,
+      userId:       session.userId,
+      referenceNo:  quotation.referenceNo,
+      quotationId:  id,
+    }).catch(() => undefined)
   }
 
   return Response.json({ ok: true, status: 'sent', emailSent: !!recipientEmail })

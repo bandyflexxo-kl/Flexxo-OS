@@ -5,18 +5,19 @@ import { usePathname } from 'next/navigation'
 import NotificationBell from '@/components/layout/NotificationBell'
 import PushNotificationToggle from '@/components/layout/PushNotificationToggle'
 
-const navItems = [
-  { href: '/',            label: 'Dashboard',  icon: '◻' },
-  { href: '/companies',  label: 'Companies',  icon: '🏢' },
-  { href: '/contacts',   label: 'Contacts',   icon: '👤' },
-  { href: '/pipeline',   label: 'Pipeline',   icon: '⇒' },
-  { href: '/activities', label: 'Activities', icon: '📋' },
-  { href: '/quotations', label: 'Quotations', icon: '📄' },
-  { href: '/orders',     label: 'Orders',     icon: '📦' },
-  { href: '/admin',      label: 'Admin',      icon: '⚙' },
-]
+const NAV_ITEMS = [
+  { href: '/',            label: 'Dashboard',  icon: '◻',  roles: null },
+  { href: '/companies',  label: 'Companies',  icon: '🏢',  roles: null },
+  { href: '/contacts',   label: 'Contacts',   icon: '👤',  roles: null },
+  { href: '/pipeline',   label: 'Pipeline',   icon: '⇒',  roles: null },
+  { href: '/activities', label: 'Activities', icon: '📋',  roles: null },
+  { href: '/quotations', label: 'Quotations', icon: '📄',  roles: null },
+  { href: '/orders',     label: 'Orders',     icon: '📦',  roles: null },
+  { href: '/reports',    label: 'Reports',    icon: '📊',  roles: ['Admin', 'Manager'] },
+  { href: '/admin',      label: 'Admin',      icon: '⚙',   roles: ['Admin', 'Manager'] },
+] as const
 
-export default function Sidebar() {
+export default function Sidebar({ role }: { role?: string }) {
   const pathname = usePathname()
 
   return (
@@ -29,7 +30,9 @@ export default function Sidebar() {
         <NotificationBell />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {navItems.map((item) => {
+        {NAV_ITEMS.filter(item =>
+          item.roles === null || (role && (item.roles as readonly string[]).includes(role))
+        ).map((item) => {
           const active = item.href === '/'
             ? pathname === '/'
             : pathname.startsWith(item.href)

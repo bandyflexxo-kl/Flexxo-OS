@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar role={session.role} />
       <main className="flex-1 flex flex-col overflow-auto">{children}</main>
     </div>
   )
