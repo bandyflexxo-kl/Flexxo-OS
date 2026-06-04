@@ -1,5 +1,6 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
+import { sendPortalWelcomeEmail } from '@/lib/portalWelcomeEmail'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 
@@ -77,6 +78,19 @@ export async function POST(request: Request) {
     })
     return newUser
   })
+
+  // Send welcome email with login credentials (outside transaction — failure is non-fatal)
+  try {
+    await sendPortalWelcomeEmail({
+      to:          email,
+      name,
+      companyName: company.name,
+      password,    // plain-text password, captured before hashing
+    })
+  } catch (err) {
+    console.error('[customer-accounts] Failed to send welcome email:', err)
+    // Account was created successfully — do not fail the request
+  }
 
   return Response.json({ id: user.id, name: user.name, email: user.email }, { status: 201 })
 }
