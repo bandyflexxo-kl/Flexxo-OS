@@ -1,4 +1,4 @@
-import { verifySession } from '@/lib/session'
+import { getOptionalSession } from '@/lib/session'
 import { exchangeCodeForRefreshToken } from '@/lib/googleDrive'
 import { prisma } from '@/lib/prisma'
 
@@ -8,17 +8,8 @@ export async function GET(request: Request) {
   const state = searchParams.get('state')
   const error = searchParams.get('error')
 
-  // User denied access
-  if (error) {
-    return Response.redirect(new URL('/admin/suppliers?google=denied', request.url))
-  }
-
-  if (!code) {
-    return Response.redirect(new URL('/admin/suppliers?google=error', request.url))
-  }
-
-  // Decode returnUrl from state
-  let returnUrl = '/admin/suppliers'
+  // Decode returnUrl from state (do this before any early returns so error redirects go to the right place)
+  let returnUrl = '/admin/settings'
   if (state) {
     try {
       const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as { returnUrl?: string }
@@ -28,7 +19,18 @@ export async function GET(request: Request) {
     }
   }
 
-  const session = await verifySession().catch(() => null)
+  // User denied access
+  if (error) {
+    return Response.redirect(new URL(`${returnUrl}?google=denied`, request.url))
+  }
+
+  if (!code) {
+    return Response.redirect(new URL(`${returnUrl}?google=error`, request.url))
+  }
+
+  // Use getOptionalSession (not verifySession) — verifySession calls redirect() internally
+  // which throws a Next.js redirect error that .catch() would swallow, returning null
+  const session = await getOptionalSession()
   if (!session) {
     return Response.redirect(new URL('/login', request.url))
   }
