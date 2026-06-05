@@ -1,4 +1,3 @@
-import { getOptionalSession } from '@/lib/session'
 import { exchangeCodeForRefreshToken } from '@/lib/googleDrive'
 import { prisma } from '@/lib/prisma'
 
@@ -8,18 +7,24 @@ export async function GET(request: Request) {
   const state = searchParams.get('state')
   const error = searchParams.get('error')
 
-  // Decode returnUrl from state (do this before any early returns so error redirects go to the right place)
+  // Decode state — contains returnUrl AND userId (passed from the initiating route so we
+  // don't have to rely on session cookies being available during an external OAuth redirect)
   let returnUrl = '/admin/settings'
+  let userId: string | null = null
+
   if (state) {
     try {
-      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as { returnUrl?: string }
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as {
+        returnUrl?: string
+        userId?:    string
+      }
       if (decoded.returnUrl) returnUrl = decoded.returnUrl
+      if (decoded.userId)    userId    = decoded.userId
     } catch {
-      // fallback to default
+      // fallback to defaults
     }
   }
 
-  // User denied access
   if (error) {
     return Response.redirect(new URL(`${returnUrl}?google=denied`, request.url))
   }
@@ -28,18 +33,16 @@ export async function GET(request: Request) {
     return Response.redirect(new URL(`${returnUrl}?google=error`, request.url))
   }
 
-  // Use getOptionalSession (not verifySession) — verifySession calls redirect() internally
-  // which throws a Next.js redirect error that .catch() would swallow, returning null
-  const session = await getOptionalSession()
-  if (!session) {
-    return Response.redirect(new URL('/login', request.url))
+  // If userId wasn't in state (e.g. old bookmark), we can't proceed
+  if (!userId) {
+    return Response.redirect(new URL(`${returnUrl}?google=error&msg=session_lost`, request.url))
   }
 
   try {
     const refreshToken = await exchangeCodeForRefreshToken(code)
 
     await prisma.user.update({
-      where: { id: session.userId },
+      where: { id: userId },
       data:  { googleRefreshToken: refreshToken },
     })
 

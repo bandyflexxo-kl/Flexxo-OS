@@ -28,6 +28,23 @@ export default function AdminSettingsPage() {
   const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
+    // Show flash message based on Google OAuth callback result in URL
+    const params = new URLSearchParams(window.location.search)
+    const googleResult = params.get('google')
+    const googleMsg    = params.get('msg')
+    if (googleResult === 'connected') {
+      setSuccess('google-connected')
+      // Clean the URL
+      window.history.replaceState({}, '', '/admin/settings')
+    } else if (googleResult === 'denied') {
+      setError('Google Drive access was denied. Please try again and click Allow.')
+      window.history.replaceState({}, '', '/admin/settings')
+    } else if (googleResult === 'error') {
+      const decoded = googleMsg ? decodeURIComponent(googleMsg) : 'Unknown error'
+      setError(`Google connection failed: ${decoded}`)
+      window.history.replaceState({}, '', '/admin/settings')
+    }
+
     Promise.all([
       fetch('/api/admin/settings').then(r => r.json() as Promise<Record<string, string>>),
       fetch('/api/admin/settings/google-status').then(r => r.json() as Promise<GoogleStatus>),
@@ -146,6 +163,12 @@ export default function AdminSettingsPage() {
                   Selling price = Cost × (1 + margin ÷ 100). Overridable per category or product.
                 </p>
               </div>
+              {success === 'google-connected' && (
+                <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 font-medium">
+                  ✓ Google Drive connected successfully! Go to{' '}
+                  <a href="/admin/products" className="underline">Product Catalog</a> → Scan All Photos.
+                </div>
+              )}
               {success === 'margin' && <p className="text-sm text-green-600">✓ Saved.</p>}
               <button
                 type="submit"
