@@ -33,7 +33,15 @@ export default function ProductCatalogTable({
   const [error,          setError]          = useState<string | null>(null)
   const [success,        setSuccess]        = useState<string | null>(null)
   const [scanning,       setScanning]       = useState(false)
-  const [scanResult,     setScanResult]     = useState<{ matched: number; total: number } | null>(null)
+  const [scanResult,     setScanResult]     = useState<{
+    matched:         number
+    alreadySet:      number
+    notFound:        number
+    total:           number
+    driveFiles:      number
+    unmatchedCodes:  string[]
+    matchedProducts: { code: string; how: 'exact' | 'fuzzy' }[]
+  } | null>(null)
   const [search,         setSearch]         = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [bulkBusy,       setBulkBusy]       = useState(false)
@@ -43,10 +51,11 @@ export default function ProductCatalogTable({
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
 
   // Edit modal
-  const [editRow,  setEditRow]  = useState<ProductRow | null>(null)
-  const [editDesc, setEditDesc] = useState('')
-  const [editMarg, setEditMarg] = useState('')
-  const [editErr,  setEditErr]  = useState<string | null>(null)
+  const [editRow,      setEditRow]      = useState<ProductRow | null>(null)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editMarg,     setEditMarg]     = useState('')
+  const [editPhotoId,  setEditPhotoId]  = useState('')
+  const [editErr,      setEditErr]      = useState<string | null>(null)
 
   // Unique categories
   const allCategories = useMemo(() =>
@@ -137,9 +146,23 @@ export default function ProductCatalogTable({
     setError(null)
     try {
       const res  = await fetch('/api/admin/products/scan-photos', { method: 'POST' })
-      const data = await res.json() as { matched?: number; total?: number; error?: string }
+      const data = await res.json() as {
+        matched?: number; alreadySet?: number; notFound?: number; total?: number
+        driveFiles?: number; unmatchedCodes?: string[]
+        matchedProducts?: { code: string; how: 'exact' | 'fuzzy' }[]
+        error?: string
+      }
       if (!res.ok) { setError(data.error ?? 'Scan failed'); return }
-      setScanResult({ matched: data.matched ?? 0, total: data.total ?? 0 })
+      setScanResult({
+        matched:         data.matched         ?? 0,
+        alreadySet:      data.alreadySet      ?? 0,
+        notFound:        data.notFound        ?? 0,
+        total:           data.total           ?? 0,
+        driveFiles:      data.driveFiles      ?? 0,
+        unmatchedCodes:  data.unmatchedCodes  ?? [],
+        matchedProducts: data.matchedProducts ?? [],
+      })
+      // Refresh product list to reflect new photo IDs
       const listRes = await fetch('/api/admin/products')
       const newList = await listRes.json() as ProductRow[]
       setProducts(newList)
@@ -187,17 +210,27 @@ export default function ProductCatalogTable({
     setBusyIds(prev => new Set([...prev, editRow.id]))
     setEditErr(null)
     try {
+      // Only send googleDrivePhotoId if it changed
+      const photoChanged = editPhotoId.trim() !== (editRow.googleDrivePhotoId ?? '')
+      const body: Record<string, unknown> = {
+        catalogDescription: editDesc || null,
+        defaultMarginPct:   editMarg || null,
+      }
+      if (photoChanged) body.googleDrivePhotoId = editPhotoId.trim() || null
+
       const res = await fetch(`/api/admin/products/${editRow.id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          catalogDescription: editDesc || null,
-          defaultMarginPct:   editMarg || null,
-        }),
+        body:    JSON.stringify(body),
       })
       if (!res.ok) { setEditErr('Failed to save'); return }
       setProducts(prev => prev.map(p => p.id === editRow.id
-        ? { ...p, catalogDescription: editDesc || null, defaultMarginPct: editMarg || null }
+        ? {
+            ...p,
+            catalogDescription: editDesc || null,
+            defaultMarginPct:   editMarg || null,
+            ...(photoChanged ? { googleDrivePhotoId: editPhotoId.trim() || null } : {}),
+          }
         : p
       ))
       flash(`Updated ${editRow.name}`)
@@ -220,8 +253,53 @@ export default function ProductCatalogTable({
         <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">{success}</div>
       )}
       {scanResult && (
-        <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
-          Photo scan complete — {scanResult.matched} photos matched out of {scanResult.total} products.
+        <div className="rounded-xl bg-blue-50 border border-blue-200 px-5 py-4 text-sm text-blue-800 space-y-2">
+          <p className="font-semibold">
+            Photo scan complete — {scanResult.driveFiles} Drive files scanned across all subfolders
+          </p>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <span className="text-green-700 font-medium">✓ {scanResult.matched} newly matched</span>
+            <span className="text-blue-600">↺ {scanResult.alreadySet} already set</span>
+            <span className="text-gray-500">✕ {scanResult.notFound} not found</span>
+            <span className="text-gray-400">— {scanResult.total} total products</span>
+          </div>
+          {scanResult.matchedProducts.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs font-medium text-blue-700 mb-1">New matches:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {scanResult.matchedProducts.map(m => (
+                  <span key={m.code} className={`text-xs px-2 py-0.5 rounded-full border ${
+                    m.how === 'fuzzy'
+                      ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                      : 'bg-green-50 border-green-200 text-green-700'
+                  }`}>
+                    {m.code}{m.how === 'fuzzy' ? ' ~' : ''}
+                  </span>
+                ))}
+              </div>
+              {scanResult.matchedProducts.some(m => m.how === 'fuzzy') && (
+                <p className="text-xs text-yellow-600 mt-1">~ = fuzzy match (filename had different punctuation)</p>
+              )}
+            </div>
+          )}
+          {scanResult.unmatchedCodes.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs font-medium text-red-600 mb-1">
+                Products with no matching Drive file ({scanResult.notFound} total, showing first {scanResult.unmatchedCodes.length}):
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {scanResult.unmatchedCodes.map(c => (
+                  <span key={c} className="text-xs px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-600">
+                    {c}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Name your Drive photos to match these codes, then scan again.
+                Or open a product → Edit → paste a Drive file ID manually.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -318,11 +396,28 @@ export default function ProductCatalogTable({
                   <td className="px-4 py-2.5 text-xs font-medium text-blue-700">
                     {p.sellingPrice ? `${p.currency} ${Number(p.sellingPrice).toFixed(2)}` : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-xs">
-                    {p.googleDrivePhotoId
-                      ? <span className="text-green-600">✓</span>
-                      : <span className="text-gray-300">—</span>
-                    }
+                  <td className="px-4 py-2.5">
+                    {p.googleDrivePhotoId ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/portal/photo/${p.id}`}
+                        alt={p.name}
+                        className="w-10 h-10 object-contain rounded border border-gray-100 bg-gray-50"
+                        loading="lazy"
+                        onError={e => {
+                          const t = e.currentTarget
+                          t.style.display = 'none'
+                          const sibling = t.nextElementSibling as HTMLElement | null
+                          if (sibling) sibling.style.display = 'inline'
+                        }}
+                      />
+                    ) : null}
+                    <span
+                      className="text-xs text-gray-300"
+                      style={{ display: p.googleDrivePhotoId ? 'none' : 'inline' }}
+                    >
+                      —
+                    </span>
                   </td>
                   <td className="px-4 py-2.5">
                     {/* Toggle — visual change is instant (optimistic) */}
@@ -342,7 +437,7 @@ export default function ProductCatalogTable({
                   <td className="px-4 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       <button
-                        onClick={() => { setEditRow(p); setEditDesc(p.catalogDescription ?? ''); setEditMarg(p.defaultMarginPct ?? ''); setEditErr(null) }}
+                        onClick={() => { setEditRow(p); setEditDesc(p.catalogDescription ?? ''); setEditMarg(p.defaultMarginPct ?? ''); setEditPhotoId(p.googleDrivePhotoId ?? ''); setEditErr(null) }}
                         disabled={isBusy}
                         className="px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
                       >
@@ -454,6 +549,48 @@ export default function ProductCatalogTable({
                 step="0.5"
               />
             </div>
+            {/* Photo ID */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Google Drive Photo File ID
+                <span className="text-gray-400 font-normal ml-1">(paste from Drive file URL)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editPhotoId}
+                  onChange={e => setEditPhotoId(e.target.value)}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-blue-500"
+                  placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+                />
+                {editPhotoId && (
+                  <button
+                    type="button"
+                    onClick={() => setEditPhotoId('')}
+                    className="px-2 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors whitespace-nowrap"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {editPhotoId && editPhotoId === editRow?.googleDrivePhotoId && (
+                <div className="mt-2 flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/portal/photo/${editRow.id}`}
+                    alt="Current photo"
+                    className="w-16 h-16 object-contain rounded border border-gray-200 bg-gray-50"
+                  />
+                  <p className="text-xs text-gray-400">Current photo</p>
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                To find a file ID: right-click the file in Google Drive → Get link → copy the ID from the URL.
+                <br />
+                Leave blank to remove the photo.
+              </p>
+            </div>
+
             {editErr && <p className="text-xs text-red-600">{editErr}</p>}
           </div>
         </Modal>

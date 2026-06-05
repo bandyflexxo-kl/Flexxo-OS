@@ -75,6 +75,32 @@ export async function listDriveFolder(
   }))
 }
 
+// Recursively list ALL files in a folder and its subfolders (up to maxDepth levels)
+export async function listDriveFolderRecursive(
+  refreshToken: string,
+  folderId:     string,
+  maxDepth      = 3,
+): Promise<DriveItem[]> {
+  const items = await listDriveFolder(refreshToken, folderId)
+  const files: DriveItem[] = []
+
+  for (const item of items) {
+    if (item.isFolder && maxDepth > 1) {
+      const children = await listDriveFolderRecursive(refreshToken, item.id, maxDepth - 1)
+      files.push(...children)
+    } else if (!item.isFolder) {
+      files.push(item)
+    }
+  }
+
+  return files
+}
+
+// Normalise a string for fuzzy matching: uppercase, remove non-alphanumeric
+export function normaliseStem(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
 export async function downloadDriveFile(
   refreshToken: string,
   fileId:       string,
