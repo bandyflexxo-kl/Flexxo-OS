@@ -16,7 +16,7 @@ export default async function AdminProductsPage() {
     )
   }
 
-  const [products, globalSetting] = await Promise.all([
+  const [products, globalSetting, photoFolderSetting, adminUser] = await Promise.all([
     prisma.product.findMany({
       where:   { isActive: true },
       orderBy: { name: 'asc' },
@@ -31,6 +31,15 @@ export default async function AdminProductsPage() {
       },
     }),
     prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
+    prisma.systemSetting.findUnique({ where: { key: 'google_drive_photos_folder_id' } }),
+    prisma.user.findFirst({
+      where: {
+        isActive: true,
+        googleRefreshToken: { not: null },
+        userRoles: { some: { role: { name: 'Admin' }, revokedAt: null } },
+      },
+      select: { name: true },
+    }),
   ])
 
   const globalMargin = globalSetting?.value ?? '30'
@@ -90,11 +99,35 @@ export default async function AdminProductsPage() {
           </div>
         </div>
 
-        {!process.env.GOOGLE_DRIVE_PRODUCT_PHOTOS_FOLDER_ID && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-sm text-amber-800">
-            <strong>⚠ GOOGLE_DRIVE_PRODUCT_PHOTOS_FOLDER_ID not set</strong> — Add the product photos Drive folder ID to .env.local to enable photo scanning.
-          </div>
-        )}
+        {/* Google Drive status banners */}
+        {(() => {
+          const folderConfigured = !!(process.env.GOOGLE_DRIVE_PRODUCT_PHOTOS_FOLDER_ID || photoFolderSetting?.value)
+          const driveConnected   = !!adminUser
+
+          if (!folderConfigured) return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-sm text-amber-800 space-y-1">
+              <p className="font-semibold">⚠ Product photos folder not set</p>
+              <p>Go to <a href="/admin/settings" className="underline font-medium">Admin → Settings</a> → paste your Google Drive folder ID under <strong>Product Photos Folder ID</strong>.</p>
+            </div>
+          )
+
+          if (!driveConnected) return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-sm text-amber-800 space-y-1">
+              <p className="font-semibold">⚠ Google Drive not connected</p>
+              <p>
+                Folder ID is set ✓ — but no admin has authorised Google Drive access yet.
+                Go to <a href="/admin/settings" className="underline font-medium">Admin → Settings</a> → click <strong>Connect Google Account</strong> and sign in.
+              </p>
+            </div>
+          )
+
+          return (
+            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 text-sm text-green-800 flex items-center gap-2">
+              <span>✓</span>
+              <span>Google Drive connected ({adminUser.name}) — ready to scan photos.</span>
+            </div>
+          )
+        })()}
 
         <ProductCatalogTable products={rows} globalMargin={globalMargin} />
       </div>
