@@ -72,7 +72,8 @@ export async function GET(
   })
 }
 
-const ORDER_STATUSES = ['Confirmed', 'Processing', 'Shipped', 'Delivered'] as const
+const ORDER_STATUSES = ['Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering', 'Delivered',
+  'Processing', 'Shipped'] as const  // legacy values kept for backward compat
 type OrderStatus = (typeof ORDER_STATUSES)[number]
 
 const UpdateSchema = z.object({

@@ -29,6 +29,25 @@ export default async function OrderDetailPage({
           product: { select: { name: true, qneItemCode: true } },
         },
       },
+      invoice: {
+        select: {
+          id: true, invoiceNo: true, issuedAt: true,
+          qnePushStatus: true, totalAmount: true,
+        },
+      },
+      warehouseTask: {
+        select: {
+          id: true, status: true, completedAt: true,
+          completedBy: { select: { name: true } },
+        },
+      },
+      deliveryBooking: {
+        select: {
+          id: true, bookingStatus: true, serviceType: true,
+          quotedPriceMyr: true, shareLink: true, driverName: true,
+          driverPhone: true, plateNumber: true, bookedAt: true, retryCount: true,
+        },
+      },
     },
   })
 
@@ -37,7 +56,6 @@ export default async function OrderDetailPage({
   const denied = await assertCompanyAccess(order.companyId, session)
   if (denied) redirect('/orders')
 
-  // Fetch status change activities for this order
   const statusActivities = await prisma.activity.findMany({
     where:   { companyId: order.companyId, activityType: 'order_status_change' },
     orderBy: { createdAt: 'desc' },
@@ -74,6 +92,31 @@ export default async function OrderDetailPage({
       performedBy: a.user?.name ?? null,
       createdAt:   a.createdAt.toISOString(),
     })),
+    invoice: order.invoice ? {
+      id:            order.invoice.id,
+      invoiceNo:     order.invoice.invoiceNo,
+      issuedAt:      order.invoice.issuedAt.toISOString(),
+      qnePushStatus: order.invoice.qnePushStatus,
+      totalAmount:   order.invoice.totalAmount.toString(),
+    } : null,
+    warehouseTask: order.warehouseTask ? {
+      id:          order.warehouseTask.id,
+      status:      order.warehouseTask.status,
+      completedAt: order.warehouseTask.completedAt?.toISOString() ?? null,
+      completedBy: order.warehouseTask.completedBy?.name ?? null,
+    } : null,
+    deliveryBooking: order.deliveryBooking ? {
+      id:             order.deliveryBooking.id,
+      bookingStatus:  order.deliveryBooking.bookingStatus,
+      serviceType:    order.deliveryBooking.serviceType,
+      quotedPriceMyr: order.deliveryBooking.quotedPriceMyr?.toString() ?? null,
+      shareLink:      order.deliveryBooking.shareLink,
+      driverName:     order.deliveryBooking.driverName,
+      driverPhone:    order.deliveryBooking.driverPhone,
+      plateNumber:    order.deliveryBooking.plateNumber,
+      bookedAt:       order.deliveryBooking.bookedAt?.toISOString() ?? null,
+      retryCount:     order.deliveryBooking.retryCount,
+    } : null,
   }
 
   return (

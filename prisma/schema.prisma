@@ -56,6 +56,8 @@ model User {
   quotationStatusChanges    QuotationStatusHistory[]
   customerCompany           Company?                  @relation("CustomerPortalUser", fields: [customerCompanyId], references: [id])
   pushSubscriptions         PushSubscription[]
+  invoicesIssued            Invoice[]                 @relation("InvoiceIssuedBy")
+  warehouseTasksCompleted   WarehouseTask[]           @relation("WarehouseTaskCompleted")
 
   @@map("users")
 }
@@ -125,6 +127,7 @@ model Company {
   duplicateCandidateB DuplicateDetectionQueue[] @relation("DuplicateCandidateB")
   qneStagingMatches   QneCustomerStaging[]
   portalUsers         User[]                    @relation("CustomerPortalUser")
+  invoices            Invoice[]
 
   @@map("companies")
 }
@@ -166,6 +169,8 @@ model CompanyAddress {
   country     String   @default("Malaysia")
   isDefault   Boolean  @default(false) @map("is_default")
   isActive    Boolean  @default(true) @map("is_active")
+  lat         String?
+  lng         String?
   createdAt   DateTime @default(now()) @map("created_at")
 
   company     Company  @relation(fields: [companyId], references: [id])
@@ -599,10 +604,13 @@ model Order {
   createdAt        DateTime  @default(now()) @map("created_at")
   createdById      String    @map("created_by")
 
-  company   Company    @relation(fields: [companyId], references: [id])
-  quotation Quotation? @relation(fields: [quotationId], references: [id])
-  createdBy User       @relation(fields: [createdById], references: [id])
-  items     OrderItem[]
+  company         Company          @relation(fields: [companyId], references: [id])
+  quotation       Quotation?       @relation(fields: [quotationId], references: [id])
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  items           OrderItem[]
+  invoice         Invoice?
+  deliveryBooking DeliveryBooking?
+  warehouseTask   WarehouseTask?
 
   @@map("orders")
 }
@@ -769,4 +777,67 @@ model PushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("push_subscriptions")
+}
+
+// ============================================================
+// DOMAIN 11 — ORDER FULFILMENT PIPELINE
+// ============================================================
+
+model Invoice {
+  id            String    @id @default(uuid())
+  orderId       String    @unique @map("order_id")
+  companyId     String    @map("company_id")
+  invoiceNo     String    @unique @map("invoice_no")
+  qneRef        String?   @map("qne_ref")
+  qnePushStatus String    @default("pending") @map("qne_push_status")
+  qnePushedAt   DateTime? @map("qne_pushed_at")
+  currency      String    @default("MYR")
+  totalAmount   Decimal   @map("total_amount") @db.Decimal(14, 4)
+  issuedAt      DateTime  @default(now()) @map("issued_at")
+  issuedById    String    @map("issued_by")
+  notes         String?   @db.Text
+
+  order     Order   @relation(fields: [orderId],   references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
+  issuedBy  User    @relation("InvoiceIssuedBy", fields: [issuedById], references: [id])
+
+  @@map("invoices")
+}
+
+model DeliveryBooking {
+  id                 String    @id @default(uuid())
+  orderId            String    @unique @map("order_id")
+  lalamoveOrderRef   String?   @map("lalamove_order_ref")
+  serviceType        String?   @map("service_type")
+  quotedPriceMyr     Decimal?  @map("quoted_price_myr") @db.Decimal(10, 2)
+  shareLink          String?   @map("share_link")
+  driverName         String?   @map("driver_name")
+  driverPhone        String?   @map("driver_phone")
+  plateNumber        String?   @map("plate_number")
+  bookingStatus      String    @default("pending") @map("booking_status")
+  bookedAt           DateTime? @map("booked_at")
+  driverAssignedAt   DateTime? @map("driver_assigned_at")
+  retryCount         Int       @default(0) @map("retry_count")
+  nextRetryAt        DateTime? @map("next_retry_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("delivery_bookings")
+}
+
+model WarehouseTask {
+  id            String    @id @default(uuid())
+  orderId       String    @unique @map("order_id")
+  status        String    @default("pending")
+  notes         String?   @db.Text
+  completedAt   DateTime? @map("completed_at")
+  completedById String?   @map("completed_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  order       Order @relation(fields: [orderId],       references: [id])
+  completedBy User? @relation("WarehouseTaskCompleted", fields: [completedById], references: [id])
+
+  @@map("warehouse_tasks")
 }

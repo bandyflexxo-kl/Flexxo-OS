@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { STATUS_COLORS } from '@/lib/orderStatus'
 
 type OrderItem = {
   id:          string
@@ -18,6 +19,34 @@ type StatusActivity = {
   performedBy: string | null
   createdAt:   string
 }
+
+type InvoiceInfo = {
+  id:           string
+  invoiceNo:    string
+  issuedAt:     string
+  qnePushStatus: string
+  totalAmount:  string
+} | null
+
+type WarehouseTaskInfo = {
+  id:          string
+  status:      string
+  completedAt: string | null
+  completedBy: string | null
+} | null
+
+type DeliveryBookingInfo = {
+  id:               string
+  bookingStatus:    string
+  serviceType:      string | null
+  quotedPriceMyr:   string | null
+  shareLink:        string | null
+  driverName:       string | null
+  driverPhone:      string | null
+  plateNumber:      string | null
+  bookedAt:         string | null
+  retryCount:       number
+} | null
 
 export type OrderDetailProps = {
   id:               string
@@ -37,23 +66,12 @@ export type OrderDetailProps = {
   items:            OrderItem[]
   statusActivities: StatusActivity[]
   userRole:         string
+  invoice:          InvoiceInfo
+  warehouseTask:    WarehouseTaskInfo
+  deliveryBooking:  DeliveryBookingInfo
 }
 
-const STATUS_STEPS = ['Confirmed', 'Processing', 'Shipped', 'Delivered'] as const
-type OrderStatus = (typeof STATUS_STEPS)[number]
-
-const STATUS_COLORS: Record<string, string> = {
-  Confirmed:  'bg-blue-100 text-blue-700',
-  Processing: 'bg-yellow-100 text-yellow-700',
-  Shipped:    'bg-purple-100 text-purple-700',
-  Delivered:  'bg-green-100 text-green-700',
-}
-
-function nextStatus(current: string): OrderStatus | null {
-  const idx = STATUS_STEPS.indexOf(current as OrderStatus)
-  if (idx < 0 || idx >= STATUS_STEPS.length - 1) return null
-  return STATUS_STEPS[idx + 1]
-}
+const STATUS_STEPS = ['Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering', 'Delivered'] as const
 
 export default function OrderDetail({ initial }: { initial: OrderDetailProps }) {
   const router = useRouter()
@@ -62,7 +80,10 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
   const [poNumber,    setPoNumber]    = useState(initial.customerPoNumber ?? '')
   const [invoiceRef,  setInvoiceRef]  = useState(initial.qneInvoiceRef ?? '')
   const [doRef,       setDoRef]       = useState(initial.qneDoRef ?? '')
-  const [updating,    setUpdating]    = useState(false)
+  const [invoice,     setInvoice]     = useState(initial.invoice)
+  const [delivery,    setDelivery]    = useState(initial.deliveryBooking)
+  const [approving,   setApproving]   = useState(false)
+  const [booking,     setBooking]     = useState(false)
   const [savingPo,    setSavingPo]    = useState(false)
   const [savingRefs,  setSavingRefs]  = useState(false)
   const [error,       setError]       = useState<string | null>(null)
@@ -70,24 +91,43 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
   const [loadingDo,   setLoadingDo]   = useState(false)
 
   const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
-  const next         = nextStatus(status)
+  const currentIdx   = STATUS_STEPS.indexOf(status as typeof STATUS_STEPS[number])
 
-  async function advanceStatus() {
-    if (!next) return
-    setUpdating(true)
+  // ── Approve order ──────────────────────────────────────────────────────────
+  async function approveOrder() {
+    setApproving(true)
     setError(null)
     try {
-      const res  = await fetch(`/api/orders/${initial.id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ status: next }),
+      const res  = await fetch(`/api/orders/${initial.id}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json() as { ok?: boolean; invoiceNo?: string; invoiceId?: string; warehouseTaskId?: string; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Approve failed'); return }
+      setStatus('Approved')
+      setInvoice(prev => prev ?? {
+        id:            data.invoiceId ?? '',
+        invoiceNo:     data.invoiceNo ?? '',
+        issuedAt:      new Date().toISOString(),
+        qnePushStatus: 'pending',
+        totalAmount:   initial.totalAmount ?? '0',
       })
-      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
-      if (!res.ok) { setError(data.error ?? 'Failed'); return }
-      setStatus(data.status ?? next)
       router.refresh()
     } finally {
-      setUpdating(false)
+      setApproving(false)
+    }
+  }
+
+  // ── Book delivery manually ────────────────────────────────────────────────
+  async function bookDelivery() {
+    setBooking(true)
+    setError(null)
+    try {
+      const res  = await fetch(`/api/orders/${initial.id}/book-delivery`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; shareLink?: string; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Booking failed'); return }
+      setStatus('Delivering')
+      setDelivery(prev => prev ? { ...prev, bookingStatus: 'booked', shareLink: data.shareLink ?? null } : prev)
+      router.refresh()
+    } finally {
+      setBooking(false)
     }
   }
 
@@ -95,29 +135,20 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
     setSavingPo(true)
     try {
       await fetch(`/api/orders/${initial.id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ customerPoNumber: poNumber || null }),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerPoNumber: poNumber || null }),
       })
-    } finally {
-      setSavingPo(false)
-    }
+    } finally { setSavingPo(false) }
   }
 
   async function saveRefs() {
     setSavingRefs(true)
     try {
       await fetch(`/api/orders/${initial.id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          qneInvoiceRef: invoiceRef || null,
-          qneDoRef:      doRef      || null,
-        }),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qneInvoiceRef: invoiceRef || null, qneDoRef: doRef || null }),
       })
-    } finally {
-      setSavingRefs(false)
-    }
+    } finally { setSavingRefs(false) }
   }
 
   async function fetchDeliveryOrder() {
@@ -125,14 +156,10 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
     try {
       const res  = await fetch(`/api/orders/${initial.id}/qne-do`)
       const data = await res.json() as Record<string, unknown>
-      if (!res.ok) { setError((data.message as string) ?? 'Failed to fetch delivery order'); return }
+      if (!res.ok) { setError((data.message as string) ?? 'Failed'); return }
       setDoData(data)
-    } finally {
-      setLoadingDo(false)
-    }
+    } finally { setLoadingDo(false) }
   }
-
-  const currentIdx = STATUS_STEPS.indexOf(status as OrderStatus)
 
   return (
     <div className="space-y-6 pb-16">
@@ -160,7 +187,7 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
                 </>
               )}
               <span>·</span>
-              <span>Created by {initial.createdBy.name}</span>
+              <span>By {initial.createdBy.name}</span>
               <span>·</span>
               <span>{new Date(initial.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </div>
@@ -171,51 +198,182 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
         </div>
       </div>
 
+      {/* ── Approve button (Confirmed only) ── */}
+      {isPrivileged && status === 'Confirmed' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="font-semibold text-amber-900 text-sm">Action required — review and approve this order</p>
+            <p className="text-xs text-amber-700 mt-0.5">Approving will issue an invoice and send a picking task to the warehouse.</p>
+          </div>
+          {error && <p className="text-sm text-red-600 w-full">{error}</p>}
+          <button
+            onClick={approveOrder}
+            disabled={approving}
+            className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm rounded-xl disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {approving ? 'Approving…' : '✓ Approve Order'}
+          </button>
+        </div>
+      )}
+
       {/* ── Status stepper ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Order Progress</h2>
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-0 overflow-x-auto pb-1">
           {STATUS_STEPS.map((step, idx) => (
-            <div key={step} className="flex items-center flex-1 last:flex-none">
-              <div className="flex flex-col items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-colors ${
-                  idx < currentIdx
-                    ? 'bg-green-500 border-green-500 text-white'
-                    : idx === currentIdx
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-white border-gray-300 text-gray-400'
+            <div key={step} className="flex items-center flex-1 last:flex-none min-w-0">
+              <div className="flex flex-col items-center flex-1 min-w-0">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-colors ${
+                  idx < currentIdx  ? 'bg-green-500 border-green-500 text-white'
+                  : idx === currentIdx ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-400'
                 }`}>
                   {idx < currentIdx ? '✓' : idx + 1}
                 </div>
-                <p className={`text-xs mt-1.5 font-medium text-center leading-tight ${
-                  idx <= currentIdx ? 'text-gray-800' : 'text-gray-400'
-                }`}>{step}</p>
+                <p className={`text-xs mt-1 font-medium text-center leading-tight px-0.5 ${idx <= currentIdx ? 'text-gray-800' : 'text-gray-400'}`}>
+                  {step}
+                </p>
               </div>
               {idx < STATUS_STEPS.length - 1 && (
-                <div className={`h-0.5 flex-1 mx-1 -mt-5 ${idx < currentIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
+                <div className={`h-0.5 flex-1 mx-0.5 -mt-5 shrink-0 ${idx < currentIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
               )}
             </div>
           ))}
         </div>
 
-        {isPrivileged && next && status !== 'Delivered' && (
-          <div className="mt-5 pt-4 border-t border-gray-100 flex items-center gap-3">
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <button
-              onClick={advanceStatus}
-              disabled={updating}
-              className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {updating ? 'Updating…' : `Mark as ${next}`}
-            </button>
-          </div>
-        )}
         {status === 'Delivered' && initial.deliveredAt && (
           <p className="mt-4 text-sm text-green-700 font-medium">
-            ✓ Delivered on {new Date(initial.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
+            ✓ Delivered {new Date(initial.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         )}
+
+        {/* Manual book-delivery button when Packed */}
+        {isPrivileged && status === 'Packed' && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
+            <button
+              onClick={bookDelivery}
+              disabled={booking}
+              className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+            >
+              {booking ? 'Booking…' : '🚗 Book Lalamove Now'}
+            </button>
+            <p className="text-xs text-gray-400 mt-1.5">Or wait for the 10am / 1:45pm auto-booking cron.</p>
+          </div>
+        )}
       </div>
+
+      {/* ── Invoice Panel ── */}
+      {invoice && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Invoice</h2>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              invoice.qnePushStatus === 'pushed'  ? 'bg-green-100 text-green-700' :
+              invoice.qnePushStatus === 'failed'  ? 'bg-red-100 text-red-700' :
+              'bg-gray-100 text-gray-500'
+            }`}>
+              QNE: {invoice.qnePushStatus}
+            </span>
+          </div>
+          <div className="flex items-center gap-6 text-sm">
+            <div>
+              <p className="text-xs text-gray-400">Invoice No</p>
+              <p className="font-mono font-semibold text-gray-900">{invoice.invoiceNo}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Amount</p>
+              <p className="font-semibold text-gray-900">{initial.currency} {Number(invoice.totalAmount).toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Issued</p>
+              <p className="text-gray-700">{new Date(invoice.issuedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Warehouse Task Panel ── */}
+      {initial.warehouseTask && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-2">
+          <h2 className="text-sm font-semibold text-gray-700">Warehouse Task</h2>
+          <div className="flex items-center gap-3 text-sm">
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+              initial.warehouseTask.status === 'done'        ? 'bg-green-100 text-green-700' :
+              initial.warehouseTask.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {initial.warehouseTask.status}
+            </span>
+            {initial.warehouseTask.completedAt && (
+              <span className="text-gray-500">
+                Completed {new Date(initial.warehouseTask.completedAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {initial.warehouseTask.completedBy && ` by ${initial.warehouseTask.completedBy}`}
+              </span>
+            )}
+            {initial.warehouseTask.status === 'pending' && (
+              <Link href="/warehouse" className="text-blue-600 hover:underline text-xs">View in Warehouse →</Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Delivery Booking Panel ── */}
+      {delivery && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Delivery (Lalamove)</h2>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              delivery.bookingStatus === 'completed'       ? 'bg-green-100 text-green-700' :
+              delivery.bookingStatus === 'driver_assigned' ? 'bg-blue-100 text-blue-700' :
+              delivery.bookingStatus === 'booked'          ? 'bg-purple-100 text-purple-700' :
+              delivery.bookingStatus === 'failed'          ? 'bg-red-100 text-red-700' :
+              'bg-gray-100 text-gray-500'
+            }`}>
+              {delivery.bookingStatus}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+            {delivery.serviceType && (
+              <div><p className="text-xs text-gray-400">Service</p><p className="font-medium">{delivery.serviceType}</p></div>
+            )}
+            {delivery.quotedPriceMyr && (
+              <div><p className="text-xs text-gray-400">Price</p><p className="font-medium">MYR {Number(delivery.quotedPriceMyr).toFixed(2)}</p></div>
+            )}
+            {delivery.driverName && (
+              <div><p className="text-xs text-gray-400">Driver</p><p className="font-medium">{delivery.driverName}</p></div>
+            )}
+            {delivery.driverPhone && (
+              <div><p className="text-xs text-gray-400">Driver Phone</p><p className="font-medium">{delivery.driverPhone}</p></div>
+            )}
+            {delivery.plateNumber && (
+              <div><p className="text-xs text-gray-400">Plate</p><p className="font-mono font-medium">{delivery.plateNumber}</p></div>
+            )}
+            {delivery.retryCount > 0 && (
+              <div><p className="text-xs text-gray-400">Retries</p><p className="font-medium text-red-600">{delivery.retryCount}</p></div>
+            )}
+          </div>
+          {delivery.shareLink && (
+            <a
+              href={delivery.shareLink}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium"
+            >
+              🔗 Track Delivery
+            </a>
+          )}
+          {isPrivileged && status === 'Packed' && (
+            <button
+              onClick={bookDelivery}
+              disabled={booking}
+              className="px-4 py-1.5 text-xs rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors"
+            >
+              {booking ? 'Booking…' : 'Retry Booking'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Items table ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -239,12 +397,8 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
                   {item.qneItemCode && <p className="text-xs text-gray-300 font-mono">{item.qneItemCode}</p>}
                 </td>
                 <td className="px-4 py-3 text-right text-gray-700">{Number(item.qty).toFixed(0)}</td>
-                <td className="px-4 py-3 text-right text-gray-700">
-                  {initial.currency} {Number(item.unitPrice).toFixed(2)}
-                </td>
-                <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                  {initial.currency} {Number(item.lineTotal).toFixed(2)}
-                </td>
+                <td className="px-4 py-3 text-right text-gray-700">{initial.currency} {Number(item.unitPrice).toFixed(2)}</td>
+                <td className="px-4 py-3 text-right font-semibold text-gray-900">{initial.currency} {Number(item.lineTotal).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -282,50 +436,27 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">QNE Invoice No</label>
-              <input
-                type="text"
-                placeholder="e.g. IV-2024-00123"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={invoiceRef}
-                onChange={e => setInvoiceRef(e.target.value)}
-              />
+              <input type="text" placeholder="e.g. IV-2024-00123" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">QNE Delivery Order No</label>
-              <input
-                type="text"
-                placeholder="e.g. DO-2024-00123"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={doRef}
-                onChange={e => setDoRef(e.target.value)}
-              />
+              <input type="text" placeholder="e.g. DO-2024-00123" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" value={doRef} onChange={e => setDoRef(e.target.value)} />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={saveRefs}
-              disabled={savingRefs}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
+            <button onClick={saveRefs} disabled={savingRefs} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
               {savingRefs ? 'Saving…' : 'Save References'}
             </button>
             {doRef && (
-              <button
-                onClick={fetchDeliveryOrder}
-                disabled={loadingDo}
-                className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-              >
+              <button onClick={fetchDeliveryOrder} disabled={loadingDo} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
                 {loadingDo ? 'Fetching…' : '📦 View DO from QNE'}
               </button>
             )}
           </div>
-
           {doData && (
             <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 p-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">QNE Delivery Order</p>
-              <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-auto max-h-64">
-                {JSON.stringify(doData, null, 2)}
-              </pre>
+              <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-auto max-h-64">{JSON.stringify(doData, null, 2)}</pre>
             </div>
           )}
         </div>
@@ -343,10 +474,7 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
                   <span className="font-medium text-gray-900">{a.subject}</span>
                   {a.performedBy && <span className="ml-1.5 text-xs text-gray-400">by {a.performedBy}</span>}
                   <span className="ml-2 text-xs text-gray-400">
-                    {new Date(a.createdAt).toLocaleDateString('en-MY', {
-                      day: 'numeric', month: 'short', year: 'numeric',
-                      hour: '2-digit', minute: '2-digit',
-                    })}
+                    {new Date(a.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>

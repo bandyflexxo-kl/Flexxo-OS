@@ -19,7 +19,7 @@ async function main() {
   console.log('Seeding Flexxo Sales OS...')
 
   // --- Roles ---
-  const roles = ['Admin', 'Manager', 'Salesperson', 'Viewer', 'B2B Client']
+  const roles = ['Admin', 'Manager', 'Salesperson', 'Viewer', 'B2B Client', 'Warehouse']
   for (const name of roles) {
     await prisma.role.upsert({
       where: { name },

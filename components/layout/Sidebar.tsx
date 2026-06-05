@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/activities', label: 'Activities', icon: '📋',  roles: null },
   { href: '/quotations', label: 'Quotations', icon: '📄',  roles: null },
   { href: '/orders',     label: 'Orders',     icon: '📦',  roles: null },
+  { href: '/warehouse',  label: 'Warehouse',  icon: '🏭',  roles: ['Admin', 'Manager', 'Warehouse'] },
   { href: '/reports',    label: 'Reports',    icon: '📊',  roles: ['Admin', 'Manager'] },
   { href: '/admin',      label: 'Admin',      icon: '⚙',   roles: ['Admin', 'Manager'] },
 ] as const

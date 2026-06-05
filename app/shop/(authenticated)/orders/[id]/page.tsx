@@ -2,6 +2,7 @@ import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { toPortalStatus } from '@/lib/orderStatus'
 
 const STEPS = ['Confirmed', 'Processing', 'Shipped', 'Delivered'] as const
 type Step = (typeof STEPS)[number]
@@ -48,7 +49,9 @@ export default async function ShopOrderDetailPage({
 
   if (!order || order.companyId !== session.customerCompanyId) notFound()
 
-  const currentStepIdx = STEPS.indexOf(order.status as Step)
+  // Map internal pipeline statuses to the simplified 4-step portal view
+  const portalStatus   = toPortalStatus(order.status) as Step
+  const currentStepIdx = STEPS.indexOf(portalStatus)
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
