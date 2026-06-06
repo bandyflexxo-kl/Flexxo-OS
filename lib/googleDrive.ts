@@ -55,24 +55,34 @@ export async function listDriveFolder(
   refreshToken: string,
   folderId:     string,
 ): Promise<DriveItem[]> {
-  const drive = getDriveClient(refreshToken)
+  const drive     = getDriveClient(refreshToken)
+  const allItems: DriveItem[] = []
+  let pageToken: string | undefined = undefined
 
-  const res = await drive.files.list({
-    q:       `'${folderId}' in parents and trashed = false`,
-    fields:  'files(id,name,mimeType,modifiedTime,size)',
-    orderBy: 'folder,name',
-    pageSize: 200,
-  })
+  do {
+    const res = await drive.files.list({
+      q:        `'${folderId}' in parents and trashed = false`,
+      fields:   'files(id,name,mimeType,modifiedTime,size),nextPageToken',
+      orderBy:  'folder,name',
+      pageSize: 200,
+      pageToken,
+    })
 
-  return (res.data.files ?? []).map(f => ({
-    id:           f.id           ?? '',
-    name:         f.name         ?? '',
-    mimeType:     f.mimeType     ?? '',
-    modifiedTime: f.modifiedTime ?? null,
-    size:         f.size         ?? null,
-    isFolder:     f.mimeType === 'application/vnd.google-apps.folder',
-    isPdf:        f.mimeType === 'application/pdf',
-  }))
+    const items = (res.data.files ?? []).map(f => ({
+      id:           f.id           ?? '',
+      name:         f.name         ?? '',
+      mimeType:     f.mimeType     ?? '',
+      modifiedTime: f.modifiedTime ?? null,
+      size:         f.size         ?? null,
+      isFolder:     f.mimeType === 'application/vnd.google-apps.folder',
+      isPdf:        f.mimeType === 'application/pdf',
+    }))
+
+    allItems.push(...items)
+    pageToken = res.data.nextPageToken ?? undefined
+  } while (pageToken)
+
+  return allItems
 }
 
 // Recursively list ALL files in a folder and its subfolders (up to maxDepth levels)

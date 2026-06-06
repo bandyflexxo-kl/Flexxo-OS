@@ -2,10 +2,15 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { listDriveFolderRecursive, normaliseStem } from '@/lib/googleDrive'
 
-export async function POST() {
+type MatchHow = 'exact' | 'fuzzy' | 'name_exact' | 'name_fuzzy' | 'brand_name'
+
+export async function POST(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+
+  const url    = new URL(request.url)
+  const dryRun = url.searchParams.get('dryRun') === 'true'
 
   // Folder ID: env var takes priority, fallback to SystemSetting saved via /admin/settings
   const folderSetting = await prisma.systemSetting.findUnique({ where: { key: 'google_drive_photos_folder_id' } })
@@ -27,45 +32,75 @@ export async function POST() {
   const items = await listDriveFolderRecursive(adminUser.googleRefreshToken, folderId)
 
   // Build two maps for matching:
-  //   exactMap: exact stem (uppercase, with punctuation) → Drive file ID
-  //   fuzzyMap: normalised stem (alphanumeric only) → Drive file ID
+  //   exactMap: exact stem (uppercase) → Drive file ID
+  //   fuzzyMap: normalised stem (alphanumeric only, uppercase) → Drive file ID
   const exactMap = new Map<string, string>()
   const fuzzyMap = new Map<string, string>()
 
   for (const item of items) {
-    const stem      = item.name.replace(/\.[^.]+$/, '').trim()
-    const exactKey  = stem.toUpperCase()
-    const fuzzyKey  = normaliseStem(stem)
+    const stem     = item.name.replace(/\.[^.]+$/, '').trim()
+    const exactKey = stem.toUpperCase()
+    const fuzzyKey = normaliseStem(stem)
     if (!exactMap.has(exactKey)) exactMap.set(exactKey, item.id)
     if (!fuzzyMap.has(fuzzyKey)) fuzzyMap.set(fuzzyKey, item.id)
   }
 
-  // Fetch all products with a QNE item code or internal SKU
+  // Fetch ALL active products — include name + brand for name-based matching
   const products = await prisma.product.findMany({
-    where:  { isActive: true, OR: [{ qneItemCode: { not: null } }, { internalSku: { not: null } }] },
-    select: { id: true, qneItemCode: true, internalSku: true, googleDrivePhotoId: true },
+    where:  { isActive: true },
+    select: { id: true, qneItemCode: true, internalSku: true, name: true, brand: true, googleDrivePhotoId: true },
   })
 
   let matched    = 0
   let alreadySet = 0
   let notFound   = 0
-  const matchedProducts: { name?: string; code: string; fileId: string; how: 'exact' | 'fuzzy' }[] = []
+
+  const byTier: Record<MatchHow, number> = {
+    exact: 0, fuzzy: 0, name_exact: 0, name_fuzzy: 0, brand_name: 0,
+  }
+
+  const matchedProducts: { code: string; name: string; fileId: string; how: MatchHow }[] = []
   const unmatchedCodes:  string[] = []
 
   for (const product of products) {
     const code = (product.qneItemCode ?? product.internalSku ?? '').trim()
-    if (!code) { notFound++; continue }
 
-    const exactKey = code.toUpperCase()
-    const fuzzyKey = normaliseStem(code)
+    let fileId: string | null = null
+    let how: MatchHow = 'exact'
 
-    // Try exact match first, then fuzzy
-    const fileId = exactMap.get(exactKey) ?? fuzzyMap.get(fuzzyKey) ?? null
-    const how    = exactMap.has(exactKey) ? 'exact' : 'fuzzy'
+    // Tier 1: exact stock code
+    if (code) {
+      const ek = code.toUpperCase()
+      if (exactMap.has(ek)) { fileId = exactMap.get(ek)!; how = 'exact' }
+    }
+
+    // Tier 2: fuzzy stock code (strip punctuation/spaces)
+    if (!fileId && code) {
+      const fk = normaliseStem(code)
+      if (fuzzyMap.has(fk)) { fileId = fuzzyMap.get(fk)!; how = 'fuzzy' }
+    }
+
+    // Tier 3: exact product name
+    if (!fileId && product.name) {
+      const nk = product.name.toUpperCase()
+      if (exactMap.has(nk)) { fileId = exactMap.get(nk)!; how = 'name_exact' }
+    }
+
+    // Tier 4: fuzzy product name
+    if (!fileId && product.name) {
+      const nk = normaliseStem(product.name)
+      if (fuzzyMap.has(nk)) { fileId = fuzzyMap.get(nk)!; how = 'name_fuzzy' }
+    }
+
+    // Tier 5: fuzzy brand + name combined (e.g. "PILOT" + "G2 Pen" → "PILOTG2PEN.jpg")
+    if (!fileId && product.brand && product.name) {
+      const bnk = normaliseStem(product.brand + ' ' + product.name)
+      if (fuzzyMap.has(bnk)) { fileId = fuzzyMap.get(bnk)!; how = 'brand_name' }
+    }
 
     if (!fileId) {
       notFound++
-      unmatchedCodes.push(code)
+      if (code) unmatchedCodes.push(code)
       continue
     }
 
@@ -74,21 +109,30 @@ export async function POST() {
       continue
     }
 
-    await prisma.product.update({
-      where: { id: product.id },
-      data:  { googleDrivePhotoId: fileId },
-    })
+    // In dryRun mode: count only, skip DB writes
+    if (!dryRun) {
+      await prisma.product.update({
+        where: { id: product.id },
+        data:  { googleDrivePhotoId: fileId },
+      })
+    }
+
     matched++
-    matchedProducts.push({ code, fileId, how })
+    byTier[how]++
+    matchedProducts.push({ code: code || product.name, name: product.name, fileId, how })
   }
 
   return Response.json({
+    dryRun,
     matched,
     alreadySet,
     notFound,
-    total:          products.length,
-    driveFiles:     items.length,
-    unmatchedCodes: unmatchedCodes.slice(0, 30),   // first 30 unmatched for display
-    matchedProducts: matchedProducts.slice(0, 30), // first 30 new matches for display
+    total:           products.length,
+    driveFiles:      items.length,
+    byTier,
+    unmatchedCodes:  unmatchedCodes.slice(0, 30),
+    matchedProducts: matchedProducts.slice(0, 50),
+    // Diagnostic: show sample Drive filenames so admin can see naming convention
+    sampleDriveFiles: items.slice(0, 30).map(i => i.name),
   })
 }

@@ -2,6 +2,8 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { listDriveFolderRecursive, normaliseStem } from '@/lib/googleDrive'
 
+type MatchHow = 'exact' | 'fuzzy' | 'name_exact' | 'name_fuzzy' | 'brand_name'
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -20,36 +22,61 @@ export async function POST(
   }
 
   const [product, adminUser] = await Promise.all([
-    prisma.product.findUnique({ where: { id }, select: { id: true, name: true, qneItemCode: true, internalSku: true } }),
+    prisma.product.findUnique({
+      where:  { id },
+      select: { id: true, name: true, brand: true, qneItemCode: true, internalSku: true },
+    }),
     prisma.user.findUnique({ where: { id: session.userId }, select: { googleRefreshToken: true } }),
   ])
 
   if (!product) return Response.json({ error: 'Product not found' }, { status: 404 })
-
-  const code = (product.qneItemCode ?? product.internalSku ?? '').trim()
-  if (!code) return Response.json({ error: 'Product has no QNE item code or SKU to match on.' }, { status: 400 })
   if (!adminUser?.googleRefreshToken) return Response.json({ error: 'Google Drive not connected.' }, { status: 403 })
 
   // Recursive scan
-  const items     = await listDriveFolderRecursive(adminUser.googleRefreshToken, folderId)
+  const items = await listDriveFolderRecursive(adminUser.googleRefreshToken, folderId)
 
-  const exactKey  = code.toUpperCase()
-  const fuzzyKey  = normaliseStem(code)
+  const code = (product.qneItemCode ?? product.internalSku ?? '').trim()
 
-  // Try exact match first
-  let match = items.find(i => i.name.replace(/\.[^.]+$/, '').trim().toUpperCase() === exactKey)
-  let how: 'exact' | 'fuzzy' = 'exact'
+  let match: (typeof items)[number] | undefined
+  let how: MatchHow = 'exact'
 
-  // Fallback: fuzzy (strip non-alphanumeric)
-  if (!match) {
-    match = items.find(i => normaliseStem(i.name.replace(/\.[^.]+$/, '')) === fuzzyKey)
-    how   = 'fuzzy'
+  // Tier 1: exact stock code
+  if (code) {
+    match = items.find(i => i.name.replace(/\.[^.]+$/, '').trim().toUpperCase() === code.toUpperCase())
+    if (match) how = 'exact'
+  }
+
+  // Tier 2: fuzzy stock code
+  if (!match && code) {
+    const fk = normaliseStem(code)
+    match = items.find(i => normaliseStem(i.name.replace(/\.[^.]+$/, '')) === fk)
+    if (match) how = 'fuzzy'
+  }
+
+  // Tier 3: exact product name
+  if (!match && product.name) {
+    match = items.find(i => i.name.replace(/\.[^.]+$/, '').trim().toUpperCase() === product.name.toUpperCase())
+    if (match) how = 'name_exact'
+  }
+
+  // Tier 4: fuzzy product name
+  if (!match && product.name) {
+    const nk = normaliseStem(product.name)
+    match = items.find(i => normaliseStem(i.name.replace(/\.[^.]+$/, '')) === nk)
+    if (match) how = 'name_fuzzy'
+  }
+
+  // Tier 5: fuzzy brand + name
+  if (!match && product.brand && product.name) {
+    const bnk = normaliseStem(product.brand + ' ' + product.name)
+    match = items.find(i => normaliseStem(i.name.replace(/\.[^.]+$/, '')) === bnk)
+    if (match) how = 'brand_name'
   }
 
   if (!match) {
     return Response.json({
       found:   false,
-      message: `No photo found for code "${code}". Searched ${items.length} files (including subfolders).`,
+      message: `No photo found for "${product.name}"${code ? ` (code: ${code})` : ''}. Searched ${items.length} files (including subfolders).`,
     })
   }
 

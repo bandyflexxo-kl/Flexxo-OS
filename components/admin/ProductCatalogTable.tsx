@@ -33,14 +33,18 @@ export default function ProductCatalogTable({
   const [error,          setError]          = useState<string | null>(null)
   const [success,        setSuccess]        = useState<string | null>(null)
   const [scanning,       setScanning]       = useState(false)
+  const [previewing,     setPreviewing]     = useState(false)
   const [scanResult,     setScanResult]     = useState<{
+    dryRun:          boolean
     matched:         number
     alreadySet:      number
     notFound:        number
     total:           number
     driveFiles:      number
-    unmatchedCodes:  string[]
-    matchedProducts: { code: string; how: 'exact' | 'fuzzy' }[]
+    byTier:           Record<string, number>
+    unmatchedCodes:   string[]
+    matchedProducts:  { code: string; name: string; fileId: string; how: string }[]
+    sampleDriveFiles: string[]
   } | null>(null)
   const [search,         setSearch]         = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -139,6 +143,38 @@ export default function ProductCatalogTable({
     }
   }
 
+  // ── Preview match (dry run — no DB writes) ──────────────────────────────
+  async function previewMatch() {
+    setPreviewing(true)
+    setScanResult(null)
+    setError(null)
+    try {
+      const res  = await fetch('/api/admin/products/scan-photos?dryRun=true', { method: 'POST' })
+      const data = await res.json() as {
+        dryRun?: boolean; matched?: number; alreadySet?: number; notFound?: number; total?: number
+        driveFiles?: number; byTier?: Record<string, number>; unmatchedCodes?: string[]
+        matchedProducts?: { code: string; name: string; fileId: string; how: string }[]
+        sampleDriveFiles?: string[]
+        error?: string
+      }
+      if (!res.ok) { setError(data.error ?? 'Preview failed'); return }
+      setScanResult({
+        dryRun:           true,
+        matched:          data.matched          ?? 0,
+        alreadySet:       data.alreadySet       ?? 0,
+        notFound:         data.notFound         ?? 0,
+        total:            data.total            ?? 0,
+        driveFiles:       data.driveFiles       ?? 0,
+        byTier:           data.byTier           ?? {},
+        unmatchedCodes:   data.unmatchedCodes   ?? [],
+        matchedProducts:  data.matchedProducts  ?? [],
+        sampleDriveFiles: data.sampleDriveFiles ?? [],
+      })
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   // ── Scan all photos ──────────────────────────────────────────────────────
   async function scanAllPhotos() {
     setScanning(true)
@@ -147,20 +183,24 @@ export default function ProductCatalogTable({
     try {
       const res  = await fetch('/api/admin/products/scan-photos', { method: 'POST' })
       const data = await res.json() as {
-        matched?: number; alreadySet?: number; notFound?: number; total?: number
-        driveFiles?: number; unmatchedCodes?: string[]
-        matchedProducts?: { code: string; how: 'exact' | 'fuzzy' }[]
+        dryRun?: boolean; matched?: number; alreadySet?: number; notFound?: number; total?: number
+        driveFiles?: number; byTier?: Record<string, number>; unmatchedCodes?: string[]
+        matchedProducts?: { code: string; name: string; fileId: string; how: string }[]
+        sampleDriveFiles?: string[]
         error?: string
       }
       if (!res.ok) { setError(data.error ?? 'Scan failed'); return }
       setScanResult({
-        matched:         data.matched         ?? 0,
-        alreadySet:      data.alreadySet      ?? 0,
-        notFound:        data.notFound        ?? 0,
-        total:           data.total           ?? 0,
-        driveFiles:      data.driveFiles      ?? 0,
-        unmatchedCodes:  data.unmatchedCodes  ?? [],
-        matchedProducts: data.matchedProducts ?? [],
+        dryRun:           false,
+        matched:          data.matched          ?? 0,
+        alreadySet:       data.alreadySet       ?? 0,
+        notFound:         data.notFound         ?? 0,
+        total:            data.total            ?? 0,
+        driveFiles:       data.driveFiles       ?? 0,
+        byTier:           data.byTier           ?? {},
+        unmatchedCodes:   data.unmatchedCodes   ?? [],
+        matchedProducts:  data.matchedProducts  ?? [],
+        sampleDriveFiles: data.sampleDriveFiles ?? [],
       })
       // Refresh product list to reflect new photo IDs
       const listRes = await fetch('/api/admin/products')
@@ -172,11 +212,13 @@ export default function ProductCatalogTable({
   }
 
   // ── Bulk visibility ──────────────────────────────────────────────────────
-  async function bulkSetVisible(makeVisible: boolean) {
+  async function bulkSetVisible(makeVisible: boolean, hasPhoto = false) {
     const catName    = allCategories.find(c => c.id === categoryFilter)?.name
-    const scopeLabel = categoryFilter
-      ? `all products in "${catName ?? 'this category'}"`
-      : `all ${products.length.toLocaleString()} products`
+    const scopeLabel = hasPhoto
+      ? `all ${photoCount} products with photos`
+      : categoryFilter
+        ? `all products in "${catName ?? 'this category'}"`
+        : `all ${products.length.toLocaleString()} products`
     const action = makeVisible ? 'visible to customers' : 'hidden from customers'
     if (!confirm(`This will make ${scopeLabel} ${action}. Continue?`)) return
 
@@ -185,6 +227,7 @@ export default function ProductCatalogTable({
     try {
       const body: Record<string, unknown> = { visible: makeVisible }
       if (categoryFilter) body.categoryId = categoryFilter
+      if (hasPhoto)       body.hasPhoto   = true
 
       const res  = await fetch('/api/admin/products/bulk-visibility', {
         method:  'POST',
@@ -196,6 +239,7 @@ export default function ProductCatalogTable({
 
       setProducts(prev => prev.map(p => {
         if (categoryFilter && p.category.id !== categoryFilter) return p
+        if (hasPhoto && !p.googleDrivePhotoId) return p
         return { ...p, isVisibleToCustomers: makeVisible }
       }))
       flash(`${(data.updated ?? 0).toLocaleString()} products ${makeVisible ? 'made visible' : 'hidden'}.`)
@@ -253,39 +297,88 @@ export default function ProductCatalogTable({
         <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">{success}</div>
       )}
       {scanResult && (
-        <div className="rounded-xl bg-blue-50 border border-blue-200 px-5 py-4 text-sm text-blue-800 space-y-2">
-          <p className="font-semibold">
-            Photo scan complete — {scanResult.driveFiles} Drive files scanned across all subfolders
-          </p>
+        <div className={`rounded-xl border px-5 py-4 text-sm space-y-2 ${
+          scanResult.dryRun
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="font-semibold">
+              {scanResult.dryRun
+                ? `Preview — ${scanResult.driveFiles} Drive files scanned (no changes saved)`
+                : `Photo scan complete — ${scanResult.driveFiles} Drive files scanned`
+              }
+            </p>
+            <div className="flex items-center gap-2">
+            {scanResult.dryRun && scanResult.matched > 0 && (
+              <button
+                onClick={scanAllPhotos}
+                disabled={scanning}
+                className="px-3 py-1 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                {scanning ? '⏳ Saving…' : `✓ Apply ${scanResult.matched} matches now`}
+              </button>
+            )}
+            <button
+              onClick={() => setScanResult(null)}
+              aria-label="Dismiss"
+              className="ml-1 text-lg leading-none opacity-50 hover:opacity-100 transition-opacity"
+            >
+              ×
+            </button>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-4 text-sm">
-            <span className="text-green-700 font-medium">✓ {scanResult.matched} newly matched</span>
+            <span className="text-green-700 font-medium">
+              {scanResult.dryRun ? '◎' : '✓'} {scanResult.matched} {scanResult.dryRun ? 'would match' : 'newly matched'}
+            </span>
             <span className="text-blue-600">↺ {scanResult.alreadySet} already set</span>
             <span className="text-gray-500">✕ {scanResult.notFound} not found</span>
             <span className="text-gray-400">— {scanResult.total} total products</span>
           </div>
-          {scanResult.matchedProducts.length > 0 && (
-            <div className="mt-1">
-              <p className="text-xs font-medium text-blue-700 mb-1">New matches:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {scanResult.matchedProducts.map(m => (
-                  <span key={m.code} className={`text-xs px-2 py-0.5 rounded-full border ${
-                    m.how === 'fuzzy'
-                      ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
-                      : 'bg-green-50 border-green-200 text-green-700'
-                  }`}>
-                    {m.code}{m.how === 'fuzzy' ? ' ~' : ''}
-                  </span>
-                ))}
-              </div>
-              {scanResult.matchedProducts.some(m => m.how === 'fuzzy') && (
-                <p className="text-xs text-yellow-600 mt-1">~ = fuzzy match (filename had different punctuation)</p>
-              )}
+          {/* Tier breakdown */}
+          {scanResult.matched > 0 && Object.keys(scanResult.byTier).some(k => (scanResult.byTier[k] ?? 0) > 0) && (
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { key: 'exact',      label: 'Code (exact)',  cls: 'bg-blue-100 border-blue-300 text-blue-800' },
+                { key: 'fuzzy',      label: 'Code (fuzzy)',  cls: 'bg-indigo-100 border-indigo-300 text-indigo-800' },
+                { key: 'name_exact', label: 'Name (exact)',  cls: 'bg-green-100 border-green-300 text-green-800' },
+                { key: 'name_fuzzy', label: 'Name (fuzzy)',  cls: 'bg-teal-100 border-teal-300 text-teal-800' },
+                { key: 'brand_name', label: 'Brand+Name',    cls: 'bg-purple-100 border-purple-300 text-purple-800' },
+              ].filter(t => (scanResult.byTier[t.key] ?? 0) > 0).map(t => (
+                <span key={t.key} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${t.cls}`}>
+                  {t.label}: {scanResult.byTier[t.key]}
+                </span>
+              ))}
             </div>
           )}
+          {/* Sample matched products */}
+          {scanResult.matchedProducts.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs font-medium mb-1">
+                {scanResult.dryRun ? 'Sample matches (first 50):' : 'New matches:'}
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                {scanResult.matchedProducts.map((m, i) => {
+                  const cls = m.how === 'exact'      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                            : m.how === 'fuzzy'      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                            : m.how === 'name_exact' ? 'bg-green-50 border-green-200 text-green-700'
+                            : m.how === 'name_fuzzy' ? 'bg-teal-50 border-teal-200 text-teal-700'
+                            :                         'bg-purple-50 border-purple-200 text-purple-700'
+                  return (
+                    <span key={i} className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>
+                      {m.code !== m.name ? m.code : m.name.slice(0, 30)}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* Unmatched codes */}
           {scanResult.unmatchedCodes.length > 0 && (
             <div className="mt-1">
               <p className="text-xs font-medium text-red-600 mb-1">
-                Products with no matching Drive file ({scanResult.notFound} total, showing first {scanResult.unmatchedCodes.length}):
+                Still unmatched ({scanResult.notFound} total, showing first {scanResult.unmatchedCodes.length}):
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {scanResult.unmatchedCodes.map(c => (
@@ -295,9 +388,24 @@ export default function ProductCatalogTable({
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Name your Drive photos to match these codes, then scan again.
+                Rename Drive photos to match product names or codes, then scan again.
                 Or open a product → Edit → paste a Drive file ID manually.
               </p>
+            </div>
+          )}
+          {/* Drive filename diagnostic — helps understand naming convention */}
+          {scanResult.sampleDriveFiles.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-amber-200">
+              <p className="text-xs font-medium text-amber-800 mb-1">
+                📁 Your Drive filenames (first {scanResult.sampleDriveFiles.length}) — check if these match your product names/codes:
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {scanResult.sampleDriveFiles.map((f, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-900 font-mono">
+                    {f}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -345,10 +453,24 @@ export default function ProductCatalogTable({
         >
           {bulkBusy ? '…' : '✕ Hide All'}
         </button>
+        <button
+          onClick={() => bulkSetVisible(true, true)}
+          disabled={bulkBusy}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+        >
+          {bulkBusy ? '…' : '📷 Mark Photos Visible'}
+        </button>
         <div className="flex-1" />
         <button
+          onClick={previewMatch}
+          disabled={previewing || scanning}
+          className="px-4 py-2 text-sm font-medium rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+        >
+          {previewing ? '⏳ Previewing…' : '🔍 Preview Match'}
+        </button>
+        <button
           onClick={scanAllPhotos}
-          disabled={scanning}
+          disabled={scanning || previewing}
           className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
         >
           {scanning ? '⏳ Scanning…' : '📷 Scan All Photos'}
@@ -443,10 +565,11 @@ export default function ProductCatalogTable({
                       >
                         Edit
                       </button>
-                      {!p.googleDrivePhotoId && p.qneItemCode && (
+                      {!p.googleDrivePhotoId && (
                         <button
                           onClick={() => findPhoto(p)}
                           disabled={isBusy}
+                          title="Find photo by code or name"
                           className="px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
                         >
                           {isBusy ? '…' : '📷'}
