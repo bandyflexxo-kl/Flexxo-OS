@@ -137,7 +137,7 @@ export default function ProductsClientPage({
   const [activeCategory, setActiveCategory] = useState(initialCategoryId ?? '')
   const [searchInput,    setSearchInput]    = useState(initialQ ?? '')
   const [searchQuery,    setSearchQuery]    = useState(initialQ ?? '')
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>()
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Search dropdown ───────────────────────────────────────────────
   const [dropdownOpen,   setDropdownOpen]   = useState(false)

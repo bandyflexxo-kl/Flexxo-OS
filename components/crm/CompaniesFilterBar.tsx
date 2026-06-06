@@ -24,7 +24,7 @@ export default function CompaniesFilterBar({
   const router        = useRouter()
   const searchParams  = useSearchParams()
   const [isPending, startTransition] = useTransition()
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>()
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Build a new URL preserving sort, replacing filters
   function buildUrl(overrides: Record<string, string | undefined>) {
