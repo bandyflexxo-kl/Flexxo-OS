@@ -591,6 +591,7 @@ export default function ProductsClientPage({
                 sellingPrice={p.sellingPrice}
                 currency={p.currency}
                 hasPhoto={p.hasPhoto}
+                isB2B={isB2B}
               />
             ))}
           </div>
