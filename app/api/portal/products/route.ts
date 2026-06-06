@@ -18,6 +18,10 @@ export async function GET(request: Request) {
 
   const isB2B = session?.role === 'B2B Client'
 
+  // ?limit=all skips the 200-item cap — used by the client-side product browser
+  // which loads everything once and filters in-browser for instant category switching.
+  const limitAll = searchParams.get('limit') === 'all'
+
   const [products, retailSetting, b2bSetting] = await Promise.all([
     prisma.product.findMany({
       where: {
@@ -42,7 +46,7 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { name: 'asc' },
-      take:    200,
+      ...(limitAll ? {} : { take: 200 }),
     }),
     prisma.systemSetting.findUnique({ where: { key: 'retail_margin_pct' } }),
     prisma.systemSetting.findUnique({ where: { key: 'b2b_margin_pct' } }),
