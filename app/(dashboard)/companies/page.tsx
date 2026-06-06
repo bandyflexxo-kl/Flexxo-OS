@@ -1,3 +1,4 @@
+import { Suspense }                             from 'react'
 import { verifySession }                       from '@/lib/session'
 import { prisma }                               from '@/lib/prisma'
 import Topbar                                   from '@/components/layout/Topbar'
@@ -106,14 +107,23 @@ export default async function CompaniesPage({
 
       <div className="p-6 lg:p-8">
 
-        {/* Live filter bar (client component) */}
-        <CompaniesFilterBar
-          industries={industryList}
-          currentQ={sp.q}
-          currentStatus={sp.status}
-          currentIndustry={sp.industry}
-          currentTemp={sp.leadTemperature}
-        />
+        {/* Live filter bar (client component — needs Suspense because it calls useSearchParams) */}
+        <Suspense fallback={
+          <div className="flex gap-2 mb-6 animate-pulse">
+            <div className="h-9 bg-gray-100 rounded-lg w-52" />
+            <div className="h-9 bg-gray-100 rounded-lg w-32" />
+            <div className="h-9 bg-gray-100 rounded-lg w-32" />
+            <div className="h-9 bg-gray-100 rounded-lg w-28" />
+          </div>
+        }>
+          <CompaniesFilterBar
+            industries={industryList}
+            currentQ={sp.q}
+            currentStatus={sp.status}
+            currentIndustry={sp.industry}
+            currentTemp={sp.leadTemperature}
+          />
+        </Suspense>
 
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
