@@ -115,5 +115,12 @@ export async function GET(request: Request) {
   const categoryId = searchParams.get('categoryId') || null
   const limitAll   = searchParams.get('limit') === 'all'
 
-  return Response.json(await fetchRetailProductsCached(q, categoryId, limitAll))
+  // Explicit s-maxage tells Vercel's edge CDN to cache this response for 5 min.
+  // max-age=0 + stale-while-revalidate=60 lets browsers serve stale while CDN refreshes.
+  // This is what makes X-Vercel-Cache: HIT appear on repeat requests (same as photo proxy).
+  return Response.json(await fetchRetailProductsCached(q, categoryId, limitAll), {
+    headers: {
+      'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=60',
+    },
+  })
 }
