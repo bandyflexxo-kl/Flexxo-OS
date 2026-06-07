@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { STATUS_COLORS } from '@/lib/orderStatus'
+import { STATUS_COLORS, getStatusSteps } from '@/lib/orderStatus'
 
 type OrderItem = {
   id:          string
@@ -71,27 +71,29 @@ export type OrderDetailProps = {
   deliveryBooking:  DeliveryBookingInfo
 }
 
-const STATUS_STEPS = ['Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering', 'Delivered'] as const
-
 export default function OrderDetail({ initial }: { initial: OrderDetailProps }) {
   const router = useRouter()
 
-  const [status,      setStatus]      = useState(initial.status)
-  const [poNumber,    setPoNumber]    = useState(initial.customerPoNumber ?? '')
-  const [invoiceRef,  setInvoiceRef]  = useState(initial.qneInvoiceRef ?? '')
-  const [doRef,       setDoRef]       = useState(initial.qneDoRef ?? '')
-  const [invoice,     setInvoice]     = useState(initial.invoice)
-  const [delivery,    setDelivery]    = useState(initial.deliveryBooking)
-  const [approving,   setApproving]   = useState(false)
-  const [booking,     setBooking]     = useState(false)
-  const [savingPo,    setSavingPo]    = useState(false)
-  const [savingRefs,  setSavingRefs]  = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
-  const [doData,      setDoData]      = useState<Record<string, unknown> | null>(null)
-  const [loadingDo,   setLoadingDo]   = useState(false)
+  const [status,        setStatus]        = useState(initial.status)
+  const [poNumber,      setPoNumber]      = useState(initial.customerPoNumber ?? '')
+  const [invoiceRef,    setInvoiceRef]    = useState(initial.qneInvoiceRef ?? '')
+  const [doRef,         setDoRef]         = useState(initial.qneDoRef ?? '')
+  const [invoice,       setInvoice]       = useState(initial.invoice)
+  const [delivery,      setDelivery]      = useState(initial.deliveryBooking)
+  const [approving,     setApproving]     = useState(false)
+  const [booking,       setBooking]       = useState(false)
+  const [readying,      setReadying]      = useState(false)
+  const [collecting,    setCollecting]    = useState(false)
+  const [delivering,    setDelivering]    = useState(false)
+  const [savingPo,      setSavingPo]      = useState(false)
+  const [savingRefs,    setSavingRefs]    = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [doData,        setDoData]        = useState<Record<string, unknown> | null>(null)
+  const [loadingDo,     setLoadingDo]     = useState(false)
 
   const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
-  const currentIdx   = STATUS_STEPS.indexOf(status as typeof STATUS_STEPS[number])
+  const statusSteps  = getStatusSteps(status)
+  const currentIdx   = statusSteps.indexOf(status)
 
   // ── Approve order ──────────────────────────────────────────────────────────
   async function approveOrder() {
@@ -128,6 +130,51 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
       router.refresh()
     } finally {
       setBooking(false)
+    }
+  }
+
+  // ── Mark ReadyToCollect ───────────────────────────────────────────────────
+  async function markReadyToCollect() {
+    setReadying(true)
+    setError(null)
+    try {
+      const res  = await fetch(`/api/orders/${initial.id}/ready-to-collect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Failed'); return }
+      setStatus('ReadyToCollect')
+      router.refresh()
+    } finally {
+      setReadying(false)
+    }
+  }
+
+  // ── Mark Collected ────────────────────────────────────────────────────────
+  async function markCollected() {
+    setCollecting(true)
+    setError(null)
+    try {
+      const res  = await fetch(`/api/orders/${initial.id}/collected`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Failed'); return }
+      setStatus('Collected')
+      router.refresh()
+    } finally {
+      setCollecting(false)
+    }
+  }
+
+  // ── Mark Delivering (manual, no Lalamove) ─────────────────────────────────
+  async function markDelivering() {
+    setDelivering(true)
+    setError(null)
+    try {
+      const res  = await fetch(`/api/orders/${initial.id}/mark-delivering`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Failed'); return }
+      setStatus('Delivering')
+      router.refresh()
+    } finally {
+      setDelivering(false)
     }
   }
 
@@ -220,7 +267,7 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Order Progress</h2>
         <div className="flex items-center gap-0 overflow-x-auto pb-1">
-          {STATUS_STEPS.map((step, idx) => (
+          {statusSteps.map((step, idx) => (
             <div key={step} className="flex items-center flex-1 last:flex-none min-w-0">
               <div className="flex flex-col items-center flex-1 min-w-0">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-colors ${
@@ -234,31 +281,64 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
                   {step}
                 </p>
               </div>
-              {idx < STATUS_STEPS.length - 1 && (
+              {idx < statusSteps.length - 1 && (
                 <div className={`h-0.5 flex-1 mx-0.5 -mt-5 shrink-0 ${idx < currentIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
               )}
             </div>
           ))}
         </div>
 
-        {status === 'Delivered' && initial.deliveredAt && (
+        {(status === 'Delivered' || status === 'Collected') && initial.deliveredAt && (
           <p className="mt-4 text-sm text-green-700 font-medium">
-            ✓ Delivered {new Date(initial.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
+            ✓ {status === 'Collected' ? 'Collected' : 'Delivered'}{' '}
+            {new Date(initial.deliveredAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         )}
 
-        {/* Manual book-delivery button when Packed */}
+        {/* Fulfilment method buttons when Packed */}
         {isPrivileged && status === 'Packed' && (
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Choose fulfilment method</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={bookDelivery}
+                disabled={booking || readying || delivering}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+              >
+                {booking ? 'Booking…' : '🚗 Book Lalamove'}
+              </button>
+              <button
+                onClick={markDelivering}
+                disabled={booking || readying || delivering}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+              >
+                {delivering ? 'Updating…' : '🚚 Manual Delivery'}
+              </button>
+              <button
+                onClick={markReadyToCollect}
+                disabled={booking || readying || delivering}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+              >
+                {readying ? 'Updating…' : '🏪 Self-Collection'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">Lalamove: auto-books at 10am &amp; 1:45pm KL time (Mon–Sat). Use Manual or Self-Collection for walk-in / own transport.</p>
+          </div>
+        )}
+
+        {/* Confirm collection when ReadyToCollect */}
+        {isPrivileged && status === 'ReadyToCollect' && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
             <button
-              onClick={bookDelivery}
-              disabled={booking}
-              className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+              onClick={markCollected}
+              disabled={collecting}
+              className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
             >
-              {booking ? 'Booking…' : '🚗 Book Lalamove Now'}
+              {collecting ? 'Confirming…' : '✅ Confirm Collected'}
             </button>
-            <p className="text-xs text-gray-400 mt-1.5">Or wait for the 10am / 1:45pm auto-booking cron.</p>
+            <p className="text-xs text-gray-400 mt-1.5">Click when customer has collected the goods in person.</p>
           </div>
         )}
       </div>

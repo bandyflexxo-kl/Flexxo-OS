@@ -73,6 +73,27 @@ export async function POST(
       },
     })
 
+    // ── QNE Simulation Layer: stage the invoice for manual entry later ───
+    await tx.qnePendingAction.create({
+      data: {
+        actionType:   'invoice',
+        referenceNo:  invoiceNo,
+        originalDate: new Date(),           // preserve actual creation date
+        payload:      {
+          invoiceNo,
+          orderId:      id,
+          orderRef:     order.referenceNo ?? id,
+          companyId:    order.companyId,
+          companyName:  order.company.name,
+          currency:     order.currency,
+          totalAmount:  order.totalAmount?.toString() ?? '0',
+          issuedBy:     session.name,
+        },
+        status:       'pending',
+        notes:        `Auto-staged when order ${order.referenceNo ?? id} was approved in CRM.`,
+      },
+    })
+
     return [inv, task]
   })
 

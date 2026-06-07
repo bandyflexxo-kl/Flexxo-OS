@@ -79,6 +79,14 @@ function IconReports() {
   )
 }
 
+function IconQneSandbox() {
+  return (
+    <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+    </svg>
+  )
+}
+
 function IconAdmin() {
   return (
     <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
@@ -107,8 +115,9 @@ const NAV_ITEMS = [
   { href: '/quotations', label: 'Quotations', Icon: IconQuotations,  roles: null },
   { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: null },
   { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: ['Admin', 'Manager', 'Warehouse'] },
-  { href: '/reports',    label: 'Reports',    Icon: IconReports,     roles: ['Admin', 'Manager'] },
-  { href: '/admin',      label: 'Admin',      Icon: IconAdmin,       roles: ['Admin', 'Manager'] },
+  { href: '/reports',             label: 'Reports',    Icon: IconReports,      roles: ['Admin', 'Manager'] },
+  { href: '/admin/qne-sandbox',  label: 'QNE Sandbox', Icon: IconQneSandbox, roles: ['Admin', 'Manager'] },
+  { href: '/admin',              label: 'Admin',      Icon: IconAdmin,        roles: ['Admin', 'Manager'] },
 ] as const
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -141,9 +150,15 @@ export default function Sidebar({ role }: { role?: string }) {
         {NAV_ITEMS.filter(item =>
           item.roles === null || (role && (item.roles as readonly string[]).includes(role))
         ).map(item => {
+          // A more specific nav item takes precedence — check exact match or
+          // startsWith(href) only when no sibling nav item has a longer matching prefix.
+          const otherHrefs = (NAV_ITEMS as readonly { href: string }[])
+            .map(n => n.href)
+            .filter(h => h !== item.href)
           const active = item.href === '/'
             ? pathname === '/'
-            : pathname.startsWith(item.href)
+            : (pathname === item.href || pathname.startsWith(item.href + '/'))
+              && !otherHrefs.some(h => h !== '/' && pathname.startsWith(h) && h.length > item.href.length)
           return (
             <Link
               key={item.href}
