@@ -1,14 +1,13 @@
-import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { downloadDriveFile } from '@/lib/googleDrive'
 
+// Public endpoint — no session required.
+// Photos are served from Google Drive using the admin's stored server-side
+// refresh token, so visitor identity is irrelevant.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ productId: string }> },
 ) {
-  const session = await getOptionalSession()
-  if (!session) return new Response('Unauthorized', { status: 401 })
-
   const { productId } = await params
 
   const product = await prisma.product.findUnique({
