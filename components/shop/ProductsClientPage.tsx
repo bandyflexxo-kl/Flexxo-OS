@@ -31,19 +31,27 @@ export type Category = { id: string; name: string }
 // Module-level product cache
 // ---------------------------------------------------------------------------
 
-type CacheEntry = { data: ApiProduct[]; fetchedAt: number }
-const productCache = new Map<string, CacheEntry>()
-let inflightPromise: Promise<ApiProduct[]> | null = null
+// Guest users → /api/portal/products-public  (no cookies → Vercel CDN ISR-caches for 5 min)
+// B2B clients → /api/portal/products         (dynamic, reads session for B2B pricing)
+const GUEST_API_URL = '/api/portal/products-public?limit=all'
+const B2B_API_URL   = '/api/portal/products?limit=all'
 
-async function loadAllProducts(cacheKey: string): Promise<ApiProduct[]> {
+type CacheEntry = { data: ApiProduct[]; fetchedAt: number }
+const productCache    = new Map<string, CacheEntry>()
+// keyed by cacheKey so B2B and guest inflight requests don't collide
+const inflightByKey   = new Map<string, Promise<ApiProduct[]>>()
+
+async function loadAllProducts(cacheKey: string, apiUrl: string): Promise<ApiProduct[]> {
   const cached = productCache.get(cacheKey)
   if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return cached.data
-  if (inflightPromise) return inflightPromise
-  inflightPromise = fetch('/api/portal/products?limit=all')
+  const existing = inflightByKey.get(cacheKey)
+  if (existing) return existing
+  const promise = fetch(apiUrl)
     .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ApiProduct[]> })
-    .then(data => { productCache.set(cacheKey, { data, fetchedAt: Date.now() }); inflightPromise = null; return data })
-    .catch(err => { inflightPromise = null; throw err })
-  return inflightPromise
+    .then(data => { productCache.set(cacheKey, { data, fetchedAt: Date.now() }); inflightByKey.delete(cacheKey); return data })
+    .catch(err => { inflightByKey.delete(cacheKey); throw err })
+  inflightByKey.set(cacheKey, promise)
+  return promise
 }
 
 // ---------------------------------------------------------------------------
@@ -148,12 +156,14 @@ export default function ProductsClientPage({
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // ── Load products ─────────────────────────────────────────────────
+  // Guests use the CDN-cached public endpoint; B2B clients use the dynamic route.
+  const apiUrl = isB2B ? B2B_API_URL : GUEST_API_URL
   useEffect(() => {
     const cached = productCache.get(cacheKey)
     if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) { setAllProducts(cached.data); return }
     setAllProducts(null)
-    loadAllProducts(cacheKey).then(setAllProducts).catch(() => setLoadError(true))
-  }, [cacheKey])
+    loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true))
+  }, [cacheKey, apiUrl])
 
   // ── Load recent searches on mount ─────────────────────────────────
   useEffect(() => { setRecentSearches(getRecentSearches()) }, [])
@@ -548,7 +558,7 @@ export default function ProductsClientPage({
             ) : loadError ? (
               <span className="text-red-500">
                 Failed to load.{' '}
-                <button onClick={() => { setLoadError(false); loadAllProducts(cacheKey).then(setAllProducts).catch(() => setLoadError(true)) }} className="underline">
+                <button onClick={() => { setLoadError(false); loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true)) }} className="underline">
                   Retry
                 </button>
               </span>
