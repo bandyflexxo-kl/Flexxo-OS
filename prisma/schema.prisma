@@ -336,6 +336,11 @@ model Product {
   quotationItems  QuotationItem[]
   orderItems      OrderItem[]
 
+  // Listing query: WHERE isActive=true AND isVisibleToCustomers=true ORDER BY name
+  @@index([isActive, isVisibleToCustomers, name])
+  // Category filter: WHERE isActive=true AND isVisibleToCustomers=true AND categoryId=?
+  @@index([isActive, isVisibleToCustomers, categoryId])
+
   @@map("products")
 }
 

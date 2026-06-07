@@ -12,16 +12,17 @@ import ProductCard from './ProductCard'
 // ---------------------------------------------------------------------------
 
 type ApiProduct = {
-  id:                 string
-  name:               string
-  brand:              string | null
-  unit:               string | null
-  qneItemCode:        string | null
-  category:           { id: string; name: string }
-  catalogDescription: string | null
-  hasPhoto:           boolean
-  sellingPrice:       string | null
-  currency:           string
+  id:          string
+  name:        string
+  brand:       string | null
+  unit:        string | null
+  qneItemCode: string | null
+  category:    { id: string; name: string }
+  hasPhoto:    boolean
+  sellingPrice: string | null
+  currency:    string
+  // catalogDescription removed — it lives on the product detail page only.
+  // Removing it from the listing API payload saves ~400 KB per request.
 }
 
 export type Category = { id: string; name: string }
