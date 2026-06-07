@@ -37,7 +37,11 @@ export default function ScrollReveal({
       { threshold },
     )
     observer.observe(el)
-    return () => observer.disconnect()
+    // Safety fallback: always show after 800ms in case the observer fires
+    // late or the element is just off-screen by a fraction.
+    // Prevents content from getting stuck invisible.
+    const fallback = setTimeout(() => setShown(true), 800)
+    return () => { observer.disconnect(); clearTimeout(fallback) }
   }, [threshold])
 
   return (

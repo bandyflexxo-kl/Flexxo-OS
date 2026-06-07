@@ -12,7 +12,7 @@ import Link from 'next/link'
 export default function HeroSection({ isB2B }: { isB2B: boolean }) {
   return (
     <section
-      className="-mx-4 sm:-mx-6 -mt-4 sm:-mt-8 mb-6 sm:mb-8 relative overflow-hidden"
+      className="-mx-4 sm:-mx-6 -mt-4 sm:-mt-8 mb-6 sm:mb-8 relative overflow-hidden bg-green-700"
       aria-label="Flexxo Shop hero"
     >
       {/* Green gradient background */}

@@ -71,10 +71,11 @@ export default function StickyCartBar({
   }
 
   return (
-    /* sm:hidden — desktop uses in-page CartButton */
+    /* sm:hidden — desktop uses in-page CartButton.
+       bottom-14 (56px) positions this above ShopBottomNav (fixed bottom-0 z-40 ~56px tall)
+       so the bottom nav remains visible on mobile product detail pages. */
     <div
-      className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3 shadow-2xl"
-      style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+      className="sm:hidden fixed bottom-14 left-0 right-0 z-50 bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3 shadow-lg"
     >
       {/* Product info */}
       <div className="flex-1 min-w-0">

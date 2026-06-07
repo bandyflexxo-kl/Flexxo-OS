@@ -215,21 +215,21 @@ export default async function ShopProductDetailPage({
             )}
 
             {/* 5. Specifications — Condition 22: SKU, brand, category, unit */}
-            <ScrollReveal>
-              <div className="border-t border-gray-100 pt-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">
-                  Specifications
-                </p>
-                <SpecTable specs={[
-                  { label: 'SKU',       value: product.qneItemCode,   mono: true },
-                  { label: 'Brand',     value: product.brand                      },
-                  { label: 'Category',  value: product.category.name              },
-                  { label: 'Unit',      value: unit                               },
-                  { label: 'Min. Order',value: minOrderQty > 1 ? `${minOrderQty} ${unit ?? ''}`.trim() : null },
-                  { label: 'Pack',      value: (product.packDescription && product.catalogDescription) ? product.packDescription : null },
-                ]} />
-              </div>
-            </ScrollReveal>
+            {/* No ScrollReveal here — SpecTable is always in the initial viewport.
+                ScrollReveal's opacity:0 initial state caused black blocks on page load. */}
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">
+                Specifications
+              </p>
+              <SpecTable specs={[
+                { label: 'SKU',       value: product.qneItemCode,   mono: true },
+                { label: 'Brand',     value: product.brand                      },
+                { label: 'Category',  value: product.category.name              },
+                { label: 'Unit',      value: unit                               },
+                { label: 'Min. Order',value: minOrderQty > 1 ? `${minOrderQty} ${unit ?? ''}`.trim() : null },
+                { label: 'Pack',      value: (product.packDescription && product.catalogDescription) ? product.packDescription : null },
+              ]} />
+            </div>
 
             {/* 6. Add-to-cart CTA — Condition 15: qty +/- stepper */}
             <CartButton
@@ -240,9 +240,9 @@ export default async function ShopProductDetailPage({
             />
 
             {/* 7. Trust signals — Condition 13 */}
-            <ScrollReveal delay={100}>
-              <TrustBadge />
-            </ScrollReveal>
+            {/* No ScrollReveal — TrustBadge is always in the initial viewport.
+                Removing ScrollReveal prevents opacity:0 flash (black block) on load. */}
+            <TrustBadge />
 
           </div>
         </div>
@@ -283,6 +283,11 @@ export default async function ShopProductDetailPage({
         isLoggedIn={isB2B}
         loginUrl={loginUrl}
       />
+
+      {/* Mobile bottom spacer — prevents content hiding behind StickyCartBar (≈60px)
+          which sits at bottom-14 (56px) above ShopBottomNav. Layout already adds
+          pb-20 for the nav; this adds the extra clearance for the cart bar. */}
+      <div className="h-16 sm:hidden" aria-hidden="true" />
 
     </div>
   )

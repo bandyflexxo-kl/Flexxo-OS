@@ -12,12 +12,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Dark mode intentionally disabled — app uses light theme throughout.
+   Prevents body { background: #0a0a0a } from bleeding through transparent
+   animated elements (which caused "black block" appearance). */
 
 body {
   background: var(--background);
@@ -37,8 +34,12 @@ body {
 /* ── Shop entry animations ──────────────────────────────────────── */
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(28px); }
-  to   { opacity: 1; transform: translateY(0);     }
+  /* Opacity intentionally removed — opacity:0 in 'from' combined with
+     animation-fill-mode:both caused black blocks on systems with dark
+     body background during the stagger delay period. Slide-only is
+     visually clean and never renders invisible elements. */
+  from { transform: translateY(20px); }
+  to   { transform: translateY(0);    }
 }
 
 @keyframes fadeIn {
