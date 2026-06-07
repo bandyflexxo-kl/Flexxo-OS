@@ -14,10 +14,14 @@ function LoginForm() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm w-full max-w-sm p-8 space-y-6">
         {/* Brand */}
-        <div className="text-center space-y-1">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-600 to-green-700 text-white text-xl font-bold mb-2 shadow-sm">F</div>
-          <h1 className="text-xl font-bold text-gray-900">Flexxo Shop</h1>
-          <p className="text-sm text-gray-500">Sign in to your account</p>
+        <div className="text-center space-y-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/flexxo-logo.png"
+            alt="Flexxo"
+            className="h-16 w-auto mx-auto object-contain"
+          />
+          <p className="text-sm text-gray-500">Sign in to your business account</p>
         </div>
 
         <form action={action} className="space-y-4">

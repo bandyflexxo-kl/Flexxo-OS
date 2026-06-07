@@ -51,18 +51,13 @@ export default function ShopNav({
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
 
         {/* Brand — always visible */}
-        <Link href="/shop/products" className="flex items-center gap-2 shrink-0">
-          {/* Flexxo green logo mark */}
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-600 to-green-700 text-white flex items-center justify-center shadow-sm">
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5 w-[18px] h-[18px]">
-              <path fillRule="evenodd" d="M5 4a3 3 0 00-3 3v6a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5zm-1 9v-1h5v2H5a1 1 0 01-1-1zm7 1h4a1 1 0 001-1v-1h-5v2zm0-4h5V8h-5v2zM9 8H4v2h5V8z" clipRule="evenodd"/>
-            </svg>
-          </div>
-          <div className="hidden sm:block">
-            <p className="font-bold text-gray-900 text-sm leading-none">Flexxo Shop</p>
-            <p className="text-[10px] text-green-600 font-medium leading-none mt-0.5">Your 1stop Office Partner</p>
-          </div>
-          <span className="sm:hidden font-bold text-gray-900 text-sm">Flexxo</span>
+        <Link href="/shop/products" className="flex items-center shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/flexxo-logo.png"
+            alt="Flexxo — Your 1stop Office Partner"
+            className="h-9 sm:h-10 w-auto object-contain"
+          />
         </Link>
 
         {/* Desktop nav — hidden on mobile (bottom nav handles mobile) */}
