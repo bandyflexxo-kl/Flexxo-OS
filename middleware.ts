@@ -118,5 +118,6 @@ export default async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  // Exclude: API routes, Next.js internals, favicon, and ALL static asset file extensions
+  matcher: ['/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.png|.*\\.jpg|.*\\.jpeg|.*\\.svg|.*\\.ico|.*\\.webp|.*\\.gif|.*\\.js|.*\\.css|.*\\.woff|.*\\.woff2|.*\\.ttf|.*\\.map).*)'],
 }
