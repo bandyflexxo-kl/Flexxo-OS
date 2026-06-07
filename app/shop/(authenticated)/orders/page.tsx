@@ -3,10 +3,28 @@ import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 
 const STATUS_COLORS: Record<string, string> = {
-  Confirmed:  'bg-yellow-100 text-yellow-700',
-  Processing: 'bg-blue-100  text-blue-700',
-  Shipped:    'bg-purple-100 text-purple-700',
-  Delivered:  'bg-green-100 text-green-700',
+  Confirmed:       'bg-yellow-100 text-yellow-700',
+  Approved:        'bg-indigo-100 text-indigo-700',
+  Picking:         'bg-yellow-100 text-yellow-700',
+  Packed:          'bg-orange-100 text-orange-700',
+  Processing:      'bg-blue-100  text-blue-700',
+  Shipped:         'bg-purple-100 text-purple-700',
+  Delivering:      'bg-purple-100 text-purple-700',
+  Delivered:       'bg-green-100 text-green-700',
+  ReadyToCollect:  'bg-teal-100 text-teal-700',
+  Collected:       'bg-green-100 text-green-700',
+}
+
+// Portal-friendly display labels for raw internal statuses
+const STATUS_LABELS: Record<string, string> = {
+  Confirmed:       'Confirmed',
+  Approved:        'Processing',
+  Picking:         'Processing',
+  Packed:          'Packed',
+  Delivering:      'On the Way',
+  Delivered:       'Delivered',
+  ReadyToCollect:  'Ready to Collect',
+  Collected:       'Collected',
 }
 
 export default async function ShopOrdersPage() {
@@ -59,10 +77,10 @@ export default async function ShopOrdersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[o.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {o.status}
+                      {STATUS_LABELS[o.status] ?? o.status}
                     </span>
-                    {o.status === 'Shipped' && (
-                      <span className="ml-2 text-xs text-purple-600 font-medium">On the way</span>
+                    {o.status === 'ReadyToCollect' && (
+                      <span className="ml-2 text-xs text-teal-600 font-medium animate-pulse">Ready!</span>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">

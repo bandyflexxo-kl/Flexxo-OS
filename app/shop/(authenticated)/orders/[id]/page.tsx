@@ -4,21 +4,36 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { toPortalStatus } from '@/lib/orderStatus'
 
-const STEPS = ['Confirmed', 'Processing', 'Shipped', 'Delivered'] as const
-type Step = (typeof STEPS)[number]
+// Delivery path (standard)
+const DELIVERY_STEPS = ['Confirmed', 'Processing', 'Shipped', 'Delivered'] as const
+// Collection path (self-collect)
+const COLLECTION_STEPS = ['Confirmed', 'Processing', 'Ready to Collect', 'Collected'] as const
 
-const STEP_ICON: Record<Step, string> = {
-  Confirmed:  '✅',
-  Processing: '⚙️',
-  Shipped:    '🚚',
-  Delivered:  '🎉',
+type DeliveryStep   = (typeof DELIVERY_STEPS)[number]
+type CollectionStep = (typeof COLLECTION_STEPS)[number]
+type Step           = DeliveryStep | CollectionStep
+
+const STEP_ICON: Record<string, string> = {
+  Confirmed:         '✅',
+  Processing:        '⚙️',
+  Shipped:           '🚚',
+  Delivered:         '🎉',
+  'Ready to Collect': '🏪',
+  Collected:         '🎉',
 }
 
-const STEP_DESC: Record<Step, string> = {
-  Confirmed:  'We\'ve received your order.',
-  Processing: 'Your order is being prepared.',
-  Shipped:    'Your order is on the way.',
-  Delivered:  'Your order has been delivered.',
+const STEP_DESC: Record<string, string> = {
+  Confirmed:          'We\'ve received your order.',
+  Processing:         'Your order is being prepared.',
+  Shipped:            'Your order is on the way.',
+  Delivered:          'Your order has been delivered.',
+  'Ready to Collect': 'Your order is ready — please come to collect.',
+  Collected:          'You have collected your order.',
+}
+
+function getStepsForStatus(rawStatus: string): readonly string[] {
+  if (rawStatus === 'ReadyToCollect' || rawStatus === 'Collected') return COLLECTION_STEPS
+  return DELIVERY_STEPS
 }
 
 export default async function ShopOrderDetailPage({
@@ -50,8 +65,9 @@ export default async function ShopOrderDetailPage({
   if (!order || order.companyId !== session.customerCompanyId) notFound()
 
   // Map internal pipeline statuses to the simplified 4-step portal view
-  const portalStatus   = toPortalStatus(order.status) as Step
-  const currentStepIdx = STEPS.indexOf(portalStatus)
+  const portalStatus   = toPortalStatus(order.status)
+  const steps          = getStepsForStatus(order.status)
+  const currentStepIdx = steps.indexOf(portalStatus)
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -81,7 +97,7 @@ export default async function ShopOrderDetailPage({
       {/* Status stepper */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-start justify-between gap-2">
-          {STEPS.map((step, i) => {
+          {steps.map((step, i) => {
             const isDone    = i <= currentStepIdx
             const isCurrent = i === currentStepIdx
             return (
@@ -93,7 +109,7 @@ export default async function ShopOrderDetailPage({
                     <div className={`absolute right-1/2 top-4 w-1/2 h-0.5 ${i <= currentStepIdx ? 'bg-blue-500' : 'bg-gray-200'}`} />
                   )}
                   {/* Right line */}
-                  {i < STEPS.length - 1 && (
+                  {i < steps.length - 1 && (
                     <div className={`absolute left-1/2 top-4 w-1/2 h-0.5 ${i < currentStepIdx ? 'bg-blue-500' : 'bg-gray-200'}`} />
                   )}
                   {/* Circle */}
@@ -104,14 +120,14 @@ export default async function ShopOrderDetailPage({
                       ? 'bg-blue-100 border-blue-300 text-blue-700'
                       : 'bg-white border-gray-200 text-gray-300'
                   }`}>
-                    {isDone ? STEP_ICON[step] : <span className="text-xs">{i + 1}</span>}
+                    {isDone ? (STEP_ICON[step] ?? '✓') : <span className="text-xs">{i + 1}</span>}
                   </div>
                 </div>
                 <p className={`text-xs font-medium mt-1 ${isCurrent ? 'text-blue-700' : isDone ? 'text-gray-700' : 'text-gray-300'}`}>
                   {step}
                 </p>
                 {isCurrent && (
-                  <p className="text-xs text-gray-400 leading-tight">{STEP_DESC[step]}</p>
+                  <p className="text-xs text-gray-400 leading-tight">{STEP_DESC[step] ?? ''}</p>
                 )}
               </div>
             )
