@@ -109,7 +109,7 @@ export default function CartButton({
           className={`w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
             added
               ? 'bg-green-600 text-white'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-green-600 text-white hover:bg-green-700'
           } disabled:opacity-50`}
         >
           {loading ? 'Adding…' : added ? '✓ Added to cart!' : '🛒 Add to Cart'}
@@ -120,7 +120,7 @@ export default function CartButton({
             onClick={handleClick}
             disabled={added}
             className={`w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
-              added ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
+              added ? 'bg-green-600 text-white' : 'bg-green-600 text-white hover:bg-green-700'
             } disabled:opacity-50`}
           >
             {added ? '✓ Added to cart!' : '🛒 Add to Cart'}

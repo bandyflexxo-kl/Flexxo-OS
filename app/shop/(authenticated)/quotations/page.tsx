@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 const STATUS_COLORS: Record<string, string> = {
   pending_review: 'bg-yellow-100 text-yellow-700',
-  approved:       'bg-blue-100 text-blue-700',
+  approved:       'bg-green-100 text-green-700',
   sent:           'bg-purple-100 text-purple-700',
   accepted:       'bg-green-100 text-green-700',
   declined:       'bg-red-100 text-red-700',
@@ -33,7 +33,7 @@ export default async function ShopQuotationsPage() {
         <div className="bg-white rounded-2xl border border-gray-200 px-6 py-16 text-center space-y-3">
           <p className="text-5xl">📄</p>
           <p className="text-gray-500 text-sm">No quotations yet.</p>
-          <Link href="/shop/products" className="inline-block text-sm text-blue-600 hover:underline">
+          <Link href="/shop/products" className="inline-block text-sm text-green-600 hover:underline">
             Browse products and request a quote
           </Link>
         </div>

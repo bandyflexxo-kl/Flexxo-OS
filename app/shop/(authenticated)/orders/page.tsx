@@ -7,7 +7,7 @@ const STATUS_COLORS: Record<string, string> = {
   Approved:        'bg-indigo-100 text-indigo-700',
   Picking:         'bg-yellow-100 text-yellow-700',
   Packed:          'bg-orange-100 text-orange-700',
-  Processing:      'bg-blue-100  text-blue-700',
+  Processing:      'bg-indigo-100 text-indigo-700',
   Shipped:         'bg-purple-100 text-purple-700',
   Delivering:      'bg-purple-100 text-purple-700',
   Delivered:       'bg-green-100 text-green-700',
@@ -51,7 +51,7 @@ export default async function ShopOrdersPage() {
           <p className="text-5xl">📦</p>
           <p className="text-gray-500 text-sm">No orders yet.</p>
           <p className="text-gray-400 text-xs">Orders appear here once you accept a quotation.</p>
-          <Link href="/shop/quotations" className="inline-block text-sm text-blue-600 hover:underline">
+          <Link href="/shop/quotations" className="inline-block text-sm text-green-600 hover:underline">
             View my quotations
           </Link>
         </div>

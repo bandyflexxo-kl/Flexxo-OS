@@ -130,7 +130,7 @@ export default async function ShopProductDetailPage({
             <div className="absolute top-4 left-4">
               <Link
                 href={`/shop/products?categoryId=${product.category.id}`}
-                className="bg-white/90 backdrop-blur-sm text-blue-600 text-xs font-semibold px-3 py-1 rounded-full border border-blue-100 hover:bg-white transition-colors shadow-sm"
+                className="bg-white/90 backdrop-blur-sm text-green-600 text-xs font-semibold px-3 py-1 rounded-full border border-green-100 hover:bg-white transition-colors shadow-sm"
               >
                 {product.category.name}
               </Link>
@@ -200,7 +200,7 @@ export default async function ShopProductDetailPage({
                     </p>
                   ) : (
                     <p className="text-xs text-gray-400">
-                      <Link href={loginUrl} className="text-blue-500 hover:underline">Sign in</Link>
+                      <Link href={loginUrl} className="text-green-600 hover:underline">Sign in</Link>
                       {' '}for B2B pricing
                     </p>
                   )}
@@ -233,7 +233,7 @@ export default async function ShopProductDetailPage({
             </h2>
             <Link
               href={`/shop/products?categoryId=${product.category.id}`}
-              className="text-sm text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+              className="text-sm text-green-600 hover:text-green-700 hover:underline transition-colors"
             >
               View all →
             </Link>

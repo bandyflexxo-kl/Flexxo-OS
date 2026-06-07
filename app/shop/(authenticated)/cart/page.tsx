@@ -121,7 +121,7 @@ export default function CartPage() {
           </div>
           <Link
             href="/shop/products"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors"
           >
             Browse Products →
           </Link>
@@ -138,7 +138,7 @@ export default function CartPage() {
           <h1 className="text-xl font-bold text-gray-900">Your Cart</h1>
           <p className="text-sm text-gray-500 mt-0.5">{itemCount} item{itemCount !== 1 ? 's' : ''}</p>
         </div>
-        <Link href="/shop/products" className="text-sm text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1">
+        <Link href="/shop/products" className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1">
           ← Continue shopping
         </Link>
       </div>
@@ -162,7 +162,7 @@ export default function CartPage() {
               >
                 {/* Thumbnail */}
                 <Link href={item.product ? `/shop/products/${item.product.id}` : '#'} className="shrink-0">
-                  <div className="w-20 h-20 bg-gray-50 rounded-xl flex items-center justify-center overflow-hidden border border-gray-100 hover:border-blue-200 transition-colors">
+                  <div className="w-20 h-20 bg-gray-50 rounded-xl flex items-center justify-center overflow-hidden border border-gray-100 hover:border-green-200 transition-colors">
                     {item.product?.googleDrivePhotoId ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={`/api/portal/photo/${item.product.id}`} alt={item.description} loading="lazy" className="w-full h-full object-contain p-1.5" />
@@ -176,7 +176,7 @@ export default function CartPage() {
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
                   <p className="font-semibold text-gray-900 text-sm leading-snug truncate">{item.description}</p>
                   {item.product?.brand && <p className="text-xs text-gray-400">{item.product.brand}</p>}
-                  <p className="text-sm font-bold text-blue-700 mt-0.5">
+                  <p className="text-sm font-bold text-green-700 mt-0.5">
                     MYR {Number(item.unitPrice).toFixed(2)}
                     {item.product?.unit && <span className="text-gray-400 font-normal text-xs"> / {item.product.unit}</span>}
                   </p>
@@ -247,7 +247,7 @@ export default function CartPage() {
             <button
               onClick={checkout}
               disabled={checking}
-              className="w-full py-3.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors active:scale-95 shadow-sm"
+              className="w-full py-3.5 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors active:scale-[0.98] shadow-sm"
             >
               {checking ? (
                 <span className="flex items-center justify-center gap-2">

@@ -1,6 +1,7 @@
 import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import ShopNav from '@/components/shop/ShopNav'
+import ShopBottomNav from '@/components/shop/ShopBottomNav'
 
 /**
  * Shop shell layout — always visible, no auth guard.
@@ -23,15 +24,23 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       ])
     : [null, null]
 
+  const companyName  = company?.name ?? null
+  const cartCount    = isB2B ? (dbCartCount ?? 0) : null
+
   return (
     <div className="min-h-screen bg-gray-50">
       <ShopNav
-        companyName={company?.name ?? null}
-        dbCartCount={isB2B ? (dbCartCount ?? 0) : null}
+        companyName={companyName}
+        dbCartCount={cartCount}
       />
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      {/* pb-16 sm:pb-0 — clearance for mobile bottom nav bar */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 pb-20 sm:pb-8">
         {children}
       </main>
+      <ShopBottomNav
+        isLoggedIn={isB2B}
+        dbCartCount={cartCount}
+      />
     </div>
   )
 }

@@ -59,7 +59,7 @@ export default function ProductCard({
   }
 
   return (
-    <div className="group relative bg-white rounded-xl border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
+    <div className="group relative bg-white rounded-xl border border-gray-200 hover:border-green-200 hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
 
       {/* Photo + info — this whole block is the navigation link */}
       <Link href={`/shop/products/${id}`} className="flex flex-col flex-1" tabIndex={0}>
@@ -95,13 +95,13 @@ export default function ProductCard({
         </div>
 
         {/* Text info */}
-        <div className="p-3.5 flex flex-col gap-1 flex-1">
-          <p className="text-xs text-blue-500 font-medium leading-none">{categoryName}</p>
-          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-blue-700 transition-colors">
+        <div className="p-3 flex flex-col gap-1 flex-1">
+          <p className="text-xs text-green-600 font-medium leading-none">{categoryName}</p>
+          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-green-700 transition-colors">
             {name}
           </p>
           {brand && <p className="text-xs text-gray-400">{brand}</p>}
-          <div className="mt-auto pt-2">
+          <div className="mt-auto pt-1.5">
             {sellingPrice ? (
               <div className="flex items-baseline gap-1">
                 <p className="text-sm font-bold text-gray-900">{currency} {Number(sellingPrice).toFixed(2)}</p>
@@ -114,19 +114,17 @@ export default function ProductCard({
         </div>
       </Link>
 
-      {/* Add to Cart button — slides up from bottom on hover */}
-      <div className="px-3.5 pb-3.5 overflow-hidden transition-all duration-200 ease-out
-                      max-h-0 opacity-0
-                      group-hover:max-h-14 group-hover:opacity-100">
+      {/* Add to Cart button — always visible (touch-friendly, no hover required) */}
+      <div className="px-3 pb-3">
         <button
           onClick={handleAddToCart}
           disabled={cartState === 'loading'}
-          className={`w-full py-2 rounded-lg text-xs font-semibold transition-all active:scale-95 ${
+          className={`w-full py-2 rounded-lg text-xs font-semibold transition-all active:scale-[0.97] touch-manipulation ${
             cartState === 'added'
               ? 'bg-green-500 text-white'
               : cartState === 'loading'
-              ? 'bg-blue-400 text-white cursor-wait'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
+              ? 'bg-green-400 text-white cursor-wait'
+              : 'bg-green-600 text-white hover:bg-green-700'
           }`}
         >
           {cartState === 'added'   ? '✓ Added to cart' :

@@ -15,7 +15,7 @@ function LoginForm() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm w-full max-w-sm p-8 space-y-6">
         {/* Brand */}
         <div className="text-center space-y-1">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white text-xl font-bold mb-2">F</div>
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-600 to-green-700 text-white text-xl font-bold mb-2 shadow-sm">F</div>
           <h1 className="text-xl font-bold text-gray-900">Flexxo Shop</h1>
           <p className="text-sm text-gray-500">Sign in to your account</p>
         </div>
@@ -31,7 +31,7 @@ function LoginForm() {
               name="email"
               required
               autoComplete="email"
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
               placeholder="your@company.com"
             />
             {state?.errors?.email && <p className="text-xs text-red-600 mt-1">{state.errors.email}</p>}
@@ -44,7 +44,7 @@ function LoginForm() {
               name="password"
               required
               autoComplete="current-password"
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
             />
             {state?.errors?.password && <p className="text-xs text-red-600 mt-1">{state.errors.password}</p>}
           </div>
@@ -58,7 +58,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={pending}
-            className="w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="w-full py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors active:scale-[0.98]"
           >
             {pending ? 'Signing in…' : 'Sign In'}
           </button>

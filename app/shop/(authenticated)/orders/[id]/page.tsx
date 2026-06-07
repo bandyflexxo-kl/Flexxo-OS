@@ -75,14 +75,14 @@ export default async function ShopOrderDetailPage({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Link href="/shop/orders" className="text-xs text-blue-600 hover:underline">← My Orders</Link>
+          <Link href="/shop/orders" className="text-xs text-green-600 hover:underline">← My Orders</Link>
           <h1 className="text-xl font-bold text-gray-900 mt-1">
             {order.referenceNo ?? order.id.slice(0, 8)}
           </h1>
           <p className="text-sm text-gray-400">
             Placed {new Date(order.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
             {order.quotation && (
-              <> · Quotation: <Link href={`/shop/quotations/${order.quotation.id}`} className="text-blue-600 hover:underline">{order.quotation.referenceNo}</Link></>
+              <> · Quotation: <Link href={`/shop/quotations/${order.quotation.id}`} className="text-green-600 hover:underline">{order.quotation.referenceNo}</Link></>
             )}
           </p>
         </div>
@@ -106,24 +106,24 @@ export default async function ShopOrderDetailPage({
                 <div className="relative w-full flex items-center justify-center">
                   {/* Left line */}
                   {i > 0 && (
-                    <div className={`absolute right-1/2 top-4 w-1/2 h-0.5 ${i <= currentStepIdx ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                    <div className={`absolute right-1/2 top-4 w-1/2 h-0.5 ${i <= currentStepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />
                   )}
                   {/* Right line */}
                   {i < steps.length - 1 && (
-                    <div className={`absolute left-1/2 top-4 w-1/2 h-0.5 ${i < currentStepIdx ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                    <div className={`absolute left-1/2 top-4 w-1/2 h-0.5 ${i < currentStepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />
                   )}
                   {/* Circle */}
                   <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-sm border-2 ${
                     isCurrent
-                      ? 'bg-blue-600 border-blue-600 text-white'
+                      ? 'bg-green-600 border-green-600 text-white'
                       : isDone
-                      ? 'bg-blue-100 border-blue-300 text-blue-700'
+                      ? 'bg-green-100 border-green-300 text-green-700'
                       : 'bg-white border-gray-200 text-gray-300'
                   }`}>
                     {isDone ? (STEP_ICON[step] ?? '✓') : <span className="text-xs">{i + 1}</span>}
                   </div>
                 </div>
-                <p className={`text-xs font-medium mt-1 ${isCurrent ? 'text-blue-700' : isDone ? 'text-gray-700' : 'text-gray-300'}`}>
+                <p className={`text-xs font-medium mt-1 ${isCurrent ? 'text-green-700' : isDone ? 'text-gray-700' : 'text-gray-300'}`}>
                   {step}
                 </p>
                 {isCurrent && (

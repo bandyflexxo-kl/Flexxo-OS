@@ -322,11 +322,20 @@ export default function ProductsClientPage({
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  // Category emoji map for visual flavour on mobile pills
+  const CAT_EMOJI: Record<string, string> = {
+    Battery: '🔋', Stationery: '✏️', Pantry: '☕', Hygiene: '🧴',
+    Furniture: '🪑', 'Printer Consumables': '🖨️', 'Thermal Rolls': '🧻',
+    'Corporate Gifts': '🎁', Packaging: '📦', Safety: '🦺',
+    Cleaning: '🧹', 'IT Accessories': '💻',
+  }
+
   return (
     <div className="flex gap-6 lg:gap-8">
 
-      {/* ── Category sidebar ──────────────────────────────────────── */}
-      <aside className="w-44 lg:w-48 shrink-0">
+      {/* ── Category sidebar — desktop only ───────────────────────── */}
+      <aside className="hidden lg:block w-48 shrink-0">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 px-1">
           Categories
         </h2>
@@ -334,12 +343,12 @@ export default function ProductsClientPage({
           <button
             onClick={() => selectCategory('')}
             className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between group ${
-              !activeCategory ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              !activeCategory ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
             }`}
           >
             <span>All Products</span>
             {allProducts && (
-              <span className={`text-xs tabular-nums ${!activeCategory ? 'text-blue-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
+              <span className={`text-xs tabular-nums ${!activeCategory ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
                 {allProducts.length.toLocaleString()}
               </span>
             )}
@@ -353,12 +362,12 @@ export default function ProductsClientPage({
                 key={cat.id}
                 onClick={() => selectCategory(cat.id)}
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between group ${
-                  active ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  active ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 <span className="truncate pr-1">{cat.name}</span>
                 {allProducts && count > 0 && (
-                  <span className={`text-xs tabular-nums shrink-0 ${active ? 'text-blue-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                  <span className={`text-xs tabular-nums shrink-0 ${active ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
                     {count}
                   </span>
                 )}
@@ -369,14 +378,58 @@ export default function ProductsClientPage({
       </aside>
 
       {/* ── Main content ──────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 space-y-5">
+      <div className="flex-1 min-w-0 space-y-4">
+
+        {/* ── Horizontal scroll category pills — mobile only ─────── */}
+        <div className="lg:hidden -mx-4 px-4">
+          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar snap-x snap-mandatory">
+            <button
+              onClick={() => selectCategory('')}
+              className={`shrink-0 snap-start flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-all border touch-manipulation ${
+                !activeCategory
+                  ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+              }`}
+            >
+              🏪 All
+              {allProducts && (
+                <span className={`tabular-nums text-[10px] ${!activeCategory ? 'text-green-100' : 'text-gray-400'}`}>
+                  {allProducts.length.toLocaleString()}
+                </span>
+              )}
+            </button>
+            {categories.map(cat => {
+              const count  = countByCategory.get(cat.id) ?? 0
+              const active = activeCategory === cat.id
+              const emoji  = CAT_EMOJI[cat.name] ?? '📋'
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => selectCategory(cat.id)}
+                  className={`shrink-0 snap-start flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-all border touch-manipulation ${
+                    active
+                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  }`}
+                >
+                  {emoji} {cat.name}
+                  {allProducts && count > 0 && (
+                    <span className={`tabular-nums text-[10px] ${active ? 'text-green-100' : 'text-gray-400'}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
 
         {/* ── Search bar with dropdown ──────────────────────────── */}
         <div ref={dropdownRef} className="relative">
           <form onSubmit={handleFormSubmit}>
             <div className={`flex items-center gap-2 border bg-white rounded-xl px-3 py-2 transition-all ${
               dropdownOpen
-                ? 'border-blue-500 ring-2 ring-blue-100 rounded-b-none border-b-0'
+                ? 'border-green-500 ring-2 ring-green-100 rounded-b-none border-b-0'
                 : 'border-gray-300 hover:border-gray-400'
             }`}>
               {/* Search icon */}
@@ -386,13 +439,13 @@ export default function ProductsClientPage({
 
               {/* Active category chip */}
               {activeCategoryName && (
-                <span className="flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-md shrink-0 select-none">
-                  <span className="text-blue-400">in</span>
+                <span className="flex items-center gap-1 bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-md shrink-0 select-none">
+                  <span className="text-green-400">in</span>
                   {activeCategoryName}
                   <button
                     type="button"
                     onClick={() => selectCategory('')}
-                    className="ml-0.5 text-blue-400 hover:text-blue-700 transition-colors leading-none"
+                    className="ml-0.5 text-green-400 hover:text-green-700 transition-colors leading-none"
                     aria-label="Remove category filter"
                   >
                     ×
@@ -434,7 +487,7 @@ export default function ProductsClientPage({
 
           {/* ── Dropdown ──────────────────────────────────────────── */}
           {showDropdown && (
-            <div className="absolute left-0 right-0 top-full bg-white border border-blue-500 border-t-0 rounded-b-xl shadow-lg z-50 overflow-hidden ring-2 ring-blue-100 ring-t-0">
+            <div className="absolute left-0 right-0 top-full bg-white border border-green-500 border-t-0 rounded-b-xl shadow-lg z-50 overflow-hidden ring-2 ring-green-100 ring-t-0">
 
               {/* Recent searches */}
               {showRecents && (
@@ -455,7 +508,7 @@ export default function ProductsClientPage({
                       type="button"
                       onMouseDown={e => { e.preventDefault(); applySearch(term) }}
                       className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
-                        highlightIdx === i ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                        highlightIdx === i ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-50'
                       }`}
                     >
                       <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -483,7 +536,7 @@ export default function ProductsClientPage({
                       onMouseDown={e => { e.preventDefault(); saveRecentSearch(searchInput); setRecentSearches(getRecentSearches()) }}
                       onClick={() => setDropdownOpen(false)}
                       className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
-                        highlightIdx === i ? 'bg-blue-50' : 'hover:bg-gray-50'
+                        highlightIdx === i ? 'bg-green-50' : 'hover:bg-gray-50'
                       }`}
                     >
                       {/* Thumbnail */}
@@ -502,7 +555,7 @@ export default function ProductsClientPage({
                         </p>
                         <p className="text-xs text-gray-400 truncate">
                           {p.brand && <><HighlightMatch text={p.brand} query={searchInput} />{' · '}</>}
-                          <span className="text-blue-500">{p.category.name}</span>
+                          <span className="text-green-600">{p.category.name}</span>
                         </p>
                       </div>
                       {/* Price */}
@@ -519,7 +572,7 @@ export default function ProductsClientPage({
                     type="button"
                     onMouseDown={e => { e.preventDefault(); handleSubmitSearch() }}
                     className={`w-full flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm transition-colors ${
-                      highlightIdx === suggestions.length ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                      highlightIdx === suggestions.length ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
                     <span>See all results for &ldquo;<strong>{searchInput}</strong>&rdquo;</span>
@@ -552,13 +605,13 @@ export default function ProductsClientPage({
           <p className="text-sm text-gray-500">
             {isLoading ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                <span className="w-3 h-3 rounded-full border-2 border-green-500 border-t-transparent animate-spin" />
                 Loading catalogue…
               </span>
             ) : loadError ? (
               <span className="text-red-500">
                 Failed to load.{' '}
-                <button onClick={() => { setLoadError(false); loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true)) }} className="underline">
+                <button onClick={() => { setLoadError(false); loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true)) }} className="underline text-red-600">
                   Retry
                 </button>
               </span>
@@ -566,8 +619,8 @@ export default function ProductsClientPage({
               <>
                 <strong className="text-gray-700 font-semibold">{filtered.length.toLocaleString()}</strong>
                 {' '}product{filtered.length !== 1 ? 's' : ''}
-                {searchQuery && <> matching &ldquo;<strong className="text-gray-700">{searchQuery}</strong>&rdquo;</>}
-                {activeCategoryName && !searchQuery && <> in <strong className="text-gray-700">{activeCategoryName}</strong></>}
+                {searchQuery && <> matching &ldquo;<strong className="text-green-700">{searchQuery}</strong>&rdquo;</>}
+                {activeCategoryName && !searchQuery && <> in <strong className="text-green-700">{activeCategoryName}</strong></>}
               </>
             )}
           </p>
@@ -585,7 +638,7 @@ export default function ProductsClientPage({
                 ? `Nothing matched "${searchQuery}"${activeCategoryName ? ` in ${activeCategoryName}` : ''}`
                 : 'This category has no visible products yet'}
             </p>
-            <button onClick={clearAll} className="text-sm text-blue-600 hover:text-blue-700 hover:underline transition-colors">
+            <button onClick={clearAll} className="text-sm text-green-600 hover:text-green-700 hover:underline transition-colors">
               Clear filters
             </button>
           </div>
