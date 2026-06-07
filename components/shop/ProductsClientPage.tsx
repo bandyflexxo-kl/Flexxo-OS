@@ -1,11 +1,12 @@
 'use client'
 
 import {
-  useState, useEffect, useMemo, useRef, useCallback,
+  useState, useEffect, useMemo, useRef,
 } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProductCard from './ProductCard'
+import FlexxoSpinner from './FlexxoSpinner'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -314,6 +315,11 @@ export default function ProductsClientPage({
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
 
+  // Stagger animation only fires on FIRST product load (Condition 18)
+  const hasAnimated = useRef(false)
+  const isFirstLoad = !hasAnimated.current && allProducts !== null
+  if (isFirstLoad) hasAnimated.current = true
+
   // ── Dropdown content to show ──────────────────────────────────────
   const showSuggestions = dropdownOpen && searchInput.trim().length > 0
   const showRecents     = dropdownOpen && searchInput.trim().length === 0 && recentSearches.length > 0
@@ -605,7 +611,7 @@ export default function ProductsClientPage({
           <p className="text-sm text-gray-500">
             {isLoading ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full border-2 border-green-500 border-t-transparent animate-spin" />
+                <FlexxoSpinner size="sm" color="green" />
                 Loading catalogue…
               </span>
             ) : loadError ? (
@@ -643,21 +649,34 @@ export default function ProductsClientPage({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filtered.map(p => (
-              <ProductCard
-                key={p.id}
-                id={p.id}
-                name={p.name}
-                brand={p.brand}
-                unit={p.unit}
-                categoryName={p.category.name}
-                sellingPrice={p.sellingPrice}
-                currency={p.currency}
-                hasPhoto={p.hasPhoto}
-                isB2B={isB2B}
-              />
-            ))}
+          /* id used by HeroSection CTA scroll anchor */
+          <div id="products-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filtered.map((p, i) => {
+              // Stagger first 4 cards on initial load (Condition 18)
+              // Use inline animationDelay so dynamic values are never tree-shaken
+              const entryStyle = isFirstLoad && i < 4
+                ? { animationDelay: `${i * 75}ms` }
+                : {}
+              return (
+                <div
+                  key={p.id}
+                  className={isFirstLoad && i < 4 ? 'animate-fade-in-up' : ''}
+                  style={entryStyle}
+                >
+                  <ProductCard
+                    id={p.id}
+                    name={p.name}
+                    brand={p.brand}
+                    unit={p.unit}
+                    categoryName={p.category.name}
+                    sellingPrice={p.sellingPrice}
+                    currency={p.currency}
+                    hasPhoto={p.hasPhoto}
+                    isB2B={isB2B}
+                  />
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

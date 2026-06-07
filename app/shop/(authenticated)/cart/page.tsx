@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import FlexxoSpinner from '@/components/shop/FlexxoSpinner'
+import TrustBadge from '@/components/shop/TrustBadge'
 
 type CartItem = {
   id:          string
@@ -251,7 +253,7 @@ export default function CartPage() {
             >
               {checking ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  <FlexxoSpinner size="md" color="white" />
                   Submitting…
                 </span>
               ) : (
@@ -264,6 +266,11 @@ export default function CartPage() {
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
               </svg>
               Your request is reviewed by Flexxo sales
+            </div>
+
+            {/* Condition 13: TrustBadge on cart/checkout */}
+            <div className="pt-2 border-t border-gray-100">
+              <TrustBadge compact />
             </div>
           </div>
         </div>

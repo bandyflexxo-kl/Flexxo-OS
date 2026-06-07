@@ -33,3 +33,35 @@ body {
     display: none;
   }
 }
+
+/* ── Shop entry animations ──────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0);     }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@utility animate-fade-in-up {
+  animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+
+/* Scroll-reveal utility */
+@utility reveal-hidden {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+@utility reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}

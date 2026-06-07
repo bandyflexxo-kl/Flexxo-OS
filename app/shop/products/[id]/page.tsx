@@ -3,9 +3,25 @@ import { getOptionalSession } from '@/lib/session'
 import { calculateSellingPrice, calculateRetailPrice, roundPrice } from '@/lib/pricing'
 import CartButton             from '@/components/shop/CartButton'
 import ProductCard            from '@/components/shop/ProductCard'
+import TrustBadge             from '@/components/shop/TrustBadge'
+import StockBadge             from '@/components/shop/StockBadge'
+import SpecTable              from '@/components/shop/SpecTable'
+import StickyCartBar          from '@/components/shop/StickyCartBar'
+import ScrollReveal           from '@/components/shop/ScrollReveal'
 import Link                   from 'next/link'
 import { notFound }           from 'next/navigation'
 
+/**
+ * ShopProductDetailPage — premium product detail with 7 conversion elements.
+ *
+ * Condition 20: StickyCartBar (mobile only)
+ * Condition 21: 7 elements — image, name, price, desc, specs, CTA, trust
+ * Condition 22: SpecTable with SKU, brand, category, unit
+ * Condition 13: TrustBadge below CTA
+ * Condition 14: StockBadge beside price
+ * Condition 15: qty stepper in CartButton
+ * Condition 19: ScrollReveal on SpecTable + related products sections
+ */
 export default async function ShopProductDetailPage({
   params,
 }: {
@@ -47,6 +63,8 @@ export default async function ShopProductDetailPage({
       ? roundPrice(calculateSellingPrice(costPrice, product.defaultMarginPct, product.category.defaultMarginPct, b2bMargin)).toString()
       : roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
   }
+
+  const stockStatus = sellingPrice ? 'in-stock' as const : 'available' as const
 
   // Related products — same category, exclude self, up to 4
   const relatedRaw = await prisma.product.findMany({
@@ -92,7 +110,7 @@ export default async function ShopProductDetailPage({
   const loginUrl = `/shop/login?returnUrl=${encodeURIComponent(`/shop/products/${id}`)}`
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8 sm:space-y-10">
 
       {/* ── Breadcrumb ──────────────────────────────────────── */}
       <nav className="flex items-center gap-2 text-sm text-gray-400" aria-label="Breadcrumb">
@@ -110,11 +128,12 @@ export default async function ShopProductDetailPage({
         <span className="text-gray-600 truncate max-w-xs">{product.name}</span>
       </nav>
 
-      {/* ── Main product card ──────────────────────────────── */}
+      {/* ── Main product card — 7 conversion elements ─────── */}
+      {/* Condition 21: image, name, price, description, specs, CTA, trust */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
 
-          {/* Photo — takes 3/5 width on large screens */}
+          {/* 1. Product image */}
           <div className="lg:col-span-3 aspect-square bg-gray-50 flex items-center justify-center p-8 sm:border-b lg:border-b-0 sm:border-r-0 lg:border-r border-gray-100 relative overflow-hidden group">
             {product.googleDrivePhotoId ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -135,116 +154,135 @@ export default async function ShopProductDetailPage({
                 {product.category.name}
               </Link>
             </div>
+            {/* StockBadge on image — Condition 14 */}
+            <div className="absolute top-4 right-4">
+              <StockBadge status={stockStatus} size="sm" />
+            </div>
           </div>
 
-          {/* Details — takes 2/5 width on large screens */}
-          <div className="lg:col-span-2 p-7 lg:p-8 flex flex-col gap-5">
+          {/* Details panel */}
+          <div className="lg:col-span-2 p-6 sm:p-7 lg:p-8 flex flex-col gap-5">
 
-            {/* Title */}
+            {/* 2. Product name */}
             <div>
               <h1 className="text-xl font-bold text-gray-900 leading-snug">{product.name}</h1>
               {product.brand && (
-                <p className="text-sm text-gray-500 mt-1.5 font-medium">{product.brand}</p>
+                <p className="text-sm text-gray-500 mt-1 font-medium">{product.brand}</p>
               )}
             </div>
 
-            {/* Description */}
+            {/* 3. Price — Condition 14: StockBadge beside price */}
+            <div className="border-t border-gray-100 pt-4">
+              {sellingPrice ? (
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <p className="text-3xl font-extrabold text-gray-900 tracking-tight">
+                      {currency} {Number(sellingPrice).toFixed(2)}
+                    </p>
+                    {unit && <span className="text-sm text-gray-400 font-normal">/ {unit}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StockBadge status="in-stock" size="sm" />
+                    {isB2B ? (
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                        B2B price applied
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">
+                        <Link href={loginUrl} className="text-green-600 hover:underline">Sign in</Link>
+                        {' '}for B2B pricing
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-lg text-gray-400 italic">Price on request</p>
+                  <div className="flex items-center gap-2">
+                    <StockBadge status="available" size="sm" />
+                    <p className="text-xs text-gray-400">Contact your Flexxo sales rep for pricing.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. Description */}
             {(product.catalogDescription ?? product.packDescription) && (
               <p className="text-sm text-gray-600 leading-relaxed border-t border-gray-100 pt-4">
                 {product.catalogDescription ?? product.packDescription}
               </p>
             )}
 
-            {/* Specs table */}
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm border-t border-gray-100 pt-4">
-              {product.qneItemCode && (
-                <>
-                  <dt className="text-gray-400">Item Code</dt>
-                  <dd className="font-mono text-gray-700 text-xs truncate">{product.qneItemCode}</dd>
-                </>
-              )}
-              {unit && (
-                <>
-                  <dt className="text-gray-400">Unit</dt>
-                  <dd className="text-gray-700">{unit}</dd>
-                </>
-              )}
-              {product.packDescription && product.catalogDescription && (
-                <>
-                  <dt className="text-gray-400">Pack</dt>
-                  <dd className="text-gray-700 text-xs">{product.packDescription}</dd>
-                </>
-              )}
-              {minOrderQty > 1 && (
-                <>
-                  <dt className="text-gray-400">Min. Order</dt>
-                  <dd className="text-gray-700 font-medium">{minOrderQty} {unit ?? ''}</dd>
-                </>
-              )}
-            </dl>
+            {/* 5. Specifications — Condition 22: SKU, brand, category, unit */}
+            <ScrollReveal>
+              <div className="border-t border-gray-100 pt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">
+                  Specifications
+                </p>
+                <SpecTable specs={[
+                  { label: 'SKU',       value: product.qneItemCode,   mono: true },
+                  { label: 'Brand',     value: product.brand                      },
+                  { label: 'Category',  value: product.category.name              },
+                  { label: 'Unit',      value: unit                               },
+                  { label: 'Min. Order',value: minOrderQty > 1 ? `${minOrderQty} ${unit ?? ''}`.trim() : null },
+                  { label: 'Pack',      value: (product.packDescription && product.catalogDescription) ? product.packDescription : null },
+                ]} />
+              </div>
+            </ScrollReveal>
 
-            {/* Price */}
-            <div className="border-t border-gray-100 pt-4">
-              {sellingPrice ? (
-                <div className="space-y-1">
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-extrabold text-gray-900 tracking-tight">
-                      {currency} {Number(sellingPrice).toFixed(2)}
-                    </p>
-                    {unit && <span className="text-sm text-gray-400 font-normal">/ {unit}</span>}
-                  </div>
-                  {isB2B ? (
-                    <p className="text-xs text-green-600 font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                      B2B price applied
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400">
-                      <Link href={loginUrl} className="text-green-600 hover:underline">Sign in</Link>
-                      {' '}for B2B pricing
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="text-lg text-gray-400 italic">Price on request</p>
-                  <p className="text-xs text-gray-400">Contact your Flexxo sales rep for pricing.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Cart button */}
+            {/* 6. Add-to-cart CTA — Condition 15: qty +/- stepper */}
             <CartButton
               productId={product.id}
               minOrderQty={minOrderQty}
               isLoggedIn={isB2B}
               loginUrl={loginUrl}
             />
+
+            {/* 7. Trust signals — Condition 13 */}
+            <ScrollReveal delay={100}>
+              <TrustBadge />
+            </ScrollReveal>
+
           </div>
         </div>
       </div>
 
-      {/* ── Related products ───────────────────────────────── */}
+      {/* ── Related products — Condition 19 (scroll-triggered) ── */}
       {relatedProducts.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-gray-900">
-              More from {product.category.name}
-            </h2>
-            <Link
-              href={`/shop/products?categoryId=${product.category.id}`}
-              className="text-sm text-green-600 hover:text-green-700 hover:underline transition-colors"
-            >
-              View all →
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {relatedProducts.map(p => (
-              <ProductCard key={p.id} {...p} isB2B={isB2B} />
-            ))}
-          </div>
-        </section>
+        <ScrollReveal>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-900">
+                More from {product.category.name}
+              </h2>
+              <Link
+                href={`/shop/products?categoryId=${product.category.id}`}
+                className="text-sm text-green-600 hover:text-green-700 hover:underline transition-colors"
+              >
+                View all →
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {relatedProducts.map(p => (
+                <ProductCard key={p.id} {...p} isB2B={isB2B} />
+              ))}
+            </div>
+          </section>
+        </ScrollReveal>
       )}
+
+      {/* ── Sticky mobile cart bar — Condition 20 ─────────── */}
+      <StickyCartBar
+        productId={product.id}
+        productName={product.name}
+        price={sellingPrice}
+        currency={currency}
+        unit={unit ?? null}
+        minOrderQty={minOrderQty}
+        isLoggedIn={isB2B}
+        loginUrl={loginUrl}
+      />
 
     </div>
   )

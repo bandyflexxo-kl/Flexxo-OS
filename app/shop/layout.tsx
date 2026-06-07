@@ -2,6 +2,7 @@ import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import ShopNav from '@/components/shop/ShopNav'
 import ShopBottomNav from '@/components/shop/ShopBottomNav'
+import PromoBanner from '@/components/shop/PromoBanner'
 
 /**
  * Shop shell layout — always visible, no auth guard.
@@ -29,11 +30,13 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Condition 23: dismissible promo banner above nav */}
+      <PromoBanner />
       <ShopNav
         companyName={companyName}
         dbCartCount={cartCount}
       />
-      {/* pb-16 sm:pb-0 — clearance for mobile bottom nav bar */}
+      {/* pb-20 sm:pb-8 — clearance for mobile bottom nav bar */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-8 pb-20 sm:pb-8">
         {children}
       </main>

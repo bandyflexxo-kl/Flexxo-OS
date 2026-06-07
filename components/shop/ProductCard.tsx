@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import FlexxoSpinner from './FlexxoSpinner'
+import StockBadge from './StockBadge'
+import type { StockStatus } from './StockBadge'
 
 const GUEST_CART_KEY = 'flexxo_guest_cart'
 
@@ -23,6 +26,8 @@ export default function ProductCard({
 }: Props) {
   const router = useRouter()
   const [cartState, setCartState] = useState<'idle' | 'loading' | 'added'>('idle')
+
+  const stockStatus: StockStatus = sellingPrice ? 'in-stock' : 'available'
 
   async function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault()
@@ -59,12 +64,12 @@ export default function ProductCard({
   }
 
   return (
-    <div className="group relative bg-white rounded-xl border border-gray-200 hover:border-green-200 hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
+    <div className="group relative bg-white rounded-xl border border-gray-200 hover:border-green-300 hover:shadow-lg transition-all duration-200 overflow-hidden flex flex-col">
 
       {/* Photo + info — this whole block is the navigation link */}
       <Link href={`/shop/products/${id}`} className="flex flex-col flex-1" tabIndex={0}>
 
-        {/* Photo */}
+        {/* Photo — aspect-square for consistent grid */}
         <div className="aspect-square bg-gray-50 relative overflow-hidden">
           {hasPhoto ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -81,7 +86,12 @@ export default function ProductCard({
             </div>
           )}
 
-          {/* "Added ✓" flash overlay */}
+          {/* StockBadge overlay — top-right corner (Condition 14) */}
+          <div className="absolute top-2 right-2">
+            <StockBadge status={stockStatus} size="xs" />
+          </div>
+
+          {/* "Added ✓" flash overlay (Add-to-Cart state 3 — success) */}
           {cartState === 'added' && (
             <div className="absolute inset-0 flex items-center justify-center bg-green-500/90 transition-opacity">
               <div className="text-white text-center">
@@ -97,7 +107,7 @@ export default function ProductCard({
         {/* Text info */}
         <div className="p-3 flex flex-col gap-1 flex-1">
           <p className="text-xs text-green-600 font-medium leading-none">{categoryName}</p>
-          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-green-700 transition-colors">
+          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-green-700 transition-colors duration-200">
             {name}
           </p>
           {brand && <p className="text-xs text-gray-400">{brand}</p>}
@@ -114,12 +124,13 @@ export default function ProductCard({
         </div>
       </Link>
 
-      {/* Add to Cart button — always visible (touch-friendly, no hover required) */}
+      {/* Add to Cart button — 3 states: idle / loading / success (Condition 10) */}
       <div className="px-3 pb-3">
         <button
           onClick={handleAddToCart}
           disabled={cartState === 'loading'}
-          className={`w-full py-2 rounded-lg text-xs font-semibold transition-all active:scale-[0.97] touch-manipulation ${
+          aria-label={cartState === 'added' ? 'Added to cart' : `Add ${name} to cart`}
+          className={`w-full py-2 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-[0.97] touch-manipulation flex items-center justify-center gap-1.5 ${
             cartState === 'added'
               ? 'bg-green-500 text-white'
               : cartState === 'loading'
@@ -127,9 +138,13 @@ export default function ProductCard({
               : 'bg-green-600 text-white hover:bg-green-700'
           }`}
         >
-          {cartState === 'added'   ? '✓ Added to cart' :
-           cartState === 'loading' ? '…'               :
-           '🛒 Add to Cart'}
+          {cartState === 'loading' ? (
+            <><FlexxoSpinner size="xs" color="white" /> Adding…</>
+          ) : cartState === 'added' ? (
+            '✓ Added to cart'
+          ) : (
+            '🛒 Add to Cart'
+          )}
         </button>
       </div>
 

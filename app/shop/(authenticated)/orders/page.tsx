@@ -1,6 +1,7 @@
 import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
+import ReorderButton from '@/components/shop/ReorderButton'
 
 const STATUS_COLORS: Record<string, string> = {
   Confirmed:       'bg-yellow-100 text-yellow-700',
@@ -94,12 +95,16 @@ export default async function ShopOrdersPage() {
                     {new Date(o.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/shop/orders/${o.id}`}
-                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      View →
-                    </Link>
+                    <div className="flex items-center justify-end gap-2">
+                      {/* Condition 24: Reorder button for authenticated users */}
+                      <ReorderButton orderId={o.id} />
+                      <Link
+                        href={`/shop/orders/${o.id}`}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        View →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

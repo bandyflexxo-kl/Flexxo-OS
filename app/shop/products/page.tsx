@@ -1,18 +1,12 @@
 import { prisma }             from '@/lib/prisma'
 import { getOptionalSession } from '@/lib/session'
 import ProductsClientPage     from '@/components/shop/ProductsClientPage'
+import HeroSection            from '@/components/shop/HeroSection'
 
 /**
- * ShopProductsPage — thin server wrapper.
- *
- * Previously this page ran a full Prisma query for all products on every
- * category navigation, causing a full server round-trip each time (cold start
- * + DB query + pricing math + HTML serialisation).
- *
- * Now it only fetches the category list (lightweight) and passes the initial
- * URL params to <ProductsClientPage>, which loads ALL products once via
- * /api/portal/products?limit=all and filters client-side from then on.
- * Category switching is therefore instant after the first load.
+ * ShopProductsPage — server wrapper.
+ * Renders HeroSection (Condition 17) above the client-side product grid.
+ * Category list is fetched server-side; products are loaded client-side for instant filtering.
  */
 export default async function ShopProductsPage({
   searchParams,
@@ -23,7 +17,6 @@ export default async function ShopProductsPage({
   const isB2B    = session?.role === 'B2B Client'
   const { q, categoryId } = await searchParams
 
-  // Only fetch categories server-side (cheap query — used to pre-render sidebar)
   const categories = await prisma.productCategory.findMany({
     where:   { isActive: true },
     orderBy: { name: 'asc' },
@@ -31,11 +24,17 @@ export default async function ShopProductsPage({
   })
 
   return (
-    <ProductsClientPage
-      categories={categories}
-      initialCategoryId={categoryId}
-      initialQ={q}
-      isB2B={isB2B}
-    />
+    <>
+      {/* Condition 17: full-width hero with tagline + CTA + entry animation */}
+      <HeroSection isB2B={isB2B} />
+
+      {/* Product grid with category sidebar/pills */}
+      <ProductsClientPage
+        categories={categories}
+        initialCategoryId={categoryId}
+        initialQ={q}
+        isB2B={isB2B}
+      />
+    </>
   )
 }
