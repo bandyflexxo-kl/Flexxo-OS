@@ -112,10 +112,7 @@ export default function ProductCard({
           </p>
           {brand && <p className="text-xs text-gray-400">{brand}</p>}
           <div className="mt-auto pt-1.5">
-            {/* T4-2: Hide B2B prices from guests — protect pricing confidentiality */}
-            {!isB2B ? (
-              <p className="text-xs text-green-600 font-medium">Sign in for pricing →</p>
-            ) : sellingPrice ? (
+            {sellingPrice ? (
               <div className="flex items-baseline gap-1">
                 <p className="text-sm font-bold text-gray-900">{currency} {Number(sellingPrice).toFixed(2)}</p>
                 {unit && <span className="text-xs text-gray-400">/ {unit}</span>}

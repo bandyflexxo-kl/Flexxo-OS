@@ -235,25 +235,9 @@ export default async function ShopProductDetailPage({
               )}
             </div>
 
-            {/* 3. Price — T4-2: Guests see sign-in prompt. B2B see actual price. */}
+            {/* 3. Price — visible to all users */}
             <div className="border-t border-gray-100 pt-4">
-              {!isB2B ? (
-                /* Guest: price hidden — show sign-in CTA to protect B2B pricing */
-                <div className="space-y-3">
-                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-semibold text-green-800">Sign in to view B2B pricing</p>
-                      <p className="text-xs text-green-600 mt-0.5">Exclusive rates for registered business accounts</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StockBadge status={stockStatus} size="sm" />
-                  </div>
-                </div>
-              ) : sellingPrice ? (
+              {sellingPrice ? (
                 <div className="space-y-2">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <p className="text-3xl font-extrabold text-gray-900 tracking-tight">
@@ -261,13 +245,7 @@ export default async function ShopProductDetailPage({
                     </p>
                     {unit && <span className="text-sm text-gray-400 font-normal">/ {unit}</span>}
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StockBadge status="in-stock" size="sm" />
-                    <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                      B2B price applied
-                    </span>
-                  </div>
+                  <StockBadge status="in-stock" size="sm" />
                 </div>
               ) : (
                 <div className="space-y-2">

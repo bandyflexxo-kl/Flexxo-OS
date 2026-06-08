@@ -17,13 +17,6 @@ import { Suspense, useState } from 'react'
 import { shopLoginAction, requestAccountAction } from './actions'
 import type { LoginState, AccountRequestState } from './actions'
 
-// ── Client logos (text-based — no external img dependencies) ────────────────
-const CLIENT_LOGOS = [
-  ['CIMB', 'Public Bank', 'Maybank'],
-  ['Samsung', 'Nestle', 'Gamuda'],
-  ['St Regis', 'Schlumberger', 'Axiata'],
-]
-
 const TRUST_STATS = [
   { num: '15+',    label: 'Years in business' },
   { num: '3,700+', label: 'Products available' },
@@ -58,8 +51,8 @@ function BrandPanel() {
         </p>
       </div>
 
-      {/* Trust stats — T4-8 */}
-      <div className="space-y-8">
+      {/* Trust stats */}
+      <div>
         <div className="grid grid-cols-3 gap-4">
           {TRUST_STATS.map(({ num, label }) => (
             <div key={label} className="bg-white/10 rounded-xl p-4 text-center">
@@ -67,27 +60,6 @@ function BrandPanel() {
               <p className="text-[11px] text-green-200 mt-0.5 font-medium">{label}</p>
             </div>
           ))}
-        </div>
-
-        {/* Client logos — T4-8 */}
-        <div>
-          <p className="text-xs text-green-300 font-semibold uppercase tracking-widest mb-3">
-            Trusted by Malaysia&apos;s leading organisations
-          </p>
-          <div className="space-y-2">
-            {CLIENT_LOGOS.map((row, ri) => (
-              <div key={ri} className="flex gap-2">
-                {row.map(name => (
-                  <span
-                    key={name}
-                    className="flex-1 text-center text-xs font-semibold text-white/80 bg-white/10 border border-white/20 rounded-lg py-1.5 px-2 truncate"
-                  >
-                    {name}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>
