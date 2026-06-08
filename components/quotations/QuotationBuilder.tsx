@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import SmartOrderModal from '@/components/SmartOrderModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   )
 
   // Add item form state
-  const [addMode,         setAddMode]          = useState<'product' | 'freetext'>('product')
+  const [addMode,         setAddMode]          = useState<'product' | 'freetext' | 'smartpaste'>('product')
   const [searchQ,         setSearchQ]          = useState('')
   const [suggestions,     setSuggestions]      = useState<ProductSuggestion[]>([])
   const [searchLoading,   setSearchLoading]    = useState(false)
@@ -511,6 +512,12 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
               >
                 Free Text
               </button>
+              <button
+                onClick={() => { setAddMode('smartpaste'); setSelectedProduct(null); setSearchQ('') }}
+                className={`px-3 py-1.5 font-medium transition-colors ${addMode === 'smartpaste' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                ✨ Smart Add
+              </button>
             </div>
           </div>
 
@@ -569,7 +576,7 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
                 />
               </div>
             </div>
-          ) : (
+          ) : addMode === 'freetext' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="lg:col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Description *</label>
@@ -598,17 +605,41 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
                 <input type="number" min="0.01" step="0.01" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={addPrice} onChange={e => setAddPrice(e.target.value)} />
               </div>
             </div>
+          ) : null}
+
+          {addError && addMode !== 'smartpaste' && <p className="text-sm text-red-600">{addError}</p>}
+
+          {addMode !== 'smartpaste' && (
+            <button
+              onClick={addItem}
+              disabled={addLoading}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {addLoading ? 'Adding…' : '+ Add Item'}
+            </button>
           )}
 
-          {addError && <p className="text-sm text-red-600">{addError}</p>}
-
-          <button
-            onClick={addItem}
-            disabled={addLoading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {addLoading ? 'Adding…' : '+ Add Item'}
-          </button>
+          {addMode === 'smartpaste' && (
+            <SmartOrderModal
+              quotationId={initial.id}
+              currency={initial.currency}
+              onSuccess={(count) => {
+                // Reload items from server after bulk add
+                fetch(`/api/quotations/${initial.id}`)
+                  .then(r => r.json() as Promise<QuotationBuilderProps>)
+                  .then(data => {
+                    setItems(data.items)
+                    setTotalAmount(data.totalAmount)
+                  })
+                  .catch(() => undefined)
+                setAddMode('product')
+                router.refresh()
+                // brief confirmation via the addError slot (reuse as success msg)
+                setAddError(null)
+              }}
+              onCancel={() => setAddMode('product')}
+            />
+          )}
         </div>
       )}
 
