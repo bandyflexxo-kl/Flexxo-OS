@@ -41,6 +41,8 @@ export type ProductMatch = {
   currency:               string
   supplierPriceVersionId: string | null
   score:                  number
+  isVisible:              boolean   // true = stocked (isVisibleToCustomers)
+  orderFreq:              number    // # of times quoted across all quotations
 }
 
 export type MatchedLine = ParsedLine & {
@@ -245,6 +247,8 @@ type CatalogueProduct = {
   brand:            string | null
   unit:             string | null
   qneItemCode:      string | null
+  isVisible:        boolean          // isVisibleToCustomers — our proxy for "in stock"
+  orderFreq:        number           // historical quotation count (most-ordered signal)
   category:         { name: string; defaultMarginPct: Prisma.Decimal | null }
   defaultMarginPct: Prisma.Decimal | null
   priceVersions:    Array<{
@@ -267,16 +271,18 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
   if (_cache && Date.now() - _cacheFetchedAt < CATALOGUE_TTL_MS) {
     return _cache
   }
-  const [products, globalSetting] = await Promise.all([
+
+  const [products, globalSetting, freqRows] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
       select: {
-        id:               true,
-        name:             true,
-        brand:            true,
-        unit:             true,
-        qneItemCode:      true,
-        defaultMarginPct: true,
+        id:                   true,
+        name:                 true,
+        brand:                true,
+        unit:                 true,
+        qneItemCode:          true,
+        isVisibleToCustomers: true,
+        defaultMarginPct:     true,
         category: { select: { name: true, defaultMarginPct: true } },
         priceVersions: {
           where:   { isCurrent: true },
@@ -288,10 +294,24 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
       orderBy: { name: 'asc' },
     }),
     prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
+    // Aggregate historical quotation frequency per product (most-ordered signal)
+    prisma.quotationItem.groupBy({
+      by:    ['productId'],
+      where: { productId: { not: null } },
+      _count: { productId: true },
+    }),
   ])
 
+  const freqMap = new Map(freqRows.map(r => [r.productId!, r._count.productId]))
+
+  const enriched = (products as Array<typeof products[0] & { isVisibleToCustomers: boolean }>).map(p => ({
+    ...p,
+    isVisible: p.isVisibleToCustomers,
+    orderFreq: freqMap.get(p.id) ?? 0,
+  }))
+
   _cache = {
-    products:     products as unknown as CatalogueProduct[],
+    products:     enriched as unknown as CatalogueProduct[],
     globalMargin: globalSetting?.value ?? '30',
   }
   _cacheFetchedAt = Date.now()
@@ -331,16 +351,28 @@ export async function matchProductsForLines(lines: ParsedLine[]): Promise<Matche
     const rawQuery    = line.parsedName
 
     // Score all products
-    const scored = catalogue.map(p => ({
-      product: p,
-      score:   scoreMatch(queryTokens, rawQuery, p),
-    }))
+    const scored = catalogue.map(p => {
+      const rawScore = scoreMatch(queryTokens, rawQuery, p)
 
-    // Sort descending, take top 3
-    scored.sort((a, b) => b.score - a.score)
-    const top3 = scored.slice(0, 3).filter(s => s.score >= 0.15)
+      // ── Business priority adjustments (Principle: stock first → most ordered → best match) ──
+      // Only adjust candidates that already pass minimum threshold (avoids inflating junk)
+      let adjustedScore = rawScore
+      if (rawScore >= 0.15) {
+        // 1. Stocked items (isVisibleToCustomers=true) get a 35% boost.
+        //    Effect: a stocked product at 0.59 beats a non-stocked product at 0.79.
+        if (p.isVisible) adjustedScore = rawScore * 1.35
+        // 2. Order-frequency bonus — cap contribution at +0.08 (20 orders = +0.08)
+        adjustedScore += Math.min(p.orderFreq, 20) * 0.004
+      }
 
-    const alternatives: ProductMatch[] = top3.map(({ product: p, score }) => {
+      return { product: p, score: rawScore, adjustedScore }
+    })
+
+    // Sort by adjustedScore (stock/freq priority), fall back to rawScore for ties
+    scored.sort((a, b) => b.adjustedScore - a.adjustedScore || b.score - a.score)
+    const top3 = scored.slice(0, 3).filter(s => s.adjustedScore >= 0.15)
+
+    const alternatives: ProductMatch[] = top3.map(({ product: p, score, adjustedScore }) => {
       const { selling, currency, versionId } = getProductPrice(p, globalMargin)
       return {
         id:                     p.id,
@@ -352,7 +384,9 @@ export async function matchProductsForLines(lines: ParsedLine[]): Promise<Matche
         sellingPrice:           selling,
         currency,
         supplierPriceVersionId: versionId,
-        score,
+        score:                  Math.min(adjustedScore, 1.0),  // cap at 1.0 for display; business priority baked in
+        isVisible:              p.isVisible,
+        orderFreq:              p.orderFreq,
       }
     })
 
