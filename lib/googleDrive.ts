@@ -19,6 +19,7 @@ export function getGoogleAuthUrl(state: string): string {
     prompt:      'consent',  // always get refresh token
     scope: [
       'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',   // needed to create log files
     ],
     state,
   })

@@ -8,8 +8,18 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 import { Prisma } from '@/app/generated/prisma/client'
+
+// Inline price helpers — avoids importing lib/pricing which has 'server-only'
+function _calcSellingPrice(
+  costPrice:      Prisma.Decimal,
+  productMargin:  Prisma.Decimal | null,
+  categoryMargin: Prisma.Decimal | null,
+  globalMarginPct: string,
+): Prisma.Decimal {
+  const margin = productMargin ?? categoryMargin ?? new Prisma.Decimal(globalMarginPct)
+  return costPrice.times(new Prisma.Decimal(1).plus(margin.dividedBy(100))).toDecimalPlaces(2)
+}
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -161,7 +171,15 @@ function parseSingleLine(raw: string): ParsedLine | null {
  * Tokenise a string: lowercase, strip punctuation, split on whitespace.
  * Filter single-char tokens and common stop words.
  */
-const STOP_WORDS = new Set(['and', 'the', 'of', 'for', 'with', 'a', 'an', 'in', 'on', 'to', 'or'])
+// Stop words: common English words AND generic office-supply adjectives that
+// appear in many unrelated product names (e.g. "light" matches "STROBE LIGHT")
+const STOP_WORDS = new Set([
+  'and', 'the', 'of', 'for', 'with', 'a', 'an', 'in', 'on', 'to', 'or',
+  // Generic adjectives that are too common in product catalogue to be useful
+  'duty', 'heavy', 'light', 'size', 'type', 'style', 'new', 'mini',
+  'standard', 'regular', 'large', 'small', 'medium', 'colour', 'color',
+  'premium', 'deluxe', 'super', 'ultra', 'extra', 'plus',
+])
 
 function tokenise(s: string): Set<string> {
   return new Set(
@@ -187,8 +205,20 @@ function scoreMatch(
   if (nameTokens.size === 0 || queryTokens.size === 0) return 0
 
   const intersection = [...queryTokens].filter(t => nameTokens.has(t)).length
+
+  // Require at least 2 meaningful token hits for queries with 3+ tokens,
+  // to prevent single-word coincidences (e.g. "light" in "STROBE LIGHT")
+  if (queryTokens.size >= 3 && intersection < 2) return 0
+
   const union = new Set([...queryTokens, ...nameTokens]).size
   let score = union === 0 ? 0 : intersection / union
+
+  // Single-token query (e.g. "Calculator", "Eraser"): if the token exactly
+  // appears in the product name, guarantee at least medium confidence.
+  // Without this, a 1-token query against a 4-token product name scores ≤ 0.25.
+  if (queryTokens.size === 1 && intersection === 1) {
+    score = Math.max(score, 0.35)
+  }
 
   // Brand bonus — if brand appears in the query
   if (product.brand) {
@@ -275,13 +305,11 @@ function getProductPrice(
   const price = p.priceVersions[0] ?? null
   if (!price) return { selling: null, currency: 'MYR', versionId: null }
 
-  const selling = roundPrice(
-    calculateSellingPrice(
-      price.costPrice,
-      p.defaultMarginPct,
-      p.category.defaultMarginPct,
-      globalMargin,
-    ),
+  const selling = _calcSellingPrice(
+    price.costPrice,
+    p.defaultMarginPct,
+    p.category.defaultMarginPct,
+    globalMargin,
   )
   return {
     selling:   selling.toString(),
