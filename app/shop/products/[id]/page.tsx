@@ -10,6 +10,7 @@ import StickyCartBar          from '@/components/shop/StickyCartBar'
 import ScrollReveal           from '@/components/shop/ScrollReveal'
 import Link                   from 'next/link'
 import { notFound }           from 'next/navigation'
+import Image                   from 'next/image'
 import type { Metadata }      from 'next'
 
 /**
@@ -197,14 +198,17 @@ export default async function ShopProductDetailPage({
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
 
-          {/* 1. Product image */}
+          {/* 1. Product image — Fix 1: <Image fill> reserves space, prevents CLS */}
           <div className="lg:col-span-3 aspect-square bg-gray-50 flex items-center justify-center p-8 sm:border-b lg:border-b-0 sm:border-r-0 lg:border-r border-gray-100 relative overflow-hidden group">
             {product.googleDrivePhotoId ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={`/api/portal/photo/${product.id}`}
                 alt={product.name}
-                className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                fill
+                unoptimized
+                priority                /* LCP image — load eagerly */
+                sizes="(max-width:640px) 100vw, 60vw"
+                className="object-contain transition-transform duration-300 group-hover:scale-105"
               />
             ) : (
               <div className="text-9xl text-gray-200 select-none">📦</div>

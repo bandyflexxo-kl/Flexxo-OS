@@ -3,6 +3,7 @@
 import {
   useState, useEffect, useMemo, useRef,
 } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProductCard from './ProductCard'
@@ -141,7 +142,18 @@ export default function ProductsClientPage({
   const cacheKey = isB2B ? 'b2b' : 'guest'
 
   // ── Product data ──────────────────────────────────────────────────
-  const [allProducts,    setAllProducts]    = useState<ApiProduct[] | null>(null)
+  // Fix 3: Initialise from the module-level cache synchronously so the very
+  // first render already has data if cached — no skeleton flash on remount.
+  // This achieves the same guarantee as SWR with
+  //   { revalidateOnFocus: false, revalidateOnReconnect: false }
+  // because the module-level productCache never auto-revalidates on focus or
+  // reconnect events (there are no event listeners for those).
+  const [allProducts, setAllProducts] = useState<ApiProduct[] | null>(() => {
+    const key    = isB2B ? 'b2b' : 'guest'
+    const cached = productCache.get(key)
+    if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return cached.data
+    return null
+  })
   const [loadError,      setLoadError]      = useState(false)
 
   // ── Filters ───────────────────────────────────────────────────────
@@ -162,8 +174,13 @@ export default function ProductsClientPage({
   const apiUrl = isB2B ? B2B_API_URL : GUEST_API_URL
   useEffect(() => {
     const cached = productCache.get(cacheKey)
-    if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) { setAllProducts(cached.data); return }
-    setAllProducts(null)
+    // Fix 3: If data is already in cache, skip — state was already populated by
+    // the lazy useState initialiser above. Crucially we do NOT call
+    // setAllProducts(null) here; doing so would clear the synchronously-loaded
+    // data and flash a skeleton for one render cycle.
+    if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return
+    // Cache miss or expired — fetch without showing skeleton if we already have
+    // stale data (keep showing old data while new data loads).
     loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true))
   }, [cacheKey, apiUrl])
 
@@ -316,10 +333,20 @@ export default function ProductsClientPage({
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
 
-  // Stagger animation only fires on FIRST product load (Condition 18)
-  const hasAnimated = useRef(false)
+  // Fix 6: Stagger animation guard — persisted in sessionStorage so it survives
+  // client-side navigation back to this page without re-running the slide-in.
+  // useRef(initialValue): on remount the ref re-initialises, but we seed it
+  // from sessionStorage so it's true if the user has already seen the animation
+  // this browser session.
+  const SS_KEY = 'flexxo_products_animated'
+  const hasAnimated = useRef<boolean>(
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem(SS_KEY) === '1',
+  )
   const isFirstLoad = !hasAnimated.current && allProducts !== null
-  if (isFirstLoad) hasAnimated.current = true
+  if (isFirstLoad) {
+    hasAnimated.current = true
+    try { sessionStorage.setItem(SS_KEY, '1') } catch { /* ignore */ }
+  }
 
   // ── Dropdown content to show ──────────────────────────────────────
   const showSuggestions = dropdownOpen && searchInput.trim().length > 0
@@ -546,11 +573,17 @@ export default function ProductsClientPage({
                         highlightIdx === i ? 'bg-green-50' : 'hover:bg-gray-50'
                       }`}
                     >
-                      {/* Thumbnail */}
-                      <div className="w-9 h-9 rounded-lg bg-gray-100 shrink-0 overflow-hidden flex items-center justify-center">
+                      {/* Thumbnail — Fix 1: explicit 36×36 reserves layout space */}
+                      <div className="w-9 h-9 rounded-lg bg-gray-100 shrink-0 overflow-hidden flex items-center justify-center relative">
                         {p.hasPhoto ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={`/api/portal/photo/${p.id}`} alt={p.name} loading="lazy" className="w-full h-full object-contain p-1" />
+                          <Image
+                            src={`/api/portal/photo/${p.id}`}
+                            alt={p.name}
+                            width={36}
+                            height={36}
+                            unoptimized
+                            className="w-full h-full object-contain p-1"
+                          />
                         ) : (
                           <span className="text-gray-300 text-sm">📦</span>
                         )}

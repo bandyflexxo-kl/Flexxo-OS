@@ -7,6 +7,7 @@
  * elements stay visible after the animation completes.
  */
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { Z } from '@/constants/zIndex'
 
@@ -28,12 +29,14 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
 
         <div className="max-w-6xl mx-auto text-center relative" style={{ zIndex: Z.heroContent }}>
 
-          {/* Logo */}
+          {/* Logo — Fix 1: <Image> reserves layout space (width/height prevent CLS) */}
           <div className="animate-fade-in-up" style={{ animationDelay: '0ms' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src="/flexxo-logo.png"
               alt="Flexxo"
+              width={160}
+              height={48}
+              priority
               className="h-10 sm:h-12 w-auto mx-auto mb-4 object-contain brightness-0 invert"
             />
           </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import FlexxoSpinner from './FlexxoSpinner'
@@ -69,16 +70,18 @@ export default function ProductCard({
       {/* Photo + info — this whole block is the navigation link */}
       <Link href={`/shop/products/${id}`} className="flex flex-col flex-1" tabIndex={0}>
 
-        {/* Photo — aspect-square for consistent grid */}
-        <div className="aspect-square bg-gray-50 relative overflow-hidden">
+        {/* Photo — Fix 1+5: shop-photo-container (aspect-ratio:1/1, contain:layout)
+            ensures browser reserves exact space before image loads, eliminating CLS.
+            aspect-square is kept for Tailwind cascade; shop-photo-container reinforces it. */}
+        <div className="shop-photo-container aspect-square bg-gray-50">
           {hasPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={`/api/portal/photo/${id}`}
               alt={name}
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-300"
+              fill
+              unoptimized          /* API route — skip optimization pipeline */
+              sizes="(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw"
+              className="object-contain p-4 group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl text-gray-200">

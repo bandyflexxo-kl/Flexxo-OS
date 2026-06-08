@@ -14,6 +14,7 @@
 import { useActionState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
+import Image from 'next/image'
 import { shopLoginAction, requestAccountAction } from './actions'
 import type { LoginState, AccountRequestState } from './actions'
 
@@ -30,14 +31,14 @@ function BrandPanel() {
       className="hidden lg:flex flex-col justify-between p-10 xl:p-12"
       style={{ backgroundColor: '#15803d' }} /* green-700 — explicit, never inherited (G-3) */
     >
-      {/* Logo */}
+      {/* Logo — Fix 1: <Image> with explicit dimensions prevents CLS */}
       <div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           src="/flexxo-logo.png"
           alt="Flexxo"
           width={160}
           height={48}
+          priority
           className="h-12 w-auto object-contain brightness-0 invert mb-8"
         />
         <h1 className="text-2xl xl:text-3xl font-extrabold text-white leading-snug mb-3">
@@ -276,14 +277,14 @@ function LoginPage() {
       <div className="flex-1 flex items-center justify-center px-6 py-12 bg-white">
         <div className="w-full max-w-sm">
 
-          {/* Mobile-only logo */}
+          {/* Mobile-only logo — Fix 1: <Image> with explicit dims */}
           <div className="lg:hidden text-center mb-8">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src="/flexxo-logo.png"
               alt="Flexxo"
               width={140}
               height={44}
+              priority
               className="h-11 w-auto mx-auto object-contain"
             />
           </div>

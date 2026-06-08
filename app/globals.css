@@ -31,6 +31,19 @@ body {
   }
 }
 
+/* ── Fix 5: Image container CLS prevention ─────────────────────── */
+
+/* Product photo containers — reserve 1:1 space before image loads.
+   Prevents layout shift (CLS) that makes cards appear to "jump".
+   Tailwind's aspect-square also sets aspect-ratio:1/1; this ensures
+   it applies even in browsers that process utility classes late.     */
+@utility shop-photo-container {
+  aspect-ratio: 1 / 1;
+  contain: layout;          /* isolate layout so surrounding text can't shift */
+  position: relative;       /* required for <Image fill> */
+  overflow: hidden;
+}
+
 /* ── Shop entry animations ──────────────────────────────────────── */
 
 @keyframes fadeInUp {
