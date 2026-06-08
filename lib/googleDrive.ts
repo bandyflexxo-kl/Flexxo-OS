@@ -60,7 +60,8 @@ export async function listDriveFolder(
   let pageToken: string | undefined = undefined
 
   do {
-    const res = await drive.files.list({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res: any = await drive.files.list({
       q:        `'${folderId}' in parents and trashed = false`,
       fields:   'files(id,name,mimeType,modifiedTime,size),nextPageToken',
       orderBy:  'folder,name',
@@ -68,7 +69,8 @@ export async function listDriveFolder(
       pageToken,
     })
 
-    const items = (res.data.files ?? []).map(f => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (res.data.files ?? []).map((f: any) => ({
       id:           f.id           ?? '',
       name:         f.name         ?? '',
       mimeType:     f.mimeType     ?? '',

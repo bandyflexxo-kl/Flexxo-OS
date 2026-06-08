@@ -8,6 +8,7 @@
  */
 
 import Link from 'next/link'
+import { Z } from '@/constants/zIndex'
 
 export default function HeroSection({ isB2B }: { isB2B: boolean }) {
   return (
@@ -25,7 +26,7 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
           <div className="absolute -bottom-16 -left-10 w-56 h-56 rounded-full bg-green-600/30" />
         </div>
 
-        <div className="max-w-6xl mx-auto text-center relative z-10">
+        <div className="max-w-6xl mx-auto text-center relative" style={{ zIndex: Z.heroContent }}>
 
           {/* Logo */}
           <div className="animate-fade-in-up" style={{ animationDelay: '0ms' }}>

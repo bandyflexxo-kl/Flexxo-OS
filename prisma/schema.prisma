@@ -872,3 +872,26 @@ model QnePendingAction {
   @@index([status, createdAt])
   @@map("qne_pending_actions")
 }
+
+// ============================================================
+// DOMAIN 13 — B2B SHOP ACCOUNT REQUESTS
+// Prospective buyers who click "Request Business Account"
+// on the shop login page. Saved immediately so Flexxo team
+// can follow up. Never auto-converted to user accounts.
+// ============================================================
+
+model AccountRequest {
+  id          String    @id @default(uuid())
+  fullName    String    @map("full_name")
+  companyName String    @map("company_name")
+  email       String
+  phone       String?
+  message     String?   @db.Text
+  status      String    @default("pending")  // pending | contacted | converted | rejected
+  notes       String?   @db.Text             // internal notes from Flexxo team
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt           @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("account_requests")
+}

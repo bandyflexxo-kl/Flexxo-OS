@@ -112,7 +112,10 @@ export default function ProductCard({
           </p>
           {brand && <p className="text-xs text-gray-400">{brand}</p>}
           <div className="mt-auto pt-1.5">
-            {sellingPrice ? (
+            {/* T4-2: Hide B2B prices from guests — protect pricing confidentiality */}
+            {!isB2B ? (
+              <p className="text-xs text-green-600 font-medium">Sign in for pricing →</p>
+            ) : sellingPrice ? (
               <div className="flex items-baseline gap-1">
                 <p className="text-sm font-bold text-gray-900">{currency} {Number(sellingPrice).toFixed(2)}</p>
                 {unit && <span className="text-xs text-gray-400">/ {unit}</span>}
@@ -124,28 +127,37 @@ export default function ProductCard({
         </div>
       </Link>
 
-      {/* Add to Cart button — 3 states: idle / loading / success (Condition 10) */}
+      {/* Add to Cart / Sign In — guests see sign-in prompt, B2B see 3-state button */}
       <div className="px-3 pb-3">
-        <button
-          onClick={handleAddToCart}
-          disabled={cartState === 'loading'}
-          aria-label={cartState === 'added' ? 'Added to cart' : `Add ${name} to cart`}
-          className={`w-full py-2 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-[0.97] touch-manipulation flex items-center justify-center gap-1.5 ${
-            cartState === 'added'
-              ? 'bg-green-500 text-white'
-              : cartState === 'loading'
-              ? 'bg-green-400 text-white cursor-wait'
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          {cartState === 'loading' ? (
-            <><FlexxoSpinner size="xs" color="white" /> Adding…</>
-          ) : cartState === 'added' ? (
-            '✓ Added to cart'
-          ) : (
-            '🛒 Add to Cart'
-          )}
-        </button>
+        {isB2B ? (
+          <button
+            onClick={handleAddToCart}
+            disabled={cartState === 'loading'}
+            aria-label={cartState === 'added' ? 'Added to cart' : `Add ${name} to cart`}
+            className={`w-full py-2 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-[0.97] touch-manipulation flex items-center justify-center gap-1.5 ${
+              cartState === 'added'
+                ? 'bg-green-500 text-white'
+                : cartState === 'loading'
+                ? 'bg-green-400 text-white cursor-wait'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+          >
+            {cartState === 'loading' ? (
+              <><FlexxoSpinner size="xs" color="white" /> Adding…</>
+            ) : cartState === 'added' ? (
+              '✓ Added to cart'
+            ) : (
+              '🛒 Add to Cart'
+            )}
+          </button>
+        ) : (
+          <a
+            href={`/shop/login?returnUrl=${encodeURIComponent(`/shop/products/${id}`)}`}
+            className="w-full py-2 rounded-lg text-xs font-semibold text-center block transition-colors text-green-700 border border-green-200 hover:bg-green-50"
+          >
+            Sign In to Order
+          </a>
+        )}
       </div>
 
     </div>

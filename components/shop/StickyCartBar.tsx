@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import FlexxoSpinner from './FlexxoSpinner'
+import { Z } from '@/constants/zIndex'
 
 const GUEST_CART_KEY = 'flexxo_guest_cart'
 
@@ -75,7 +76,8 @@ export default function StickyCartBar({
        bottom-14 (56px) positions this above ShopBottomNav (fixed bottom-0 z-40 ~56px tall)
        so the bottom nav remains visible on mobile product detail pages. */
     <div
-      className="sm:hidden fixed bottom-14 left-0 right-0 z-50 bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3 shadow-lg"
+      className="sm:hidden fixed bottom-14 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3 shadow-lg"
+      style={{ zIndex: Z.stickyCart }}
     >
       {/* Product info */}
       <div className="flex-1 min-w-0">

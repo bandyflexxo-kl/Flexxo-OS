@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ProductCard from './ProductCard'
 import FlexxoSpinner from './FlexxoSpinner'
+import { Z } from '@/constants/zIndex'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -493,7 +494,7 @@ export default function ProductsClientPage({
 
           {/* ── Dropdown ──────────────────────────────────────────── */}
           {showDropdown && (
-            <div className="absolute left-0 right-0 top-full bg-white border border-green-500 border-t-0 rounded-b-xl shadow-lg z-50 overflow-hidden ring-2 ring-green-100 ring-t-0">
+            <div className="absolute left-0 right-0 top-full bg-white border border-green-500 border-t-0 rounded-b-xl shadow-lg overflow-hidden ring-2 ring-green-100 ring-t-0" style={{ zIndex: Z.searchDropdown }}>
 
               {/* Recent searches */}
               {showRecents && (

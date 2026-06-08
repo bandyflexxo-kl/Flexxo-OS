@@ -55,7 +55,7 @@ export async function bookLalamoveDelivery(orderId: string): Promise<BookResult>
   // Recipient contact
   const contact  = order.company.contacts[0]
   const recipientName  = contact?.name  ?? order.company.name
-  const recipientPhone = contact?.mobile ?? contact?.phone ?? ''
+  const recipientPhone = contact?.phone ?? ''
 
   if (!recipientPhone) {
     return { ok: false, error: 'No phone number on primary contact. Add a mobile number to the contact.' }

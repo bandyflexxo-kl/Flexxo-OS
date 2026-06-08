@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { Z } from '@/constants/zIndex'
 
 const GUEST_CART_KEY = 'flexxo_guest_cart'
 type GuestCartItem = { productId: string; qty: number }
@@ -95,8 +96,8 @@ export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
 
   return (
     <nav
-      className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200"
+      style={{ zIndex: Z.bottomNav, paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex items-stretch">
         {tabs.map(tab => {

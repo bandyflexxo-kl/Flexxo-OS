@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { Z } from '@/constants/zIndex'
 
 const GUEST_CART_KEY = 'flexxo_guest_cart'
 
@@ -47,7 +48,7 @@ export default function ShopNav({
   const cartHref  = isLoggedIn ? '/shop/cart' : '/shop/login?returnUrl=/shop/cart'
 
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+    <header className="bg-white border-b border-gray-200 sticky top-0" style={{ zIndex: Z.stickyNav }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
 
         {/* Brand — always visible */}
@@ -88,6 +89,16 @@ export default function ShopNav({
               }`}
             >
               My Orders
+            </Link>
+          )}
+          {isLoggedIn && (
+            <Link
+              href="/shop/account"
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                pathname.startsWith('/shop/account') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              Account
             </Link>
           )}
         </nav>
