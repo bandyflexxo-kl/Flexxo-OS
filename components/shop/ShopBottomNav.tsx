@@ -82,10 +82,9 @@ export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
       ),
     },
     {
-      href:    isLoggedIn ? '#' : '/shop/login',
-      label:   isLoggedIn ? 'Account' : 'Sign In',
-      active:  pathname.startsWith('/shop/login'),
-      isLogout: isLoggedIn,
+      href:   isLoggedIn ? '/shop/account' : '/shop/login',
+      label:  isLoggedIn ? 'Account' : 'Sign In',
+      active: pathname.startsWith('/shop/account') || pathname.startsWith('/shop/login'),
       icon: (active: boolean) => (
         <svg className={`w-6 h-6 ${active ? 'stroke-green-600' : 'stroke-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 2 : 1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
@@ -102,23 +101,6 @@ export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
       <div className="flex items-stretch">
         {tabs.map(tab => {
           const isActive = tab.active
-
-          // Account tab with logout for logged-in users
-          if (tab.isLogout) {
-            return (
-              <form key="account" action="/api/auth/logout" method="POST" className="flex-1">
-                <button
-                  type="submit"
-                  className={`w-full flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
-                    isActive ? 'text-green-600' : 'text-gray-500'
-                  }`}
-                >
-                  {tab.icon(isActive)}
-                  <span>{tab.label}</span>
-                </button>
-              </form>
-            )
-          }
 
           return (
             <Link

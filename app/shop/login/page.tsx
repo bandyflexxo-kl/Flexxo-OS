@@ -121,7 +121,40 @@ function LoginFormSection({ returnUrl }: { returnUrl: string }) {
       >
         {pending ? 'Signing in…' : 'Sign In →'}
       </button>
+
+      {/* Forgot password */}
+      <div className="text-center">
+        <ForgotPasswordHint />
+      </div>
     </form>
+  )
+}
+
+// ── Forgot password hint ──────────────────────────────────────────────────────
+function ForgotPasswordHint() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        Forgot password?
+      </button>
+      {open && (
+        <div className="mt-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-left">
+          <p className="text-xs text-blue-700 font-medium mb-1">Need to reset your password?</p>
+          <p className="text-xs text-blue-600 leading-relaxed">
+            Contact your Flexxo sales representative or email{' '}
+            <a href="mailto:admin@flexxo.com.my" className="underline font-medium">
+              admin@flexxo.com.my
+            </a>{' '}
+            and we&apos;ll reset it for you within 1 business day.
+          </p>
+        </div>
+      )}
+    </>
   )
 }
 

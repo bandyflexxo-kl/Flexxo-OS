@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache'
 import { prisma }          from '@/lib/prisma'
 import { calculateRetailPrice, roundPrice } from '@/lib/pricing'
+import { calcDisplayPrice } from '@/lib/qnePriceSync'
 
 /**
  * GET /api/portal/products-public
@@ -62,12 +63,13 @@ const fetchRetailProductsCached = unstable_cache(
           ...(categoryId ? { categoryId } : {}),
         },
         select: {
-          id:                 true,
-          name:               true,
-          brand:              true,
-          unit:               true,
-          qneItemCode:        true,
-          googleDrivePhotoId: true,
+          id:                  true,
+          name:                true,
+          brand:               true,
+          unit:                true,
+          qneItemCode:         true,
+          googleDrivePhotoId:  true,
+          qneLastSalePrice:    true,
           category: { select: { id: true, name: true } },
           priceVersions: {
             where:   { isCurrent: true },
@@ -85,10 +87,20 @@ const fetchRetailProductsCached = unstable_cache(
     const retailMargin = retailSetting?.value ?? '30'
 
     return products.map(p => {
-      const costPrice = p.priceVersions[0]?.costPrice ?? null
-      const sellingPrice = costPrice
-        ? roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
-        : null
+      // Priority 1: QNE last sale price × 1.20 (synced from live invoice data)
+      // Priority 2: cost price × retail margin (fallback when QNE price not yet synced)
+      const qnePrice     = p.qneLastSalePrice ? Number(p.qneLastSalePrice) : null
+      const qneDisplay   = calcDisplayPrice(qnePrice)
+
+      let sellingPrice: string | null = null
+      if (qneDisplay !== null) {
+        sellingPrice = qneDisplay.toString()
+      } else {
+        const costPrice = p.priceVersions[0]?.costPrice ?? null
+        if (costPrice) {
+          sellingPrice = roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
+        }
+      }
 
       return {
         id:          p.id,

@@ -16,71 +16,74 @@ const LOG_FOLDER_ID = '14KX8_UaoFxN2lfWidcM-hWQurGK3G_ID'
 
 const LOG_CONTENT = `# Flexxo CRM — App Improvement Log
 Date: 9 June 2026
-Build: Smart Order v2 — Stock-First + Order-Frequency Brand Priority
-Commit: c40fde6
+Build: Market Price Scout — AI-powered cheapest source finder
+Commit: 8dbdf70
 
 ---
 
-## What changed
+## What was built
 
-**lib/smartOrder.ts** — matching engine updated with business priority rules
+**Feature: Market Price Scout** — visible at /market-scout in the sidebar (all CRM roles).
 
-Bandy's rule: quote what we have in stock first; if no stock, quote most-ordered brand; only then fall back to best name-match.
-
-### Files modified
-| File | Change |
-|---|---|
-| lib/smartOrder.ts | Added isVisible + orderFreq to CatalogueProduct; fetchCatalogue() now loads order frequency via quotationItem.groupBy; 1.35x score boost for stocked items + 0.004×orderFreq bonus |
+Paste a list of products NOT in your QNE catalogue → AI searches Malaysian retail platforms and returns cheapest prices from official/reliable stores only.
 
 ### Files created
 | File | Purpose |
 |---|---|
-| scripts/checkCatalogue.ts | Audit: catalogue size, APLUS counts, top-15 ordered products |
+| lib/marketScout.ts | scoutProduct() — Claude API with web_search_20250305 tool; searches 8 Malaysian platforms |
+| app/api/market-scout/route.ts | POST endpoint — Server-Sent Events stream, yields per-product results as they complete |
+| app/(dashboard)/market-scout/page.tsx | UI — paste input, real-time progress, per-product result cards, sourcing tips panel |
+
+### Files modified
+| File | Change |
+|---|---|
+| components/layout/Sidebar.tsx | Added "Market Scout" nav item with search icon (all roles) |
 
 ---
 
-## Matching results comparison
+## How it works
 
-| Version | Auto ✅ | Review ⚠ | Not Found ❌ |
-|---|---|---|---|
-| v1 initial | 21 | 27 | 9 |
-| v2 quality fixes (stop words + min intersection) | 21 | 27 | 9 |
-| v3 single-token boost | 21 | 30 | 6 |
-| v4 stock+frequency priority (this build) | **29** | **22** | 6 |
+1. Go to /market-scout in the sidebar
+2. Paste product list (one per line, max 20)
+3. Click "Scout X items"
+4. AI uses web search to find prices on:
+   - Shopee Malaysia — Official Stores only
+   - Lazada Malaysia — LazMall only
+   - Lotus's Malaysia
+   - Mr. DIY Malaysia
+   - Popular Bookstore Malaysia
+   - AEON Malaysia
+   - Watsons Malaysia
+   - Amazon Malaysia
+5. Results appear one by one as Claude searches (~10–20s per product)
+6. Each result shows: platform, store name, price (MYR), unit, stock status, direct link
+7. Cheapest in-stock option highlighted in green
 
-**8 items moved from Review → Auto** by preferring stocked (isVisibleToCustomers=true) products.
+### Sourcing tips panel
+Expand "Other ways to find cheapest sources" for:
+1688.com, Alibaba.com, MyHD, Carousell Business, PriceArea.com.my, Shopee Wholesale, Brand Direct, Hatten Trade
 
-### Scoring logic
-- Raw Jaccard score from token overlap (unchanged)
-- adjustedScore = rawScore × 1.35 (if isVisible=true) + min(orderFreq,20) × 0.004
-- Confidence tier uses adjustedScore; display capped at 1.00
-- Only applied to candidates with rawScore ≥ 0.15
+---
 
-### Not found (6 items — same as before, salesperson enters free-text):
-- Mechanical Pencils Lead
-- Light Duty Scissors (no scissors in visible catalogue)
-- Loytape 48mm (only 18mm variant stocked)
-- Staples No10 (ASTAR NO.10 exists but score 0.28, below threshold)
-- Puncher DP480 / DP700 (model codes don't match)
-
-### Draft quotation created
-**QT-2026-0003** — 43 FLORIST (test), MYR 1,488.69
-http://localhost:3000/quotations/b754565e-bb20-4d92-a5ff-3566e4b42bd3
+## Constraints
+- Uses existing ANTHROPIC_API_KEY (no new subscription)
+- No QNE interaction (Principle 10)
+- Max 20 products per search run
 
 ---
 
 ## Rollback
-To revert matching engine only: git checkout bf2b954 lib/smartOrder.ts
+git checkout a11996d -- lib/marketScout.ts app/api/market-scout/route.ts components/layout/Sidebar.tsx
 
 ---
 
 ## Next most worthy step
 
 **Phase 2A — Auto-Send on Approval**
-- When Bandy clicks Approve, automatically email + WhatsApp quotation (from salesperson's Baileys number)
-- Eliminates the manual "Send to Customer" click after every approval
-- File to change: app/api/quotations/[id]/approve/route.ts
-- Estimated effort: 1 day — existing send logic just needs wiring into approve route
+- When Bandy clicks Approve on a quotation, system auto-sends email + WhatsApp
+- Eliminates the manual "Send" click after every approval
+- File: app/api/quotations/[id]/approve/route.ts — wire existing sendQuotationEmail + Baileys
+- Estimated: 1 day
 `
 
 async function main() {

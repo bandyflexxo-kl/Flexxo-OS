@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache'
 import { getOptionalSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { calculateSellingPrice, calculateRetailPrice, roundPrice } from '@/lib/pricing'
+import { calcDisplayPrice } from '@/lib/qnePriceSync'
 
 /**
  * GET /api/portal/products
@@ -58,13 +59,14 @@ const fetchProductsCached = unstable_cache(
         // catalogDescription is intentionally excluded (shown only on detail page).
         // Using select instead of include avoids fetching ~40 unused columns.
         select: {
-          id:                 true,
-          name:               true,
-          brand:              true,
-          unit:               true,
-          qneItemCode:        true,
-          defaultMarginPct:   true,   // needed for B2B price hierarchy
-          googleDrivePhotoId: true,   // → hasPhoto boolean
+          id:                  true,
+          name:                true,
+          brand:               true,
+          unit:                true,
+          qneItemCode:         true,
+          defaultMarginPct:    true,   // needed for B2B price hierarchy fallback
+          googleDrivePhotoId:  true,   // → hasPhoto boolean
+          qneLastSalePrice:    true,   // QNE last invoice price (priority pricing)
           category: { select: { id: true, name: true, defaultMarginPct: true } },
           priceVersions: {
             where:   { isCurrent: true },
@@ -84,16 +86,24 @@ const fetchProductsCached = unstable_cache(
     const b2bMargin    = b2bSetting?.value    ?? '20'
 
     return products.map(p => {
-      const costPrice = p.priceVersions[0]?.costPrice ?? null
-      let sellingPrice: string | null = null
+      // Priority 1: QNE last sale price × 1.20 — same for ALL users (B2B or guest)
+      // Priority 2: cost × margin (fallback when QNE price not yet synced)
+      const qnePrice   = p.qneLastSalePrice ? Number(p.qneLastSalePrice) : null
+      const qneDisplay = calcDisplayPrice(qnePrice)
 
-      if (costPrice) {
-        if (isB2B) {
-          sellingPrice = roundPrice(calculateSellingPrice(
-            costPrice, p.defaultMarginPct, p.category.defaultMarginPct, b2bMargin,
-          )).toString()
-        } else {
-          sellingPrice = roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
+      let sellingPrice: string | null = null
+      if (qneDisplay !== null) {
+        sellingPrice = qneDisplay.toString()
+      } else {
+        const costPrice = p.priceVersions[0]?.costPrice ?? null
+        if (costPrice) {
+          if (isB2B) {
+            sellingPrice = roundPrice(calculateSellingPrice(
+              costPrice, p.defaultMarginPct, p.category.defaultMarginPct, b2bMargin,
+            )).toString()
+          } else {
+            sellingPrice = roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
+          }
         }
       }
 
