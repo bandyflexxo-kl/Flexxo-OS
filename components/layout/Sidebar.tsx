@@ -87,6 +87,15 @@ function IconQneSandbox() {
   )
 }
 
+function IconMarketScout() {
+  return (
+    <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 10l1.5 1.5M10 10a2 2 0 100-4 2 2 0 000 4"/>
+    </svg>
+  )
+}
+
 function IconAdmin() {
   return (
     <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
@@ -115,8 +124,9 @@ const NAV_ITEMS = [
   { href: '/quotations', label: 'Quotations', Icon: IconQuotations,  roles: null },
   { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: null },
   { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: ['Admin', 'Manager', 'Warehouse'] },
-  { href: '/reports',             label: 'Reports',    Icon: IconReports,      roles: ['Admin', 'Manager'] },
-  { href: '/admin/qne-sandbox',  label: 'QNE Sandbox', Icon: IconQneSandbox, roles: ['Admin', 'Manager'] },
+  { href: '/reports',             label: 'Reports',       Icon: IconReports,      roles: ['Admin', 'Manager'] },
+  { href: '/market-scout',       label: 'Market Scout',  Icon: IconMarketScout,  roles: null },
+  { href: '/admin/qne-sandbox',  label: 'QNE Sandbox',   Icon: IconQneSandbox,   roles: ['Admin', 'Manager'] },
   { href: '/admin',              label: 'Admin',      Icon: IconAdmin,        roles: ['Admin', 'Manager'] },
 ] as const
 
