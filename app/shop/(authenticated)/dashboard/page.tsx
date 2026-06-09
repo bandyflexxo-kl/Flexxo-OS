@@ -11,7 +11,7 @@ import { redirect }          from 'next/navigation'
 import Link                   from 'next/link'
 import { prisma }             from '@/lib/prisma'
 import { getOptionalSession } from '@/lib/session'
-import { fetchQneFinancialData, QneUnavailableError } from '@/lib/qneFinancial'
+import { fetchQneFinancialDataCached, QneUnavailableError } from '@/lib/qneFinancial'
 import type { Decimal }       from '@prisma/client/runtime/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -264,16 +264,22 @@ export default async function DashboardPage() {
     outstanding: number; paymentTerm: string | null
     isCached: boolean
     recentInvoices: { invoiceNo: string; invoiceDate: string; dueDate: string | null; amount: number }[]
+    aging: {
+      current: number; overdue30: number; overdue60: number
+      overdue90: number; overdueAbove90: number
+      totalOutstanding: number; creditLimit: number | null
+    } | null
   } | null = null
 
   if (company?.qneCustomerCode) {
     try {
-      const fin = await fetchQneFinancialData(company.qneCustomerCode)
+      const fin = await fetchQneFinancialDataCached(company.qneCustomerCode)
       qneBalance = {
         outstanding:    fin.customer.currentBalance,
         paymentTerm:    fin.customer.paymentTerm,
         isCached:       false,
         recentInvoices: fin.recentInvoices.slice(0, 3),
+        aging:          fin.aging,
       }
     } catch (e) {
       if (e instanceof QneUnavailableError) {
@@ -284,6 +290,7 @@ export default async function DashboardPage() {
             paymentTerm:    null,
             isCached:       true,
             recentInvoices: [],
+            aging:          null,
           }
         }
       }
@@ -556,6 +563,84 @@ export default async function DashboardPage() {
             </table>
           </div>
         )}
+
+        {/* ── Aging Breakdown + Credit Limit ───────────────────────── */}
+        {qneBalance && !qneBalance.isCached && qneBalance.aging && qneBalance.aging.totalOutstanding > 0 && (() => {
+          const ag = qneBalance.aging!
+          const total = ag.totalOutstanding || 1   // avoid divide-by-zero
+          const bars: { label: string; val: number; color: string }[] = [
+            { label: 'Current',  val: ag.current,        color: 'bg-green-400' },
+            { label: '1–30d',    val: ag.overdue30,       color: 'bg-yellow-400' },
+            { label: '31–60d',   val: ag.overdue60,       color: 'bg-orange-400' },
+            { label: '61–90d',   val: ag.overdue90,       color: 'bg-red-400' },
+            { label: '90d+',     val: ag.overdueAbove90,  color: 'bg-red-600' },
+          ].filter(b => b.val > 0)
+
+          return (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📅</span>
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Payment Aging</p>
+                </div>
+                <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
+              </div>
+              <div className="px-4 py-4">
+                {/* Stacked bar */}
+                <div className="h-3 rounded-full overflow-hidden flex mb-3">
+                  {bars.map(b => (
+                    <div
+                      key={b.label}
+                      className={`${b.color} h-full transition-all`}
+                      style={{ width: `${Math.round((b.val / total) * 100)}%` }}
+                      title={`${b.label}: MYR ${b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}`}
+                    />
+                  ))}
+                </div>
+                {/* Legend */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+                  {bars.map(b => (
+                    <div key={b.label} className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${b.color}`} />
+                      <span className="text-[11px] text-gray-500">{b.label}</span>
+                      <span className="text-[11px] font-semibold text-gray-700 ml-auto tabular-nums">
+                        MYR {b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Credit limit bar (if available) */}
+                {ag.creditLimit !== null && ag.creditLimit > 0 && (
+                  <div className="mt-4 pt-3 border-t border-gray-50">
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="text-gray-500 font-medium">Credit Utilisation</span>
+                      <span className="tabular-nums text-gray-700 font-semibold">
+                        MYR {ag.totalOutstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                        {' / '}
+                        MYR {ag.creditLimit.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          ag.totalOutstanding / ag.creditLimit > 0.8
+                            ? 'bg-red-500'
+                            : ag.totalOutstanding / ag.creditLimit > 0.5
+                            ? 'bg-amber-400'
+                            : 'bg-green-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.round((ag.totalOutstanding / ag.creditLimit) * 100))}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      {Math.round((ag.totalOutstanding / ag.creditLimit) * 100)}% of credit limit used
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Recent Orders ─────────────────────────────────────────── */}
         {recentOrders.length > 0 && (

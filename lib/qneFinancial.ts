@@ -1,3 +1,4 @@
+import { unstable_cache }                      from 'next/cache'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -17,13 +18,39 @@ export type QneInvoice = {
   isCancelled: boolean
 }
 
+/** Aging breakdown — how old the outstanding amounts are */
+export type QneAgingSummary = {
+  current:       number   // Not yet due
+  overdue30:     number   // 1–30 days overdue
+  overdue60:     number   // 31–60 days overdue
+  overdue90:     number   // 61–90 days overdue
+  overdueAbove90: number  // 90+ days overdue
+  totalOutstanding: number
+  creditLimit:   number | null
+}
+
 export type QneFinancialData = {
   customer:       QneCustomerFinancials
   recentInvoices: QneInvoice[]
+  aging:          QneAgingSummary | null   // null if aging endpoint unavailable
   fetchedAt:      string
 }
 
 // ── Raw QNE shapes ────────────────────────────────────────────────────────────
+
+type RawAgingSummary = {
+  customerId?:       string | null
+  customerCode?:     string | null
+  companyCode?:      string | null
+  currentBalance?:   number | null
+  overdue30?:        number | null
+  overdue60?:        number | null
+  overdue90?:        number | null
+  overdueAbove90?:   number | null
+  totalOutstanding?: number | null
+  creditLimit?:      number | null
+  [key: string]:     unknown
+}
 
 type RawCustomer = {
   id:             string
@@ -129,11 +156,69 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
     // Non-fatal — show empty invoice list
   }
 
+  // ── 3. Fetch aging summary ────────────────────────────────────────────────
+  let aging: QneAgingSummary | null = null
+
+  try {
+    const raw = await qneGet<unknown>('/Customers/AgingSummary', token)
+    const all: RawAgingSummary[] = Array.isArray(raw)
+      ? (raw as RawAgingSummary[])
+      : ((raw as { value?: RawAgingSummary[] })?.value ?? [])
+
+    // Match by companyCode or customerCode field (QNE field name varies by build)
+    const match = all.find(
+      r => r.companyCode === qneCustomerCode || r.customerCode === qneCustomerCode
+    )
+    if (match) {
+      aging = {
+        current:          Number(match.currentBalance   ?? 0),
+        overdue30:        Number(match.overdue30         ?? 0),
+        overdue60:        Number(match.overdue60         ?? 0),
+        overdue90:        Number(match.overdue90         ?? 0),
+        overdueAbove90:   Number(match.overdueAbove90    ?? 0),
+        totalOutstanding: Number(match.totalOutstanding  ?? 0),
+        creditLimit:      match.creditLimit != null ? Number(match.creditLimit) : null,
+      }
+    }
+  } catch {
+    // Non-fatal — aging section simply won't render
+  }
+
   return {
     customer:       customerInfo,
     recentInvoices: invoices,
+    aging,
     fetchedAt:      new Date().toISOString(),
   }
+}
+
+// ── Cached version (4-hour TTL via Next.js Data Cache) ───────────────────────
+//
+// On Vercel, `unstable_cache` persists across serverless invocations using the
+// platform's Data Cache — no Redis needed. On local dev it persists for the
+// lifetime of the dev server process.
+//
+// TTL: 4 hours (14 400 s). Rationale: QNE invoice/balance data changes at most
+// once or twice per business day (payment received, invoice issued). 4 hours
+// limits VPN round-trips to ≤ 6 per client per day in the worst case.
+//
+// Error behaviour: if QNE is unreachable the underlying function throws
+// QneUnavailableError; `unstable_cache` does NOT cache the error — next call
+// retries QNE. The dashboard's try/catch falls back to the DB-cached balance.
+//
+// To force-invalidate a client's cache (e.g. payment just confirmed):
+//   import { revalidateTag } from 'next/cache'
+//   revalidateTag(`qne-fin-${qneCustomerCode}`)
+
+export function fetchQneFinancialDataCached(qneCustomerCode: string): Promise<QneFinancialData> {
+  return unstable_cache(
+    () => fetchQneFinancialData(qneCustomerCode),
+    [`qne-fin-${qneCustomerCode}`],
+    {
+      revalidate: 4 * 60 * 60,                 // 4 hours
+      tags:       [`qne-fin-${qneCustomerCode}`],
+    }
+  )()
 }
 
 export { QneUnavailableError }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { decrypt } from '@/lib/session'
+import { decrypt, encrypt, sessionDurationMs } from '@/lib/session'
 
 /**
  * Subdomain routing + auth guard
@@ -108,10 +108,42 @@ export default async function proxy(req: NextRequest) {
 
   // Already logged in + on login page → redirect to home
   if (session?.userId && pathname.startsWith(loginUrl)) {
-    const homePath = (isShopDomain && !SINGLE_DOMAIN) || (SINGLE_DOMAIN && isShopPath)
-      ? '/shop/products'
+    const isShopSession = (isShopDomain && !SINGLE_DOMAIN) || (SINGLE_DOMAIN && isShopPath)
+    // B2B clients go to their dashboard; CRM staff go to CRM home
+    const homePath = isShopSession
+      ? (session.role === 'B2B Client' ? '/shop/dashboard' : '/shop/products')
       : '/'
     return NextResponse.redirect(new URL(homePath, req.url))
+  }
+
+  // ── Sliding window session renewal ─────────────────────────────────────
+  // If a session has less than 33% of its original lifetime remaining and
+  // the user is actively browsing, silently renew the cookie so they are
+  // never interrupted mid-work.
+  // Only renew on non-redirect responses (i.e. we are about to return next())
+  if (session?.userId && session.role) {
+    const now         = Date.now()
+    const expiresAt   = new Date(session.expiresAt).getTime()
+    const totalMs     = sessionDurationMs(session.role)
+    const remaining   = expiresAt - now
+
+    if (remaining > 0 && remaining < totalMs * 0.33) {
+      const newExpiresAt = new Date(now + totalMs)
+      try {
+        const newToken = await encrypt({ ...session, expiresAt: newExpiresAt })
+        const response = NextResponse.next()
+        response.cookies.set('session', newToken, {
+          httpOnly: true,
+          secure:   process.env.NODE_ENV === 'production',
+          expires:  newExpiresAt,
+          sameSite: 'lax',
+          path:     '/',
+        })
+        return response
+      } catch {
+        // Renewal failure is non-fatal — proceed with existing session
+      }
+    }
   }
 
   return NextResponse.next()
