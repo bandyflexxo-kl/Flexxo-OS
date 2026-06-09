@@ -1,5 +1,5 @@
 # Flexxo Sales OS — Project Memory
-Last updated: 10 June 2026
+Last updated: 10 June 2026 (session 2)
 
 ## What this project is
 Internal B2B Sales CRM + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
@@ -23,6 +23,7 @@ an office supply company in Malaysia (B2B, serving corporate clients).
 - Zod (validation on all API routes and forms)
 - Node.js, npm
 - tsx for running scripts (use `npx tsx`, NOT `npx ts-node` — tsx handles @/ path aliases correctly)
+- **Upstash Redis** (`@upstash/redis`) — HTTP-based Redis for serverless; used for product catalogue 24h cache
 
 ## Prisma v7 notes
 - Schema has NO `url` in datasource — this is correct for Prisma v7
@@ -224,8 +225,9 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - /shop/account — profile page, change password, sign out
 - /shop/orders — order history with status stepper
 - /shop/quotations — customer-facing quotation list
+- /shop/dashboard — B2B client dashboard (greeting, spend metrics, partner tier, smart reorder, QNE aging breakdown, account manager card, quick actions)
 - Guest users: browse + see prices freely, no login required
-- B2B clients: login required for cart/checkout
+- B2B clients: login required for cart/checkout; redirected to /shop/dashboard on login
 - Account request flow: pending → contacted → converted/rejected
 - Admin review: /admin/account-requests (notification bell + push notification)
 - Admin creates portal accounts: /admin/customer-accounts (with prefill from requests)
@@ -243,6 +245,16 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - **Lalamove Integration**: `lib/lalamoveClient.ts` — delivery booking, driver polling, webhooks.
 - **Notification System**: Notification bell (top of CRM sidebar) + browser push notifications. Covers: overdue follow-ups, pending quotation approvals, pending account requests.
 - **Daily Digest**: Cron job emails Admin/Manager a daily summary of overdue follow-ups.
+
+### Performance & Security Upgrades ✅ COMPLETE (Session 2 — 10 June 2026)
+- **B2B Client Dashboard** (`/shop/dashboard`): post-login landing page with time-aware greeting, spend metrics, partner tier loyalty bar, QNE aging breakdown + credit limit bar, account manager card, smart reorder predictions, category spend, quick actions. QNE data cached 4h via `unstable_cache`.
+- **Login redirect**: B2B clients now land on `/shop/dashboard` (was `/shop/products`) after login.
+- **Security headers** (7 headers via `next.config.ts` `headers()`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-XSS-Protection`, `Strict-Transport-Security` (2-year HSTS), `X-DNS-Prefetch-Control: off`.
+- **Role-based session expiry** (`lib/session.ts`): B2B Client = 7 days, all internal roles = 24 hours.
+- **Sliding window session renewal** (`middleware.ts`): session cookie renewed automatically if < 33% of lifetime remaining — no forced re-login on active users.
+- **SSR product catalogue + Upstash Redis 24h cache**: products fetched server-side and embedded in HTML — "Loading catalogue…" spinner eliminated permanently. Two-layer cache: Redis (24h, persists across restarts) → `unstable_cache` fallback. Cache invalidated automatically after QNE price sync. Live TTFB: **128ms**.
+- **Browser cache headers**: `Cache-Control: private, max-age=86400` (B2B) / `public, max-age=86400` (guest) on product API routes.
+- **Hydration fix** (`ProductsClientPage.tsx`): eliminated React hydration warning caused by `animate-fade-in-up` class mismatch between SSR and client. Root cause: `sessionStorage` read during render + animation guard not gated on `mounted`. Fixed with `useMounted()` hook; `sessionStorage` reads/writes moved to `useEffect`.
 
 ---
 
@@ -306,10 +318,15 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - audit_log written by PostgreSQL triggers not application code
 - Customer → agent link: customer.salesPerson (full name) matched to agent.name (first name)
 - Product pricing for shop: QNE last-sale-price × 1.20 (for all visitors), fallback to cost × margin when no QNE price synced
-- Module-level product cache in ProductsClientPage (5-min TTL, no SWR needed)
+- ~~Module-level product cache in ProductsClientPage (5-min TTL)~~ — replaced by Upstash Redis 24h cache + SSR
 - Notification system: computed from DB on each bell poll — no separate notifications table
 - constants/zIndex.ts (Z export) — single source of truth for all z-index values
 - Prisma v7: datasource URL in prisma.config.ts only (not schema.prisma)
+- Product catalogue caching: `lib/products-api.ts` — Redis-first (24h), `unstable_cache` fallback; shared by page server component + both API routes
+- `lib/redis.ts` — Upstash Redis singleton; returns `null` gracefully when env vars not set (safe for local dev without Redis)
+- `lib/qneFinancial.ts` — QNE financial data (aging, outstanding, credit limit) cached 4h via `unstable_cache` per customer code; cache tag `qne-financial-{code}`
+- Session durations: `sessionDurationMs(role)` in `lib/session.ts` — B2B Client 7d, others 24h; sliding window renewal in `middleware.ts` at < 33% remaining
+- `useMounted()` hook pattern: any client component that reads browser-only APIs (sessionStorage, window, etc.) must gate on `mounted` to avoid SSR hydration mismatches
 
 ## What NOT to automate (v1 rules)
 - Do not auto-promote QNE staging records
@@ -356,6 +373,8 @@ LALAMOVE_PICKUP_CONTACT_PHONE=""
 LALAMOVE_WEBHOOK_SECRET=""
 GOOGLE_REVIEW_URL=""
 CRON_SECRET=""
+UPSTASH_REDIS_REST_URL=""
+UPSTASH_REDIS_REST_TOKEN=""
 ```
 
 ---
@@ -372,6 +391,7 @@ CRON_SECRET=""
 | 3+ | Smart Order (AI paste/photo → quote items) | ✅ Complete |
 | 3+ | Market Price Scout (AI cheapest source finder) | ✅ Complete |
 | 3+ | Reports + Team Portfolio Intelligence | ✅ Complete |
+| 3+ | B2B Client Dashboard + Performance & Security upgrades | ✅ Complete |
 | 4 | Order fulfillment pipeline (Approve → Pick → Pack → Deliver via Lalamove) | 🟡 Built, needs Lalamove credentials + warehouse workers |
 | 5 | AI sales intelligence (health scores, forecasting, cross-sell, P&L dashboard) | 🔴 Not started |
 
