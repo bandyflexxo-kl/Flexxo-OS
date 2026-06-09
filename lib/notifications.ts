@@ -10,6 +10,7 @@ export type NotificationType =
   | 'draft_quote'
   | 'pending_approval'
   | 'inactive_account'
+  | 'account_request'
 
 export type NotificationItem = {
   type:      NotificationType
@@ -174,7 +175,27 @@ export async function getNotificationsForUser(
     }
   }
 
-  // ── 6. Inactive accounts (no activity in 30+ days) ────────────────────────
+  // ── 6. Pending account requests (Admin / Manager only) ───────────────────
+  if (isPrivileged) {
+    const pendingRequests = await prisma.accountRequest.findMany({
+      where:   { status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      take:    10,
+      select:  { id: true, fullName: true, companyName: true, email: true, createdAt: true },
+    })
+
+    for (const req of pendingRequests) {
+      items.push({
+        type:      'account_request',
+        title:     `Account request: ${req.companyName}`,
+        body:      `${req.fullName} — ${req.email}`,
+        url:       '/admin/account-requests',
+        createdAt: req.createdAt,
+      })
+    }
+  }
+
+  // ── 7. Inactive accounts (no activity in 30+ days) ────────────────────────
   if (!isPrivileged) {
     const inactiveCompanies = await prisma.company.findMany({
       where: {
@@ -197,7 +218,8 @@ export async function getNotificationsForUser(
     }
   }
 
-  const urgent = overdueFollowUps.length + approvedQuotes.length
+  const pendingRequestCount = items.filter(i => i.type === 'account_request').length
+  const urgent = overdueFollowUps.length + approvedQuotes.length + pendingRequestCount
 
   return { items, count: items.length, urgent }
 }

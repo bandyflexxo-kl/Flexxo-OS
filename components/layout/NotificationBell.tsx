@@ -24,6 +24,7 @@ const TYPE_EMOJI: Record<string, string> = {
   draft_quote:       '📝',
   pending_approval:  '⏳',
   inactive_account:  '😴',
+  account_request:   '🆕',
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -33,6 +34,7 @@ const TYPE_LABEL: Record<string, string> = {
   draft_quote:       'Draft Quote',
   pending_approval:  'Pending Approval',
   inactive_account:  'Inactive Account',
+  account_request:   'Account Request',
 }
 
 export default function NotificationBell() {

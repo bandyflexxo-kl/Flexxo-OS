@@ -16,64 +16,70 @@ const LOG_FOLDER_ID = '14KX8_UaoFxN2lfWidcM-hWQurGK3G_ID'
 
 const LOG_CONTENT = `# Flexxo CRM — App Improvement Log
 Date: 9 June 2026
-Build: Market Price Scout — AI-powered cheapest source finder
-Commit: 8dbdf70
+Build: B2B Shop — Account Page + QNE Last-Sale-Price Pricing
+Commit: 69ba002
 
 ---
 
 ## What was built
 
-**Feature: Market Price Scout** — visible at /market-scout in the sidebar (all CRM roles).
+### 1. /shop/account Page (was a 404)
+B2B clients can now access their account page from the top nav "Account" link.
 
-Paste a list of products NOT in your QNE catalogue → AI searches Malaysian retail platforms and returns cheapest prices from official/reliable stores only.
+| Section | What it does |
+|---|---|
+| Profile card | Shows name, email, company, mobile, last login |
+| Change password | Current + new + confirm — validated client-side + API |
+| Sign out | Clean sign out button |
 
-### Files created
+### 2. Forgot Password hint (login page)
+"Forgot password?" link on login page → expands to contact instructions (email admin@flexxo.com.my). No self-service reset needed — passwords are admin-managed.
+
+### 3. Bottom nav Account tab fix
+Mobile bottom nav "Account" tab now links to /shop/account instead of triggering sign-out.
+
+### 4. QNE Last-Sale-Price × 1.20 Pricing
+ALL visitors (logged in B2B client or anonymous guest) now see the same price:
+  **Display price = QNE last invoiced price × 1.20**
+
+Fallback: if QNE price not yet synced, falls back to cost × margin as before.
+
+---
+
+## Files created
 | File | Purpose |
 |---|---|
-| lib/marketScout.ts | scoutProduct() — Claude API with web_search_20250305 tool; searches 8 Malaysian platforms |
-| app/api/market-scout/route.ts | POST endpoint — Server-Sent Events stream, yields per-product results as they complete |
-| app/(dashboard)/market-scout/page.tsx | UI — paste input, real-time progress, per-product result cards, sourcing tips panel |
+| app/shop/(authenticated)/account/page.tsx | Account page (profile + change password + sign out) |
+| app/api/portal/account/route.ts | GET profile, PATCH change password |
+| lib/qnePriceSync.ts | syncQnePrices() — fetches last 200 invoices from QNE, extracts unit prices per item code, updates products.qne_last_sale_price |
+| app/api/admin/qne/sync-prices/route.ts | POST — Admin/Manager trigger for QNE price sync |
+| components/admin/QnePriceSyncPanel.tsx | Admin UI widget on /admin with Sync button + VPN reminder |
 
-### Files modified
+## Files modified
 | File | Change |
 |---|---|
-| components/layout/Sidebar.tsx | Added "Market Scout" nav item with search icon (all roles) |
+| prisma/schema.prisma | Added qneLastSalePrice + qneLastSalePriceAt to Product model |
+| app/api/portal/products/route.ts | QNE price × 1.20 priority; margin fallback |
+| app/api/portal/products-public/route.ts | Same pricing logic |
+| app/shop/login/page.tsx | Added "Forgot password?" hint section |
+| components/shop/ShopBottomNav.tsx | Account tab → /shop/account instead of logout form |
+| app/(dashboard)/admin/page.tsx | Added QnePriceSyncPanel |
 
 ---
 
-## How it works
+## How to sync QNE prices
 
-1. Go to /market-scout in the sidebar
-2. Paste product list (one per line, max 20)
-3. Click "Scout X items"
-4. AI uses web search to find prices on:
-   - Shopee Malaysia — Official Stores only
-   - Lazada Malaysia — LazMall only
-   - Lotus's Malaysia
-   - Mr. DIY Malaysia
-   - Popular Bookstore Malaysia
-   - AEON Malaysia
-   - Watsons Malaysia
-   - Amazon Malaysia
-5. Results appear one by one as Claude searches (~10–20s per product)
-6. Each result shows: platform, store name, price (MYR), unit, stock status, direct link
-7. Cheapest in-stock option highlighted in green
-
-### Sourcing tips panel
-Expand "Other ways to find cheapest sources" for:
-1688.com, Alibaba.com, MyHD, Carousell Business, PriceArea.com.my, Shopee Wholesale, Brand Direct, Hatten Trade
-
----
-
-## Constraints
-- Uses existing ANTHROPIC_API_KEY (no new subscription)
-- No QNE interaction (Principle 10)
-- Max 20 products per search run
+1. Ensure Radmin VPN (Flexxokl) is active
+2. Go to /admin (CRM)
+3. Click "↻ Sync Prices" in the QNE Shop Prices Sync panel
+4. Prices update immediately — shop refreshes within 5 min (CDN cache TTL)
 
 ---
 
 ## Rollback
-git checkout a11996d -- lib/marketScout.ts app/api/market-scout/route.ts components/layout/Sidebar.tsx
+git checkout 8dbdf70 -- prisma/schema.prisma app/api/portal/products/route.ts app/api/portal/products-public/route.ts app/shop/login/page.tsx components/shop/ShopBottomNav.tsx app/(dashboard)/admin/page.tsx
+# Also drop new files if needed:
+# git rm app/shop/(authenticated)/account/page.tsx app/api/portal/account/route.ts lib/qnePriceSync.ts app/api/admin/qne/sync-prices/route.ts components/admin/QnePriceSyncPanel.tsx
 
 ---
 

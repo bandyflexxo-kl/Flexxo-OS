@@ -4,7 +4,11 @@ import Topbar from '@/components/layout/Topbar'
 import Link from 'next/link'
 import CustomerAccountsTable from '@/components/admin/CustomerAccountsTable'
 
-export default async function CustomerAccountsPage() {
+export default async function CustomerAccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ prefill?: string }>
+}) {
   const session = await verifySession()
   if (session.role !== 'Admin') {
     return (
@@ -13,6 +17,14 @@ export default async function CustomerAccountsPage() {
         <div className="p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
+  }
+
+  // Support ?prefill={"name":"...","email":"...","companyName":"..."} from account-requests page
+  const sp = await searchParams
+  let prefill: { name?: string; email?: string; companyName?: string } | null = null
+  if (sp.prefill) {
+    try { prefill = JSON.parse(decodeURIComponent(sp.prefill)) as typeof prefill }
+    catch { /* ignore malformed prefill */ }
   }
 
   const [rawAccounts, companies] = await Promise.all([
@@ -62,7 +74,13 @@ export default async function CustomerAccountsPage() {
           </div>
         </div>
 
-        <CustomerAccountsTable accounts={accounts} companies={companies} />
+        {prefill && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+            <span>🆕</span>
+            <span>Pre-filled from account request: <strong>{prefill.name}</strong> ({prefill.companyName}). Select the matching company below and set a password.</span>
+          </div>
+        )}
+        <CustomerAccountsTable accounts={accounts} companies={companies} prefill={prefill} />
       </div>
     </div>
   )

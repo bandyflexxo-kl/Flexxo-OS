@@ -18,20 +18,30 @@ type Company = {
   name: string
 }
 
+type Prefill = { name?: string; email?: string; companyName?: string } | null
+
 export default function CustomerAccountsTable({
   accounts:  initialAccounts,
   companies,
+  prefill = null,
 }: {
   accounts:  CustomerAccount[]
   companies: Company[]
+  prefill?:  Prefill
 }) {
   const [accounts, setAccounts] = useState(initialAccounts)
-  const [showNew,  setShowNew]  = useState(false)
+  // Open new-account form automatically when prefill data is present
+  const [showNew,  setShowNew]  = useState(!!prefill)
   const [busy,     setBusy]     = useState<Set<string>>(new Set())
   const [error,    setError]    = useState<string | null>(null)
   const [success,  setSuccess]  = useState<string | null>(null)
 
-  const [form, setForm] = useState({ name: '', email: '', password: '', companyId: '' })
+  const [form, setForm] = useState({
+    name:      prefill?.name      ?? '',
+    email:     prefill?.email     ?? '',
+    password:  '',
+    companyId: '',
+  })
   const [formError, setFormError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -194,6 +204,11 @@ export default function CustomerAccountsTable({
                 <option value="">— Select company —</option>
                 {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {prefill?.companyName && !form.companyId && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Requested company: <strong>{prefill.companyName}</strong> — find and select it above, or create a new company first.
+                </p>
+              )}
             </div>
             {formError && <p className="text-xs text-red-600">{formError}</p>}
           </div>

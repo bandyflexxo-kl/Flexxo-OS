@@ -7,6 +7,7 @@ import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import { createSession } from '@/lib/session'
 import { sendGenericEmail } from '@/lib/email'
+import { sendPushToManagers } from '@/lib/webpush'
 
 // ── T6-5: Login rate limiter ───────────────────────────────────────────────
 // Simple in-memory store keyed by IP. Works on single-process dev server.
@@ -191,6 +192,13 @@ export async function requestAccountAction(
   await prisma.accountRequest.create({
     data: { fullName, companyName, email, phone, message },
   })
+
+  // T4-4(a2): Push notification to all Admins/Managers — fire-and-forget
+  sendPushToManagers({
+    title: 'New Account Request',
+    body:  `${companyName} — ${fullName}`,
+    url:   '/admin/account-requests',
+  }).catch(() => undefined)
 
   // T4-4(b): Notify Flexxo team — fire-and-forget (never block on email)
   try {
