@@ -1,8 +1,8 @@
 # Flexxo Sales OS — Project Memory
-Last updated: 2 June 2026
+Last updated: 10 June 2026
 
 ## What this project is
-Internal B2B Sales CRM + future e-commerce ordering system for Flexxo (KL) Sdn Bhd,
+Internal B2B Sales CRM + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
 an office supply company in Malaysia (B2B, serving corporate clients).
 
 ## Business context
@@ -15,14 +15,20 @@ an office supply company in Malaysia (B2B, serving corporate clients).
 ---
 
 ## Tech stack
-- Next.js 16.2.6 (App Router), TypeScript strict mode
-- PostgreSQL + Prisma ORM
-- Tailwind CSS
+- Next.js 15 (App Router), TypeScript strict mode
+- PostgreSQL + Prisma ORM v7 (custom client output: `app/generated/prisma`)
+- Tailwind CSS v4
 - NextAuth.js (credentials provider)
 - Nodemailer (Gmail SMTP)
 - Zod (validation on all API routes and forms)
 - Node.js, npm
 - tsx for running scripts (use `npx tsx`, NOT `npx ts-node` — tsx handles @/ path aliases correctly)
+
+## Prisma v7 notes
+- Schema has NO `url` in datasource — this is correct for Prisma v7
+- URL is provided by `prisma.config.ts` which reads `process.env.DATABASE_URL`
+- After any schema change: run `npx prisma db push` then `npx prisma generate`
+- Vercel uses `vercel-build` script: `prisma generate && next build` (no migrate deploy)
 
 ## Environment
 - OS: Windows
@@ -30,6 +36,7 @@ an office supply company in Malaysia (B2B, serving corporate clients).
 - Database: PostgreSQL local, database name: flexxo_sales_os
 - Dev server: http://localhost:3000
 - Admin login: admin@flexxo.com.my
+- Live URL: https://flexxo-os.vercel.app (project: bandyflexxo-kls-projects/flexxo-os)
 
 ## How to start dev server
 ```
@@ -80,9 +87,6 @@ npx prisma studio
 JAVENN, BANDY, JUSTINE, TIMOTHY, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN, LING
 (LING exists in QNE but has no CRM account yet — may be new hire)
 
-### QNE Agent record fields — CONFIRMED by syncAgentEmails.ts
-id, staffCode, name, idNo, dateJoined, dateLeft, mobileNo, email, salary, socso, epf, taxFile, remarks, gender, isActive, isManager, defaultTeam, isDefault, commissionType
-
 ### Agent email sync results (run 2 June 2026)
 - JAVENN: updated to sales1@kl.flexxo.com.my
 - TIMOTHY: updated to tim@flexxo.com.my
@@ -111,20 +115,20 @@ We NEVER write to QNE except these approved endpoints (with double human approva
 - GET /api/Agents/{code}/OrderSummary — sales per agent
 - GET /api/Agents/InvoiceSummary — invoice summary per agent
 - GET /api/AgentMonthTotal/* — monthly totals per agent
-- GET /api/SalesInvoices — invoice history (Phase 2)
+- GET /api/SalesInvoices — invoice history
 - GET /api/SalesInvoices/{id} — invoice detail
 - GET /api/SalesInvoices/Find — search invoices
-- GET /api/DeliveryOrders — delivery status (Phase 3)
+- GET /api/DeliveryOrders — delivery status
 - GET /api/Stocks — product catalogue
 - GET /api/Stocks/available — live stock check
-- POST /api/Stocks/GetSellingPrice — price per customer tier (Phase 2)
+- POST /api/Stocks/GetSellingPrice — price per customer tier
 - POST /api/Stocks/GetSellingPriceList — price list for multiple items
-- POST /api/CreditControls/CheckNewQT — credit check before quoting (Phase 2)
+- POST /api/CreditControls/CheckNewQT — credit check before quoting
 - GET /api/Terms — payment terms
 - GET /api/TaxCodes/OutputTaxCodes — SST codes
 - GET /api/Branches/ByCompany — client branch addresses
-- POST /api/Users/CustomerLogin — B2B client portal login (Phase 3)
-- GET /api/CustomerStatement — client statement (Phase 3)
+- POST /api/Users/CustomerLogin — B2B client portal login
+- GET /api/CustomerStatement — client statement
 - GET /api/ARReports/CustomerLedgerDetail — AR ledger
 - GET /api/Suppliers — supplier master list
 - GET /api/PurchaseInvoices — purchase history from suppliers
@@ -136,14 +140,13 @@ We NEVER write to QNE except these approved endpoints (with double human approva
 ---
 
 ## Database schema
-- 30 tables across 10 domains
 - All PKs are UUIDs
 - Key principle: staging tables first, human approval, then master tables
 - Audit log written by PostgreSQL triggers (not application code)
 - See prisma/schema.prisma for full schema
 
 ## Seeded master data
-- Roles: Admin, Manager, Salesperson, Viewer
+- Roles: Admin, Manager, Salesperson, Viewer, B2B Client, Warehouse
 - Pipeline stages: 14 stages (New Lead → Key Account + vendor registration flow)
 - Product categories: 12 categories (Battery, Stationery, Pantry etc)
 - Admin user: admin@flexxo.com.my
@@ -167,6 +170,11 @@ We NEVER write to QNE except these approved endpoints (with double human approva
 Passwords: use /admin/users → Set Password for each salesperson before they log in.
 Emails: /admin/users → Edit button to update name/email/mobile for each user.
 
+**Pending actions:**
+- [ ] Set real passwords for 7 remaining salespeople (BANDY, JUSTINE, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN)
+- [ ] Update their emails via /admin/users → Edit
+- [ ] Reject junk QNE staging records (customer testing 700-C001, Quotation 700-Q001)
+
 ---
 
 ## What is already built
@@ -187,22 +195,54 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - QNE API connection working via Radmin VPN
 - runSync.ts — pulls 369 customers from QNE into staging table
 - Staging review screen at /admin/qne-review
-- 369 customers in staging (mix of pending_review and promoted)
-- Agent auto-assignment working:
-  - 9 CRM users created from QNE agents
-  - 333 company assignments backfilled
-  - 36 companies unassigned (no salesPerson in QNE)
+- Agent auto-assignment: 9 CRM users created, 333 company assignments backfilled
 - Known junk records to reject: "customer testing" (700-C001), "Quotation" (700-Q001)
 
+### Phase 1C — Supplier Price Database ✅ COMPLETE
+- Google Drive PDF upload + Claude AI price extraction
+- Supplier price versioning (immutable after approval)
+- Admin review + approval workflow at /admin/suppliers
+
 ### Phase 1D — User Management & Salesperson Onboarding ✅ COMPLETE
-- [x] /admin/users page — set passwords, edit name/email/mobile, change role, activate/deactivate
-- [x] Forced password change on first login for @flexxo.internal accounts
-- [x] Role-based access control — salespeople see only their assigned companies
-- [x] syncAgentEmails.ts — synced JAVENN + TIMOTHY emails from QNE; mobileNo linked
-- [x] Edit User modal — admin can manually update name/email/mobile for any user
-- [ ] Set real passwords for 7 remaining salespeople (BANDY, JUSTINE, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN)
-- [ ] Update their emails via /admin/users → Edit
-- [ ] Reject junk QNE staging records (customer testing 700-C001, Quotation 700-Q001)
+- /admin/users page — set passwords, edit name/email/mobile, change role, activate/deactivate
+- Forced password change on first login for @flexxo.internal accounts
+- Role-based access control — salespeople see only their assigned companies
+- Edit User modal — admin can manually update name/email/mobile for any user
+
+### Phase 2 — Quotation System ✅ COMPLETE
+- Full quotation builder (salesperson creates draft, manager approves)
+- Quotation items freeze unit_cost at draft time
+- Quotation email to client on send
+- WABA WhatsApp auto-alert when quotation sent (via `lib/wabaClient.ts`)
+- Baileys bridge integration: salesperson personal WhatsApp sessions at /admin/whatsapp
+
+### Phase 3 — B2B Client Portal ✅ COMPLETE
+- /shop/products — full product catalogue (3,700+ items), QNE last-sale-price × 1.20 for ALL visitors
+- /shop/products/[id] — product detail with spec table, add to cart
+- /shop/cart — shopping cart (B2B: API-backed; guest: localStorage)
+- /shop/login — B2B login + "Request Business Account" form
+- /shop/account — profile page, change password, sign out
+- /shop/orders — order history with status stepper
+- /shop/quotations — customer-facing quotation list
+- Guest users: browse + see prices freely, no login required
+- B2B clients: login required for cart/checkout
+- Account request flow: pending → contacted → converted/rejected
+- Admin review: /admin/account-requests (notification bell + push notification)
+- Admin creates portal accounts: /admin/customer-accounts (with prefill from requests)
+- Portal welcome email sent on account creation (lib/portalWelcomeEmail.ts)
+- WABA order status alerts (Shipped/Delivered) via lib/wabaMessages.ts
+
+### Additional CRM Features ✅ COMPLETE
+- **Smart Order** (`/quotations/[id]` → ✨ Smart Add tab): paste a text list or upload a photo → AI matches items → bulk-add to quotation. Uses Claude Vision for photos, token-Jaccard matching for text.
+- **Market Price Scout** (`/market-scout`): AI searches for cheapest supplier for any product. Uses Claude + web search.
+- **Reports** (`/reports`): Team Portfolio Intelligence — client count, outstanding balance, top items per salesperson. Admin/Manager only.
+- **QNE Price Sync**: Admin triggers sync at /admin → "↻ Sync Prices" (requires Radmin VPN). Pulls last invoiced price from QNE per item, stores in `products.qneLastSalePrice`. Display price = last sale price × 1.20.
+- **Google Drive Photo Matching**: Scan Drive folder → match product photos by stock code / name → 5-tier matching (exact code, fuzzy code, exact name, fuzzy name, brand+name).
+- **Warehouse Portal** (`/warehouse`): Picking task board for warehouse workers.
+- **Order Fulfillment Pipeline**: Confirmed → Approved → Picking → Packed → Delivering → Delivered. Invoice, WarehouseTask, DeliveryBooking models.
+- **Lalamove Integration**: `lib/lalamoveClient.ts` — delivery booking, driver polling, webhooks.
+- **Notification System**: Notification bell (top of CRM sidebar) + browser push notifications. Covers: overdue follow-ups, pending quotation approvals, pending account requests.
+- **Daily Digest**: Cron job emails Admin/Manager a daily summary of overdue follow-ups.
 
 ---
 
@@ -213,9 +253,14 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 |--------|---------|--------|
 | testQneConnection.ts | Basic QNE API connection test | ✅ Working |
 | runSync.ts | Pull QNE customers into staging | ✅ Working |
-| inspectQneFields.ts | Print full raw QNE response to find field names | ✅ Run — confirmed salesPerson field |
-| fixAgentAssignment.ts | Create users from QNE agents + backfill assignments | ✅ Complete — 9 users, 333 assignments |
-| syncAgentEmails.ts | Pull agent email + mobileNo from QNE → update CRM users | ✅ Run — 2 emails updated, mobileNo synced |
+| inspectQneFields.ts | Print full raw QNE response to find field names | ✅ Run |
+| fixAgentAssignment.ts | Create users from QNE agents + backfill assignments | ✅ Done — 9 users, 333 assignments |
+| syncAgentEmails.ts | Pull agent email + mobileNo from QNE → update CRM users | ✅ Run — 2 emails updated |
+| syncQneProducts.ts | Sync QNE stock items → products table | ✅ Working |
+| setupDemoAccount.ts | Create demo B2B client account for testing | ✅ Working |
+| uploadLog.ts | Upload improvement log to Google Drive | ✅ Working |
+| matchAplusPhotos.ts | Match APLUS Excel stock codes → Drive photos | ✅ Working |
+| testSmartOrder.ts | Test Smart Order text parsing + matching | ✅ Working |
 
 ---
 
@@ -225,8 +270,8 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 | Admin (Bandy/owner) | Full system — all data, all approvals, system settings |
 | Manager | All salespeople's pipelines, quotation approval queue, team stats |
 | Salesperson | Own accounts only, own pipeline, own activities, quote builder |
-| Logistics/Ops | Order fulfilment board, delivery status, stock alerts (Phase 3+) |
-| B2B Client | Own orders, invoices, delivery tracking, reorder (Phase 3) |
+| Warehouse | Warehouse picking tasks only (/warehouse) |
+| B2B Client | Own cart, orders, quotations, invoices, delivery tracking |
 
 ---
 
@@ -245,6 +290,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 12. Never hardcode credentials — always use .env.local
 13. Never write to QNE SalesOrders without double human approval
 14. Quotation items freeze unit_cost at draft time — never auto-recalculate after approval
+15. DO NOT PUSH to Vercel without user cross-check (unless user explicitly asks to deploy)
 
 ---
 
@@ -259,6 +305,11 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - Generic approval_requests table handles all approval types (prices, quotations, QNE promotions)
 - audit_log written by PostgreSQL triggers not application code
 - Customer → agent link: customer.salesPerson (full name) matched to agent.name (first name)
+- Product pricing for shop: QNE last-sale-price × 1.20 (for all visitors), fallback to cost × margin when no QNE price synced
+- Module-level product cache in ProductsClientPage (5-min TTL, no SWR needed)
+- Notification system: computed from DB on each bell poll — no separate notifications table
+- constants/zIndex.ts (Z export) — single source of truth for all z-index values
+- Prisma v7: datasource URL in prisma.config.ts only (not schema.prisma)
 
 ## What NOT to automate (v1 rules)
 - Do not auto-promote QNE staging records
@@ -267,6 +318,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - Do not let AI write is_current:true on supplier_price_versions
 - Do not send quotations without human clicking send
 - Do not create Sales Orders in QNE without double human approval
+- Do not auto-sync QNE prices — admin must trigger manually (VPN required)
 
 ---
 
@@ -287,6 +339,23 @@ QNE_API_PASSWORD="12345"
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 GOOGLE_DRIVE_FOLDER_ID=""
+ANTHROPIC_API_KEY=""
+VAPID_PUBLIC_KEY=""
+VAPID_PRIVATE_KEY=""
+WHATSAPP_BRIDGE_URL=""
+BRIDGE_SECRET=""
+WABA_PHONE_NUMBER_ID=""
+WABA_ACCESS_TOKEN=""
+LALAMOVE_API_KEY=""
+LALAMOVE_API_SECRET=""
+LALAMOVE_PICKUP_LAT=""
+LALAMOVE_PICKUP_LNG=""
+LALAMOVE_PICKUP_ADDRESS=""
+LALAMOVE_PICKUP_CONTACT_NAME=""
+LALAMOVE_PICKUP_CONTACT_PHONE=""
+LALAMOVE_WEBHOOK_SECRET=""
+GOOGLE_REVIEW_URL=""
+CRON_SECRET=""
 ```
 
 ---
@@ -296,21 +365,31 @@ GOOGLE_DRIVE_FOLDER_ID=""
 |-------|------|--------|
 | 1A | CRM Foundation | ✅ Complete |
 | 1B | QNE Customer Import | ✅ Complete |
-| 1C | Supplier price database (Google Drive PDF + Claude AI extraction) | ✅ Complete |
+| 1C | Supplier price database | ✅ Complete |
 | 1D | User management + salesperson onboarding + RBAC | ✅ Complete |
-| 2 | Quotation automation (draft, approve, send, push to QNE) | 🔴 Next |
-| 3 | B2B client self-service portal (login, reorder, RFQ, delivery tracking) | Not started |
-| 4 | Automated order processing (SO creation in QNE, reorder forecasting) | Not started |
-| 5 | AI sales intelligence (health scores, forecasting, cross-sell, P&L dashboard) | Not started |
+| 2 | Quotation system (draft, approve, send, WABA, Baileys) | ✅ Complete |
+| 3 | B2B client portal (browse, cart, orders, account, account requests) | ✅ Complete |
+| 3+ | Smart Order (AI paste/photo → quote items) | ✅ Complete |
+| 3+ | Market Price Scout (AI cheapest source finder) | ✅ Complete |
+| 3+ | Reports + Team Portfolio Intelligence | ✅ Complete |
+| 4 | Order fulfillment pipeline (Approve → Pick → Pack → Deliver via Lalamove) | 🟡 Built, needs Lalamove credentials + warehouse workers |
+| 5 | AI sales intelligence (health scores, forecasting, cross-sell, P&L dashboard) | 🔴 Not started |
+
+## Next priorities
+- **Phase 4 activation**: Get Lalamove API key + secret → fill in env vars → add warehouse worker accounts → test end-to-end fulfillment flow
+- **QNE price sync**: Run with Radmin VPN active at /admin → "↻ Sync Prices" to populate display prices for all 3,700+ products
+- **Salesperson onboarding**: Set passwords + update emails for BANDY, JUSTINE, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN
+- **WABA templates**: Submit `quotation_ready` + `order_update` templates to Meta for approval
 
 ## Future features discussed
 - Phone number + PIN login for salespeople (easier than email for field team)
-- WhatsApp OTP login for B2B client portal (Phase 3)
-- Mailchimp sync for missing client emails (low priority side quest)
-- Salesperson leaderboard and coaching dashboard (Phase 5)
+- WhatsApp OTP login for B2B client portal
+- Mailchimp sync for missing client emails (low priority)
+- Salesperson leaderboard and coaching dashboard
 - Multi-branch delivery address support via QNE Branches API
 - Customer health scoring: Growing / Stable / At Risk / Churning
 - Price increase impact analysis (when supplier raises cost, show affected clients)
 - Cross-sell engine (clients who buy X but not Y)
 - Weekly auto-generated sales report PDF emailed to owner
 - Delivery route optimisation by area for logistics team
+- Automated supplier PO drafts after each confirmed sale
