@@ -44,6 +44,25 @@ body {
   overflow: hidden;
 }
 
+/* G-2: Standard product-card and hero image containers.
+   Always include an explicit background-color so no dark-mode bleed-through
+   is visible during image load. Never rely on body/inherited colour.       */
+.product-card-image {
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  background-color: #f3f4f6;
+  overflow: hidden;
+  position: relative;
+}
+
+.hero-banner-image {
+  aspect-ratio: 16 / 5;
+  width: 100%;
+  background-color: #1a3c6b;
+  overflow: hidden;
+  position: relative;
+}
+
 /* ── Shop entry animations ──────────────────────────────────────── */
 
 @keyframes fadeInUp {
