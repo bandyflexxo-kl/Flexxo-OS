@@ -2,6 +2,7 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { isPrivilegedRole } from '@/lib/authorization'
 import Topbar from '@/components/layout/Topbar'
+import TeamPortfolio from '@/components/reports/TeamPortfolio'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
@@ -270,6 +271,9 @@ export default async function ReportsPage() {
             </div>
           )}
         </section>
+
+        {/* ── Team Portfolio Intelligence ────────────────────────────────────── */}
+        <TeamPortfolio />
 
         {/* ── Quote conversion funnel ────────────────────────────────────────── */}
         <section>

@@ -103,14 +103,16 @@ model Company {
   leadSource         String?   @map("lead_source")
   leadTemperature    String?   @map("lead_temperature")
   status             String    @default("Lead") @map("status")
-  qneCustomerCode    String?   @unique @map("qne_customer_code")
-  qneSynced          Boolean   @default(false) @map("qne_synced")
-  qneLastSyncedAt    DateTime? @map("qne_last_synced_at")
-  isDuplicateSuspect Boolean   @default(false) @map("is_duplicate_suspect")
-  mergedIntoId       String?   @map("merged_into_id")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  createdById        String    @map("created_by")
+  qneCustomerCode      String?   @unique @map("qne_customer_code")
+  qneSynced            Boolean   @default(false) @map("qne_synced")
+  qneLastSyncedAt      DateTime? @map("qne_last_synced_at")
+  outstandingBalance   Decimal?  @map("outstanding_balance")   // synced from QNE currentBalance
+  outstandingUpdatedAt DateTime? @map("outstanding_updated_at") // when the balance was last synced
+  isDuplicateSuspect   Boolean   @default(false) @map("is_duplicate_suspect")
+  mergedIntoId         String?   @map("merged_into_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdById          String    @map("created_by")
 
   createdBy           User                      @relation(fields: [createdById], references: [id])
   mergedInto          Company?                  @relation("CompanyMerge", fields: [mergedIntoId], references: [id])
@@ -129,6 +131,7 @@ model Company {
   qneStagingMatches   QneCustomerStaging[]
   portalUsers         User[]                    @relation("CustomerPortalUser")
   invoices            Invoice[]
+  topItems            QneTopItem[]              // recurring items from QNE invoice history
 
   @@map("companies")
 }
@@ -693,6 +696,25 @@ model QneCustomerStaging {
   reviewedBy     User?      @relation(fields: [reviewedById], references: [id])
 
   @@map("qne_customer_staging")
+}
+
+// ── QNE portfolio intelligence ────────────────────────────────────────────────
+// Stores per-company recurring items aggregated from QNE invoice history.
+// Refreshed by POST /api/admin/qne/sync-portfolio (read-only from QNE).
+model QneTopItem {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  itemCode    String?  @map("item_code")    // QNE stock code
+  itemName    String   @map("item_name")    // product description
+  orderCount  Int      @default(1) @map("order_count")  // # invoices containing this item
+  totalQty    Decimal  @default(0) @map("total_qty")
+  lastOrderAt DateTime @map("last_order_at")
+  syncedAt    DateTime @default(now()) @map("synced_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, itemName])
+  @@map("qne_top_items")
 }
 
 // ============================================================
