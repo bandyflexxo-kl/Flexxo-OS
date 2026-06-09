@@ -142,7 +142,8 @@ export async function shopLoginAction(state: LoginState, formData: FormData): Pr
   })
 
   // Security: only allow returnUrl that starts with /shop/ (no open redirect)
-  const safeReturn = returnUrl && returnUrl.startsWith('/shop/') ? returnUrl : '/shop/products'
+  // Default: send B2B clients to their dashboard (not the product list)
+  const safeReturn = returnUrl && returnUrl.startsWith('/shop/') ? returnUrl : '/shop/dashboard'
   redirect(safeReturn)
 }
 
