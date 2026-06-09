@@ -3,6 +3,16 @@
 import {
   useState, useEffect, useMemo, useRef,
 } from 'react'
+
+// ---------------------------------------------------------------------------
+// SSR-safe mounted flag — used to prevent hydration mismatches on any
+// logic that reads browser-only APIs (sessionStorage, window, etc.)
+// ---------------------------------------------------------------------------
+function useMounted(): boolean {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  return mounted
+}
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -145,6 +155,11 @@ export default function ProductsClientPage({
 }) {
   const router   = useRouter()
   const cacheKey = isB2B ? 'b2b' : 'guest'
+  // mounted is false during SSR and the first synchronous client render,
+  // becoming true only after hydration completes. This ensures any
+  // browser-API-dependent state (sessionStorage, window) never causes a
+  // hydration mismatch.
+  const mounted  = useMounted()
 
   // ── Product data ──────────────────────────────────────────────────
   // Priority order for initial state:
@@ -349,15 +364,31 @@ export default function ProductsClientPage({
   // useRef(initialValue): on remount the ref re-initialises, but we seed it
   // from sessionStorage so it's true if the user has already seen the animation
   // this browser session.
+  //
+  // IMPORTANT: gate on `mounted` so SSR always renders without animation classes.
+  // Without this, SSR renders className="animate-fade-in-up" but a returning
+  // visitor's client render sees sessionStorage='1' → hasAnimated=true →
+  // className="" → React hydration warning. By making isFirstLoad=false on the
+  // server, both SSR and the initial client render agree on empty classNames;
+  // animations fire on the very next micro-task after hydration completes.
   const SS_KEY = 'flexxo_products_animated'
-  const hasAnimated = useRef<boolean>(
-    typeof sessionStorage !== 'undefined' && sessionStorage.getItem(SS_KEY) === '1',
-  )
-  const isFirstLoad = !hasAnimated.current && allProducts !== null
-  if (isFirstLoad) {
-    hasAnimated.current = true
-    try { sessionStorage.setItem(SS_KEY, '1') } catch { /* ignore */ }
-  }
+  const hasAnimated = useRef<boolean>(false)
+  // Read sessionStorage only after mount (browser-only API)
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(SS_KEY) === '1') hasAnimated.current = true
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const isFirstLoad = mounted && !hasAnimated.current && allProducts !== null
+  // Write sessionStorage in an effect (never during render — side effects in
+  // render body fire on every render pass including server renders).
+  useEffect(() => {
+    if (isFirstLoad) {
+      hasAnimated.current = true
+      try { sessionStorage.setItem(SS_KEY, '1') } catch { /* ignore */ }
+    }
+  }, [isFirstLoad])
 
   // ── Dropdown content to show ──────────────────────────────────────
   const showSuggestions = dropdownOpen && searchInput.trim().length > 0
