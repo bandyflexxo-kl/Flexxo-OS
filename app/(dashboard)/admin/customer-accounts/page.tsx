@@ -20,10 +20,11 @@ export default async function CustomerAccountsPage({
   }
 
   // Support ?prefill={"name":"...","email":"...","companyName":"..."} from account-requests page
+  type PrefillData = { name?: string; email?: string; companyName?: string }
   const sp = await searchParams
-  let prefill: { name?: string; email?: string; companyName?: string } | null = null
+  let prefill: PrefillData | null = null
   if (sp.prefill) {
-    try { prefill = JSON.parse(decodeURIComponent(sp.prefill)) as typeof prefill }
+    try { prefill = JSON.parse(decodeURIComponent(sp.prefill)) as PrefillData }
     catch { /* ignore malformed prefill */ }
   }
 
