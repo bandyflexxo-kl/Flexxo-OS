@@ -17,10 +17,10 @@ import { calcDisplayPrice } from '@/lib/qnePriceSync'
  * B2B clients continue to use /api/portal/products (dynamic, B2B pricing).
  */
 
-// Tell Vercel's edge CDN: ISR-cache each unique URL for 5 minutes.
+// Tell Vercel's edge CDN: ISR-cache each unique URL for 10 minutes.
 // Keyed by full URL path+query — ?limit=all, ?q=paper, ?categoryId=xyz all
-// get independent cache entries. Cache is invalidated every 300 s.
-export const revalidate = 300
+// get independent cache entries. Cache is invalidated every 600 s.
+export const revalidate = 600
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ const fetchRetailProductsCached = unstable_cache(
     })
   },
   ['portal-products-public'],   // cache namespace (separate from B2B cache)
-  { revalidate: 300 },
+  { revalidate: 600 },          // 10-minute TTL — matches browser Cache-Control max-age
 )
 
 // ── Route handler ──────────────────────────────────────────────────────────
@@ -127,12 +127,16 @@ export async function GET(request: Request) {
   const categoryId = searchParams.get('categoryId') || null
   const limitAll   = searchParams.get('limit') === 'all'
 
-  // Explicit s-maxage tells Vercel's edge CDN to cache this response for 5 min.
-  // max-age=0 + stale-while-revalidate=60 lets browsers serve stale while CDN refreshes.
-  // This is what makes X-Vercel-Cache: HIT appear on repeat requests (same as photo proxy).
+  // Cache-Control strategy:
+  //   max-age=600       — browser caches for 10 min. Reload within 10 min = 0 ms (disk cache).
+  //   s-maxage=600      — CDN/Vercel edge caches for 10 min.
+  //   stale-while-revalidate=120 — after 10 min, browser/CDN serves stale data instantly
+  //                                 while fetching fresh data in background (no spinner).
+  // Result: only the very first load ever shows "Loading catalogue…".
+  // All reloads within 10 min and all background revalidations are invisible to the user.
   return Response.json(await fetchRetailProductsCached(q, categoryId, limitAll), {
     headers: {
-      'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=60',
+      'Cache-Control': 'public, max-age=600, s-maxage=600, stale-while-revalidate=120',
     },
   })
 }

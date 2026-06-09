@@ -121,7 +121,7 @@ const fetchProductsCached = unstable_cache(
     })
   },
   ['portal-products'],          // cache namespace
-  { revalidate: 300 },          // 5-minute TTL
+  { revalidate: 600 },          // 10-minute TTL — matches browser Cache-Control max-age
 )
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -134,5 +134,16 @@ export async function GET(request: Request) {
   const limitAll   = searchParams.get('limit') === 'all'
   const tier       = session?.role === 'B2B Client' ? 'b2b' : 'retail'
 
-  return Response.json(await fetchProductsCached(q, categoryId, tier, limitAll))
+  // Cache-Control strategy:
+  //   private          — browser can cache (session-specific B2B pricing), CDN cannot.
+  //   max-age=600      — browser caches for 10 min. Reload within 10 min = 0 ms (disk cache).
+  //   stale-while-revalidate=120 — after 10 min, browser serves stale data instantly
+  //                                 while fetching fresh in background (no spinner).
+  // Guest users (no session) get public caching from /products-public; this route
+  // handles B2B clients only, so `private` is correct.
+  return Response.json(await fetchProductsCached(q, categoryId, tier, limitAll), {
+    headers: {
+      'Cache-Control': 'private, max-age=600, stale-while-revalidate=120',
+    },
+  })
 }
