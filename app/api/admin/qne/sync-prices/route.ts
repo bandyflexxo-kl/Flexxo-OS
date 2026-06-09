@@ -6,10 +6,11 @@
  * Returns: { ok, invoicesFetched, productsUpdated, skipped, errors[] }
  */
 
-import { NextResponse }          from 'next/server'
-import { verifySession }         from '@/lib/session'
-import { syncQnePrices }         from '@/lib/qnePriceSync'
-import { QneUnavailableError }   from '@/lib/qneClient'
+import { NextResponse }             from 'next/server'
+import { verifySession }            from '@/lib/session'
+import { syncQnePrices }            from '@/lib/qnePriceSync'
+import { QneUnavailableError }      from '@/lib/qneClient'
+import { invalidateProductsCache }  from '@/lib/products-api'
 
 export async function POST() {
   const session = await verifySession().catch(() => null)
@@ -22,6 +23,10 @@ export async function POST() {
 
   try {
     const result = await syncQnePrices(200)
+    // Invalidate Redis product cache so clients see updated prices immediately
+    // on their next page load (instead of waiting up to 24h for TTL expiry).
+    // Fire-and-forget — sync result is not affected by cache invalidation.
+    invalidateProductsCache().catch(() => undefined)
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof QneUnavailableError) {

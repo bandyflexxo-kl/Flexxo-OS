@@ -9,6 +9,7 @@ import Link from 'next/link'
 import ProductCard from './ProductCard'
 import FlexxoSpinner from './FlexxoSpinner'
 import { Z } from '@/constants/zIndex'
+import type { ProductListItem } from '@/lib/products-api'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -129,11 +130,15 @@ function SkeletonGrid() {
 
 export default function ProductsClientPage({
   categories,
+  initialProducts,
   initialCategoryId,
   initialQ,
   isB2B,
 }: {
   categories:          Category[]
+  /** Products pre-fetched server-side. When provided, skips the client-side
+   *  API fetch entirely — the catalogue is available on first render. */
+  initialProducts?:    ProductListItem[] | null
   initialCategoryId?:  string
   initialQ?:           string
   isB2B:               boolean
@@ -142,13 +147,18 @@ export default function ProductsClientPage({
   const cacheKey = isB2B ? 'b2b' : 'guest'
 
   // ── Product data ──────────────────────────────────────────────────
-  // Fix 3: Initialise from the module-level cache synchronously so the very
-  // first render already has data if cached — no skeleton flash on remount.
-  // This achieves the same guarantee as SWR with
-  //   { revalidateOnFocus: false, revalidateOnReconnect: false }
-  // because the module-level productCache never auto-revalidates on focus or
-  // reconnect events (there are no event listeners for those).
+  // Priority order for initial state:
+  //   1. initialProducts (SSR — server passed data via Redis cache)
+  //   2. module-level productCache (SPA navigation — survives client-side nav)
+  //   3. null → triggers client-side fetch → shows skeleton
+  //
+  // With SSR in place (#1), the skeleton should NEVER show for normal visits.
+  // The module-level cache (#2) is a fallback for SPA navigations where the
+  // server component doesn't re-run (Next.js uses the client component directly).
   const [allProducts, setAllProducts] = useState<ApiProduct[] | null>(() => {
+    // Prefer server-provided data (no network round-trip needed)
+    if (initialProducts && initialProducts.length > 0) return initialProducts
+    // Fallback: module-level cache from a previous SPA navigation
     const key    = isB2B ? 'b2b' : 'guest'
     const cached = productCache.get(key)
     if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return cached.data
@@ -173,15 +183,16 @@ export default function ProductsClientPage({
   // Guests use the CDN-cached public endpoint; B2B clients use the dynamic route.
   const apiUrl = isB2B ? B2B_API_URL : GUEST_API_URL
   useEffect(() => {
+    // If server passed initialProducts, data is already in state — no fetch needed.
+    // This is the normal path for all page loads (SSR + Redis cache).
+    if (initialProducts && initialProducts.length > 0) return
+
     const cached = productCache.get(cacheKey)
-    // Fix 3: If data is already in cache, skip — state was already populated by
-    // the lazy useState initialiser above. Crucially we do NOT call
-    // setAllProducts(null) here; doing so would clear the synchronously-loaded
-    // data and flash a skeleton for one render cycle.
+    // If module-level cache is warm (SPA navigation), skip fetch.
     if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return
-    // Cache miss or expired — fetch without showing skeleton if we already have
-    // stale data (keep showing old data while new data loads).
+    // Cache miss — fetch. Keep showing stale data if any; don't blank the grid.
     loadAllProducts(cacheKey, apiUrl).then(setAllProducts).catch(() => setLoadError(true))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey, apiUrl])
 
   // ── Load recent searches on mount ─────────────────────────────────
