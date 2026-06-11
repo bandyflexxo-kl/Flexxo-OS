@@ -103,7 +103,9 @@ export async function shopLoginAction(state: LoginState, formData: FormData): Pr
   const parsed = LoginSchema.safeParse({
     email:     formData.get('email'),
     password:  formData.get('password'),
-    returnUrl: formData.get('returnUrl'),
+    // formData.get() returns null when field is absent; Zod z.string().optional()
+    // accepts string|undefined but NOT null → convert null → undefined so Zod passes.
+    returnUrl: formData.get('returnUrl') ?? undefined,
   })
 
   if (!parsed.success) {
