@@ -143,9 +143,12 @@ export async function shopLoginAction(state: LoginState, formData: FormData): Pr
     expiresAt:          new Date(),
   })
 
-  // Security: only allow returnUrl that starts with /shop/ (no open redirect)
-  // Default: send B2B clients to their dashboard (not the product list)
-  const safeReturn = returnUrl && returnUrl.startsWith('/shop/') ? returnUrl : '/shop/dashboard'
+  // After login, B2B clients ALWAYS land on their dashboard.
+  // Only exception: /shop/cart — preserve checkout flow so cart items aren't lost.
+  // Everything else (products page, login page, etc.) is overridden to dashboard.
+  const safeReturn = (returnUrl && returnUrl.startsWith('/shop/cart'))
+    ? returnUrl
+    : '/shop/dashboard'
   redirect(safeReturn)
 }
 
