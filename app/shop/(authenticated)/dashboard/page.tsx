@@ -25,6 +25,9 @@ import {
   QneUnavailableError,
 }                                from '@/lib/qneFinancial'
 import AccountSection            from './AccountSection'
+import QuickReorderSection, {
+  type FrequentItem,
+}                                from './QuickReorderSection'
 import type { Decimal }          from '@prisma/client/runtime/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -139,6 +142,48 @@ function computeSmartReorders(
   return results.sort((a, b) => a.daysUntilNext - b.daysUntilNext).slice(0, 4)
 }
 
+/**
+ * computeFrequentItems — returns all distinct products ordered at least once,
+ * sorted by order-frequency DESC.  Used by the Quick Reorder drawer.
+ *
+ * Orders are already sorted by createdAt DESC, so the first encounter of a
+ * product is the most recent order → we use that qty as the default.
+ */
+function computeFrequentItems(
+  orders: Array<{
+    items: Array<{
+      productId: string | null
+      qty: Decimal
+      product: { id: string; name: string; unit: string | null; category: { name: string } } | null
+    }>
+  }>
+): FrequentItem[] {
+  const map = new Map<string, { name: string; unit: string | null; orderCount: number; lastQty: number }>()
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      if (!item.productId || !item.product) continue
+      const existing = map.get(item.productId)
+      if (existing) {
+        existing.orderCount++
+        // First encounter (most recent order) already captured as lastQty — don't overwrite
+      } else {
+        map.set(item.productId, {
+          name:       item.product.name,
+          unit:       item.product.unit,
+          orderCount: 1,
+          lastQty:    Math.max(1, Number(item.qty)),
+        })
+      }
+    }
+  }
+
+  return [...map.entries()]
+    .map(([productId, d]) => ({ productId, name: d.name, unit: d.unit, orderCount: d.orderCount, lastQty: d.lastQty }))
+    .sort((a, b) => b.orderCount - a.orderCount || a.name.localeCompare(b.name))
+    .slice(0, 50)   // cap at 50 items to keep the drawer manageable
+}
+
 function computeCategoryBreakdown(
   orders: Array<{ items: Array<{ lineTotal: Decimal; product: { category: { name: string } } | null }> }>
 ): CategoryBreakdown[] {
@@ -234,9 +279,10 @@ export default async function DashboardPage() {
   const totalOrders = orders.filter(o => completedStatuses.has(o.status)).length
   const activeOrders = orders.filter(o => activeStatuses.has(o.status)).length
 
-  const partnerTier   = getPartnerTier(totalSpent)
-  const smartReorders = computeSmartReorders(orders)
-  const categoryBreak = computeCategoryBreakdown(orders)
+  const partnerTier    = getPartnerTier(totalSpent)
+  const smartReorders  = computeSmartReorders(orders)
+  const frequentItems  = computeFrequentItems(orders)
+  const categoryBreak  = computeCategoryBreakdown(orders)
 
   const recentOrders: RecentOrder[] = orders.slice(0, 3).map(o => ({
     id: o.id, referenceNo: o.referenceNo, status: o.status,
@@ -537,6 +583,15 @@ export default async function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* ── Quick Reorder ─────────────────────────────────────────── */}
+        {/*
+          Always shown for B2B clients.
+          Opens a slide-in drawer listing all frequently ordered items
+          with checkboxes + qty spinners → bulk-adds to cart in one click.
+          When there's no order history yet, the drawer shows an empty state.
+        */}
+        <QuickReorderSection frequentItems={frequentItems} />
 
         {/* ── Quick Actions ─────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
