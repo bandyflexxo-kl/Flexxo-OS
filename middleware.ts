@@ -30,10 +30,6 @@ import { decrypt, encrypt, sessionDurationMs, CRM_COOKIE, SHOP_COOKIE } from '@/
 const SHOP_HOST = process.env.SHOP_HOST ?? 'shop.localhost'
 const CRM_HOST  = process.env.CRM_HOST  ?? 'localhost'
 
-// When SHOP_HOST === CRM_HOST the app runs on a single domain (e.g. Vercel
-// platform subdomain).  Subdomain isolation is skipped; paths handle routing.
-const SINGLE_DOMAIN = SHOP_HOST === CRM_HOST
-
 // Shop paths that are PUBLIC — no login required
 const SHOP_PUBLIC_PREFIXES = [
   '/shop/products',
@@ -52,6 +48,14 @@ export default async function proxy(req: NextRequest) {
 
   const isShopDomain = hostname === SHOP_HOST
   const isCrmDomain  = hostname === CRM_HOST || hostname === `www.${CRM_HOST}`
+
+  // Single-domain mode: either explicitly configured (SHOP_HOST === CRM_HOST)
+  // OR detected at runtime — the request hostname is not one of the configured
+  // subdomains.  This handles: Vercel platform URLs (flexxo-os.vercel.app),
+  // custom production domains not yet added to env vars, and localhost dev
+  // without the shop.localhost hosts-file entry.
+  // In single-domain mode all routing is path-based (/shop/* = shop portal).
+  const SINGLE_DOMAIN = SHOP_HOST === CRM_HOST || (!isShopDomain && !isCrmDomain)
 
   // ── 1. Subdomain routing (only when running on separate subdomains) ────
 
