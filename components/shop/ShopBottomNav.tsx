@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { Z } from '@/constants/zIndex'
+import FlexxoSpinner from '@/components/shop/FlexxoSpinner'
 
 const GUEST_CART_KEY = 'flexxo_guest_cart'
 type GuestCartItem = { productId: string; qty: number }
@@ -15,6 +16,14 @@ type Props = {
 
 export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
   const pathname = usePathname()
+
+  // Track which tab is being navigated to — shows spinner for immediate tap feedback
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+
+  // Clear navigating state once pathname changes (navigation complete)
+  useEffect(() => {
+    setNavigatingTo(null)
+  }, [pathname])
 
   // Guest cart count hydrated client-side
   const [guestCount, setGuestCount] = useState(0)
@@ -100,27 +109,40 @@ export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
     >
       <div className="flex items-stretch">
         {tabs.map(tab => {
-          const isActive = tab.active
+          const isActive   = tab.active
+          const isLoading  = navigatingTo !== null && navigatingTo === tab.href && !isActive
 
           return (
             <Link
               key={tab.href}
               href={tab.href}
+              onClick={() => {
+                // Only start nav indicator when navigating to a different page
+                if (!isActive && tab.href !== pathname) {
+                  setNavigatingTo(tab.href)
+                  // Signal the global NavigationProgress bar
+                  window.dispatchEvent(new Event('nav:start'))
+                }
+              }}
               className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors relative ${
-                isActive ? 'text-green-600' : 'text-gray-500'
+                isActive ? 'text-green-600' : isLoading ? 'text-green-400' : 'text-gray-500'
               }`}
             >
               <span className="relative inline-block">
-                {tab.icon(isActive)}
-                {/* Cart badge */}
-                {(tab.badge ?? 0) > 0 && (
+                {/* Replace icon with spinner while navigating to this tab */}
+                {isLoading
+                  ? <FlexxoSpinner size="lg" />
+                  : tab.icon(isActive)
+                }
+                {/* Cart badge — always show, even while loading */}
+                {(tab.badge ?? 0) > 0 && !isLoading && (
                   <span className="absolute -top-1 -right-1 bg-green-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold leading-none">
                     {(tab.badge ?? 0) > 9 ? '9+' : tab.badge}
                   </span>
                 )}
               </span>
               <span>{tab.label}</span>
-              {/* Active indicator dot */}
+              {/* Active indicator line */}
               {isActive && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-green-600 rounded-full" />
               )}

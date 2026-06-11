@@ -62,7 +62,19 @@ export default function ShopNav({
         </Link>
 
         {/* Desktop nav — hidden on mobile (bottom nav handles mobile) */}
-        <nav className="hidden sm:flex items-center gap-1 flex-1 justify-center">
+        {/* Event delegation: any link click in the nav fires nav:start for the progress bar */}
+        <nav
+          className="hidden sm:flex items-center gap-1 flex-1 justify-center"
+          onClick={(e) => {
+            const anchor = (e.target as HTMLElement).closest('a')
+            if (anchor) {
+              const href = anchor.getAttribute('href')
+              if (href && !pathname.startsWith(href.split('?')[0]) && href.startsWith('/shop/')) {
+                window.dispatchEvent(new Event('nav:start'))
+              }
+            }
+          }}
+        >
           <Link
             href="/shop/products"
             className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${

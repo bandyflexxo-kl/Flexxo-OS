@@ -6,6 +6,7 @@ import ShopBottomNav from '@/components/shop/ShopBottomNav'
 import PromoBanner from '@/components/shop/PromoBanner'
 import OfflineBanner from '@/components/shop/OfflineBanner'
 import WhatsAppButton from '@/components/shop/WhatsAppButton'
+import NavigationProgress from '@/components/shop/NavigationProgress'
 
 // T4-7: Override root metadata with shop-specific copy (never "Internal Sales CRM")
 export const metadata: Metadata = {
@@ -55,6 +56,8 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Green progress bar — appears at very top during every route transition */}
+      <NavigationProgress />
       {/* T6-6: Offline / connectivity banner */}
       <OfflineBanner />
       {/* Condition 23: dismissible promo banner above nav */}

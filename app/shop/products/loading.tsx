@@ -8,7 +8,7 @@
  */
 export default function ShopProductsLoading() {
   return (
-    <div className="flex gap-6 lg:gap-8">
+    <div className="flex gap-6 lg:gap-8 animate-pulse">
       {/* Sidebar skeleton */}
       <aside className="w-44 lg:w-48 shrink-0 animate-pulse space-y-1.5">
         <div className="h-3 bg-gray-200 rounded-full w-24 mb-3" />
