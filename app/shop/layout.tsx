@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import ShopNav from '@/components/shop/ShopNav'
 import ShopBottomNav from '@/components/shop/ShopBottomNav'
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
  * ShopNav shows different UI for guests vs logged-in B2B clients.
  */
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   const isB2B   = session?.role === 'B2B Client'
 
   // Only fetch heavy data for authenticated B2B clients

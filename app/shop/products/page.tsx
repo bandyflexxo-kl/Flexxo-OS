@@ -1,5 +1,5 @@
 import { prisma }               from '@/lib/prisma'
-import { getOptionalSession }   from '@/lib/session'
+import { getOptionalShopSession }   from '@/lib/session'
 import { fetchProductsCached }  from '@/lib/products-api'
 import ProductsClientPage       from '@/components/shop/ProductsClientPage'
 import HeroSection              from '@/components/shop/HeroSection'
@@ -19,7 +19,7 @@ export default async function ShopProductsPage({
 }: {
   searchParams: Promise<{ q?: string; categoryId?: string }>
 }) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   const isB2B   = session?.role === 'B2B Client'
   const { q, categoryId } = await searchParams
   const tier = isB2B ? 'b2b' : 'retail'

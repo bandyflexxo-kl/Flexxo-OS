@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 import { z } from 'zod'
@@ -10,7 +10,7 @@ const Schema = z.object({
 })
 
 export async function POST(request: Request) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }

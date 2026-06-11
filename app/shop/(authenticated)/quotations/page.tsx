@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 
@@ -12,7 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default async function ShopQuotationsPage() {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session?.customerCompanyId) return null
 
   const quotations = await prisma.quotation.findMany({

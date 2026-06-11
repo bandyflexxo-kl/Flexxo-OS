@@ -1,4 +1,4 @@
-import { getOptionalSession }  from '@/lib/session'
+import { getOptionalShopSession }  from '@/lib/session'
 import { fetchProductsCached } from '@/lib/products-api'
 
 /**
@@ -13,7 +13,7 @@ import { fetchProductsCached } from '@/lib/products-api'
  * instant-filter UX. This keeps the cache simple (one entry per tier).
  */
 export async function GET(_request: Request) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   const tier    = session?.role === 'B2B Client' ? 'b2b' : 'retail'
 
   // Cache-Control:

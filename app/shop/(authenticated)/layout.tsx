@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import CartMerger from '@/components/shop/CartMerger'
@@ -9,7 +9,7 @@ import CartMerger from '@/components/shop/CartMerger'
  * Also mounts CartMerger to merge any guest localStorage cart into DB cart.
  */
 export default async function ShopAuthLayout({ children }: { children: React.ReactNode }) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
 
   if (!session || session.role !== 'B2B Client') {
     // Preserve the current URL as returnUrl so user returns after login

@@ -1,5 +1,5 @@
 import { prisma }             from '@/lib/prisma'
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { calculateSellingPrice, calculateRetailPrice, roundPrice } from '@/lib/pricing'
 import CartButton             from '@/components/shop/CartButton'
 import ProductCard            from '@/components/shop/ProductCard'
@@ -60,7 +60,7 @@ export default async function ShopProductDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id }  = await params
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   const isB2B   = session?.role === 'B2B Client'
 
   const [product, retailSetting, b2bSetting] = await Promise.all([

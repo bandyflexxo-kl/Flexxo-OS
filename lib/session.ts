@@ -14,6 +14,16 @@ export type SessionPayload = {
   expiresAt:         Date
 }
 
+/**
+ * Two separate cookie names so CRM staff and B2B clients can be logged in
+ * simultaneously in the same browser without conflicting.
+ *
+ * crm_session  — Admin, Manager, Salesperson, Warehouse, Viewer
+ * shop_session — B2B Client (portal)
+ */
+export const CRM_COOKIE  = 'crm_session'
+export const SHOP_COOKIE = 'shop_session'
+
 const secretKey = process.env.SESSION_SECRET ?? process.env.NEXTAUTH_SECRET
 const encodedKey = new TextEncoder().encode(secretKey)
 
@@ -53,12 +63,14 @@ export async function decrypt(session: string | undefined = ''): Promise<Session
   }
 }
 
+// ── CRM session (Admin / Manager / Salesperson / Warehouse / Viewer) ─────────
+
 export async function createSession(payload: SessionPayload): Promise<void> {
   const durationMs = sessionDurationMs(payload.role)
   const expiresAt  = new Date(Date.now() + durationMs)
   const token      = await encrypt({ ...payload, expiresAt })
   const cookieStore = await cookies()
-  cookieStore.set('session', token, {
+  cookieStore.set(CRM_COOKIE, token, {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
     expires:  expiresAt,
@@ -69,12 +81,12 @@ export async function createSession(payload: SessionPayload): Promise<void> {
 
 export async function deleteSession(): Promise<void> {
   const cookieStore = await cookies()
-  cookieStore.delete('session')
+  cookieStore.delete(CRM_COOKIE)
 }
 
 export const verifySession = cache(async (): Promise<SessionPayload> => {
   const cookieStore = await cookies()
-  const cookie = cookieStore.get('session')?.value
+  const cookie = cookieStore.get(CRM_COOKIE)?.value
   const session = await decrypt(cookie)
   if (!session?.userId) {
     redirect('/login')
@@ -84,6 +96,33 @@ export const verifySession = cache(async (): Promise<SessionPayload> => {
 
 export async function getOptionalSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies()
-  const cookie = cookieStore.get('session')?.value
+  const cookie = cookieStore.get(CRM_COOKIE)?.value
+  return decrypt(cookie)
+}
+
+// ── Shop session (B2B Client portal) ─────────────────────────────────────────
+
+export async function createShopSession(payload: SessionPayload): Promise<void> {
+  const durationMs = sessionDurationMs(payload.role)
+  const expiresAt  = new Date(Date.now() + durationMs)
+  const token      = await encrypt({ ...payload, expiresAt })
+  const cookieStore = await cookies()
+  cookieStore.set(SHOP_COOKIE, token, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    expires:  expiresAt,
+    sameSite: 'lax',
+    path:     '/',
+  })
+}
+
+export async function deleteShopSession(): Promise<void> {
+  const cookieStore = await cookies()
+  cookieStore.delete(SHOP_COOKIE)
+}
+
+export async function getOptionalShopSession(): Promise<SessionPayload | null> {
+  const cookieStore = await cookies()
+  const cookie = cookieStore.get(SHOP_COOKIE)?.value
   return decrypt(cookie)
 }

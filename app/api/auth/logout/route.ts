@@ -1,13 +1,18 @@
-import { deleteSession, getOptionalSession } from '@/lib/session'
+import { deleteSession, deleteShopSession } from '@/lib/session'
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 
 export async function POST() {
-  // Read role BEFORE deleting the session cookie
-  const session = await getOptionalSession()
-  const isB2BClient = session?.role === 'B2B Client'
+  // Detect which context triggered logout (shop or CRM) via Referer header
+  const hdrs = await headers()
+  const referer = hdrs.get('referer') ?? ''
+  const isShopLogout = referer.includes('/shop')
 
-  await deleteSession()
+  // Delete both cookies — belt-and-suspenders so neither session lingers.
+  // This is intentional: if the user explicitly logs out, clear everything.
+  await deleteSession()       // CRM cookie (crm_session)
+  await deleteShopSession()   // Shop cookie (shop_session)
 
-  // B2B clients return to the shop product page (not the CRM login)
-  redirect(isB2BClient ? '/shop/products' : '/login')
+  // Redirect to the appropriate login page
+  redirect(isShopLogout ? '/shop/products' : '/login')
 }

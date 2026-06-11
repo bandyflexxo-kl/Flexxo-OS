@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -42,7 +42,7 @@ export default async function ShopOrderDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id }   = await params
-  const session  = await getOptionalSession()
+  const session  = await getOptionalShopSession()
   if (!session?.customerCompanyId) return null
 
   const order = await prisma.order.findUnique({

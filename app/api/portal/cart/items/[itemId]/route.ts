@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { Prisma } from '@/app/generated/prisma/client'
@@ -18,7 +18,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { itemId } = await params
@@ -51,7 +51,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { itemId } = await params

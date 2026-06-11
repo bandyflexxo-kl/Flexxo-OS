@@ -1,4 +1,4 @@
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import ReorderButton from '@/components/shop/ReorderButton'
@@ -29,7 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 export default async function ShopOrdersPage() {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session?.customerCompanyId) return null
 
   const orders = await prisma.order.findMany({

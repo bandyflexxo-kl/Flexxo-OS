@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { decrypt, encrypt, sessionDurationMs } from '@/lib/session'
+import { decrypt, encrypt, sessionDurationMs, CRM_COOKIE, SHOP_COOKIE } from '@/lib/session'
 
 /**
  * Subdomain routing + auth guard
@@ -20,6 +20,11 @@ import { decrypt, encrypt, sessionDurationMs } from '@/lib/session'
  * Local dev one-time setup:
  *   Add to C:\Windows\System32\drivers\etc\hosts:
  *   127.0.0.1  shop.localhost
+ *
+ * Cookie isolation:
+ *   crm_session  — Admin / Manager / Salesperson / Warehouse (CRM)
+ *   shop_session — B2B Client (portal)
+ *   Both can coexist in the same browser without conflicts.
  */
 
 const SHOP_HOST = process.env.SHOP_HOST ?? 'shop.localhost'
@@ -75,15 +80,19 @@ export default async function proxy(req: NextRequest) {
   }
 
   // ── 2. Auth check ─────────────────────────────────────────────────────
+  //
+  // Shop paths read shop_session; CRM paths read crm_session.
+  // This allows admin + B2B client to be logged in simultaneously
+  // in the same browser without either session overwriting the other.
 
-  const cookie  = req.cookies.get('session')?.value
+  const isShopPath = (isShopDomain && !SINGLE_DOMAIN) || (SINGLE_DOMAIN && pathname.startsWith('/shop'))
+  const cookieName = isShopPath ? SHOP_COOKIE : CRM_COOKIE
+
+  const cookie  = req.cookies.get(cookieName)?.value
   const session = await decrypt(cookie)
 
   // On single domain, use /shop/login for shop paths, /login for CRM paths
-  const isShopPath   = pathname.startsWith('/shop')
-  const loginUrl     = (isShopDomain && !SINGLE_DOMAIN) || (SINGLE_DOMAIN && isShopPath)
-    ? '/shop/login'
-    : '/login'
+  const loginUrl     = isShopPath ? '/shop/login' : '/login'
   const isLoginPage  = pathname.startsWith(loginUrl) || pathname === '/change-password'
   const isPublicShop = isShopPublicPath(pathname)
 
@@ -108,9 +117,8 @@ export default async function proxy(req: NextRequest) {
 
   // Already logged in + on login page → redirect to home
   if (session?.userId && pathname.startsWith(loginUrl)) {
-    const isShopSession = (isShopDomain && !SINGLE_DOMAIN) || (SINGLE_DOMAIN && isShopPath)
     // B2B clients go to their dashboard; CRM staff go to CRM home
-    const homePath = isShopSession
+    const homePath = isShopPath
       ? (session.role === 'B2B Client' ? '/shop/dashboard' : '/shop/products')
       : '/'
     return NextResponse.redirect(new URL(homePath, req.url))
@@ -120,7 +128,6 @@ export default async function proxy(req: NextRequest) {
   // If a session has less than 33% of its original lifetime remaining and
   // the user is actively browsing, silently renew the cookie so they are
   // never interrupted mid-work.
-  // Only renew on non-redirect responses (i.e. we are about to return next())
   if (session?.userId && session.role) {
     const now         = Date.now()
     const expiresAt   = new Date(session.expiresAt).getTime()
@@ -132,7 +139,7 @@ export default async function proxy(req: NextRequest) {
       try {
         const newToken = await encrypt({ ...session, expiresAt: newExpiresAt })
         const response = NextResponse.next()
-        response.cookies.set('session', newToken, {
+        response.cookies.set(cookieName, newToken, {
           httpOnly: true,
           secure:   process.env.NODE_ENV === 'production',
           expires:  newExpiresAt,

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import bcrypt from 'bcryptjs'
 import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
-import { createSession } from '@/lib/session'
+import { createShopSession } from '@/lib/session'
 import { sendGenericEmail } from '@/lib/email'
 import { sendPushToManagers } from '@/lib/webpush'
 
@@ -133,7 +133,7 @@ export async function shopLoginAction(state: LoginState, formData: FormData): Pr
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
 
-  await createSession({
+  await createShopSession({
     userId:             user.id,
     name:               user.name,
     email:              user.email,

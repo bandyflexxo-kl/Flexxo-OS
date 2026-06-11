@@ -6,7 +6,7 @@
  */
 
 import { NextResponse }  from 'next/server'
-import { verifySession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { prisma }        from '@/lib/prisma'
 import { z }             from 'zod'
 import bcrypt            from 'bcryptjs'
@@ -14,7 +14,7 @@ import bcrypt            from 'bcryptjs'
 // ── GET ───────────────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const session = await verifySession().catch(() => null)
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -54,7 +54,7 @@ const ChangePasswordSchema = z.object({
 })
 
 export async function PATCH(req: Request) {
-  const session = await verifySession().catch(() => null)
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

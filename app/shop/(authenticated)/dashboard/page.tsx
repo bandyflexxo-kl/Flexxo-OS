@@ -10,7 +10,7 @@
 import { redirect }          from 'next/navigation'
 import Link                   from 'next/link'
 import { prisma }             from '@/lib/prisma'
-import { getOptionalSession } from '@/lib/session'
+import { getOptionalShopSession } from '@/lib/session'
 import { fetchQneFinancialDataCached, QneUnavailableError } from '@/lib/qneFinancial'
 import type { Decimal }       from '@prisma/client/runtime/client'
 
@@ -181,7 +181,7 @@ function memberSinceStr(createdAt: Date): string {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
-  const session = await getOptionalSession()
+  const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') redirect('/shop/login?returnUrl=/shop/dashboard')
 
   // ── Fetch user + company + salesperson ────────────────────────────────────
