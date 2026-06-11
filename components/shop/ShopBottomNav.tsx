@@ -91,9 +91,9 @@ export default function ShopBottomNav({ isLoggedIn, dbCartCount }: Props) {
       ),
     },
     {
-      href:   isLoggedIn ? '/shop/account' : '/shop/login',
+      href:   isLoggedIn ? '/shop/dashboard' : '/shop/login',
       label:  isLoggedIn ? 'Account' : 'Sign In',
-      active: pathname.startsWith('/shop/account') || pathname.startsWith('/shop/login'),
+      active: pathname.startsWith('/shop/dashboard') || pathname.startsWith('/shop/login'),
       icon: (active: boolean) => (
         <svg className={`w-6 h-6 ${active ? 'stroke-green-600' : 'stroke-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 2 : 1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>

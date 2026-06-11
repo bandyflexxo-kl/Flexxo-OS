@@ -24,6 +24,7 @@ import {
   fetchQneFinancialDataCached,
   QneUnavailableError,
 }                                from '@/lib/qneFinancial'
+import AccountSection            from './AccountSection'
 import type { Decimal }          from '@prisma/client/runtime/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -627,6 +628,9 @@ export default async function DashboardPage() {
             </Link>
           </div>
         )}
+
+        {/* ── Account (change password + sign out) ─────────────────── */}
+        <AccountSection />
 
       </div>
     </div>

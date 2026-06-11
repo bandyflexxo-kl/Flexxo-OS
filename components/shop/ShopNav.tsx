@@ -105,9 +105,9 @@ export default function ShopNav({
           )}
           {isLoggedIn && (
             <Link
-              href="/shop/account"
+              href="/shop/dashboard"
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                pathname.startsWith('/shop/account') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                pathname.startsWith('/shop/dashboard') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
               Account
