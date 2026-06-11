@@ -1,18 +1,30 @@
 /**
  * /shop/dashboard — B2B Client Home
  *
- * This is the first page clients see after login.
- * Positioning: Flexxo as a one-stop procurement PARTNER, not a vendor.
- * Shows: warm greeting, spend metrics, smart reorder predictions,
- * account balance (from QNE), salesperson contact, quick actions.
+ * Performance architecture:
+ *   ─ Fast data (DB): user profile, orders, metrics — rendered immediately
+ *   ─ Slow data (QNE via Radmin VPN): balance, invoices, aging — streamed in
+ *     via React Suspense so the page is NEVER blocked by a QNE call.
+ *
+ * Two async Server Components are Suspense-wrapped:
+ *   <OutstandingCard>   — Outstanding metric card (streams into the grid)
+ *   <QneInvoicesAging>  — Recent Invoices + Aging sections (stream in below)
+ *
+ * Both call fetchQneFinancialDataCached — Next.js unstable_cache
+ * deduplicates concurrent requests with the same key, so QNE is only
+ * contacted once per render regardless of how many components need the data.
  */
 
-import { redirect }          from 'next/navigation'
-import Link                   from 'next/link'
-import { prisma }             from '@/lib/prisma'
+import { Suspense }              from 'react'
+import { redirect }              from 'next/navigation'
+import Link                      from 'next/link'
+import { prisma }                from '@/lib/prisma'
 import { getOptionalShopSession } from '@/lib/session'
-import { fetchQneFinancialDataCached, QneUnavailableError } from '@/lib/qneFinancial'
-import type { Decimal }       from '@prisma/client/runtime/client'
+import {
+  fetchQneFinancialDataCached,
+  QneUnavailableError,
+}                                from '@/lib/qneFinancial'
+import type { Decimal }          from '@prisma/client/runtime/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,7 +51,6 @@ type RecentOrder = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getMalaysiaHour(): number {
-  // Malaysia = UTC+8
   const utcHour = new Date().getUTCHours()
   return (utcHour + 8) % 24
 }
@@ -50,10 +61,13 @@ function getDayGreeting(name: string): string {
   return `${salutation}, ${name.split(' ')[0]} 👋`
 }
 
-function getPartnerTier(totalSpent: number): { tier: string; emoji: string; color: string; nextTier: string | null; nextAt: number | null } {
+function getPartnerTier(totalSpent: number): {
+  tier: string; emoji: string; color: string
+  nextTier: string | null; nextAt: number | null
+} {
   if (totalSpent >= 50_000) return { tier: 'Platinum Partner', emoji: '💎', color: 'text-purple-700 bg-purple-50 border-purple-200', nextTier: null, nextAt: null }
   if (totalSpent >= 10_000) return { tier: 'Gold Partner',     emoji: '🥇', color: 'text-yellow-700 bg-yellow-50 border-yellow-200', nextTier: 'Platinum', nextAt: 50_000 }
-  return { tier: 'Silver Partner', emoji: '🥈', color: 'text-gray-600 bg-gray-50 border-gray-200', nextTier: 'Gold', nextAt: 10_000 }
+  return                           { tier: 'Silver Partner',   emoji: '🥈', color: 'text-gray-600 bg-gray-50 border-gray-200',       nextTier: 'Gold',     nextAt: 10_000 }
 }
 
 function getStatusColor(status: string): string {
@@ -70,7 +84,6 @@ function getStatusColor(status: string): string {
   return map[status] ?? 'text-gray-600 bg-gray-50'
 }
 
-/** Compute smart reorder predictions from order history */
 function computeSmartReorders(
   orders: Array<{
     createdAt: Date
@@ -81,11 +94,7 @@ function computeSmartReorders(
     }>
   }>
 ): SmartReorder[] {
-  // Group order dates by productId
-  const map = new Map<string, {
-    name: string; unit: string | null; category: string
-    dates: Date[]; lastQty: number
-  }>()
+  const map = new Map<string, { name: string; unit: string | null; category: string; dates: Date[]; lastQty: number }>()
 
   for (const order of orders) {
     for (const item of order.items) {
@@ -96,66 +105,47 @@ function computeSmartReorders(
         existing.lastQty = Number(item.qty)
       } else {
         map.set(item.productId, {
-          name:     item.product.name,
-          unit:     item.product.unit,
-          category: item.product.category.name,
-          dates:    [order.createdAt],
-          lastQty:  Number(item.qty),
+          name: item.product.name, unit: item.product.unit,
+          category: item.product.category.name, dates: [order.createdAt], lastQty: Number(item.qty),
         })
       }
     }
   }
 
-  const now      = Date.now()
+  const now = Date.now()
   const results: SmartReorder[] = []
 
   for (const [productId, data] of map) {
     const dates = [...data.dates].sort((a, b) => a.getTime() - b.getTime())
+    if (dates.length < 2) continue
 
-    if (dates.length < 2) continue  // need ≥ 2 orders to predict
-
-    // Average interval in ms
     let totalInterval = 0
-    for (let i = 1; i < dates.length; i++) {
-      totalInterval += dates[i].getTime() - dates[i - 1].getTime()
-    }
-    const avgInterval    = totalInterval / (dates.length - 1)
-    const lastOrderDate  = dates[dates.length - 1]
-    const predictedNext  = lastOrderDate.getTime() + avgInterval
-    const daysUntilNext  = Math.round((predictedNext - now) / 86_400_000)
+    for (let i = 1; i < dates.length; i++) totalInterval += dates[i].getTime() - dates[i - 1].getTime()
 
-    if (daysUntilNext <= 21) {  // surface items due within 3 weeks
+    const avgInterval   = totalInterval / (dates.length - 1)
+    const lastOrderDate = dates[dates.length - 1]
+    const predictedNext = lastOrderDate.getTime() + avgInterval
+    const daysUntilNext = Math.round((predictedNext - now) / 86_400_000)
+
+    if (daysUntilNext <= 21) {
       results.push({
-        productId,
-        name:          data.name,
-        unit:          data.unit,
-        lastQty:       data.lastQty,
-        daysUntilNext,
+        productId, name: data.name, unit: data.unit, lastQty: data.lastQty, daysUntilNext,
         urgency: daysUntilNext <= 0 ? 'overdue' : daysUntilNext <= 7 ? 'urgent' : 'upcoming',
       })
     }
   }
 
-  return results
-    .sort((a, b) => a.daysUntilNext - b.daysUntilNext)
-    .slice(0, 4)
+  return results.sort((a, b) => a.daysUntilNext - b.daysUntilNext).slice(0, 4)
 }
 
-/** Compute spend breakdown by product category */
 function computeCategoryBreakdown(
-  orders: Array<{
-    items: Array<{
-      lineTotal: Decimal
-      product: { category: { name: string } } | null
-    }>
-  }>
+  orders: Array<{ items: Array<{ lineTotal: Decimal; product: { category: { name: string } } | null }> }>
 ): CategoryBreakdown[] {
   const map = new Map<string, number>()
   for (const order of orders) {
     for (const item of order.items) {
-      const cat   = item.product?.category.name ?? 'Others'
-      const total = Number(item.lineTotal)
-      map.set(cat, (map.get(cat) ?? 0) + total)
+      const cat = item.product?.category.name ?? 'Others'
+      map.set(cat, (map.get(cat) ?? 0) + Number(item.lineTotal))
     }
   }
   const grandTotal = [...map.values()].reduce((a, b) => a + b, 0)
@@ -184,7 +174,7 @@ export default async function DashboardPage() {
   const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') redirect('/shop/login?returnUrl=/shop/dashboard')
 
-  // ── Fetch user + company + salesperson ────────────────────────────────────
+  // ── Fetch user + company + salesperson ──────────────────────────────────
   const user = await prisma.user.findUnique({
     where:  { id: session.userId },
     select: {
@@ -199,11 +189,7 @@ export default async function DashboardPage() {
             where:   { unassignedAt: null },
             orderBy: { isPrimary: 'desc' },
             take:    1,
-            select:  {
-              user: {
-                select: { id: true, name: true, mobileNo: true, email: true }
-              }
-            },
+            select:  { user: { select: { id: true, name: true, mobileNo: true, email: true } } },
           },
         },
       },
@@ -211,6 +197,7 @@ export default async function DashboardPage() {
   })
 
   if (!user) redirect('/shop/login')
+
   const company     = user.customerCompany
   const salesperson = company?.assignments[0]?.user ?? null
 
@@ -238,7 +225,7 @@ export default async function DashboardPage() {
       })
     : []
 
-  // ── Compute metrics ───────────────────────────────────────────────────────
+  // ── Compute metrics (DB-only, fast) ──────────────────────────────────────
   const completedStatuses = new Set(['Delivered', 'Shipped', 'Processing', 'Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering'])
   const activeStatuses    = new Set(['Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering'])
 
@@ -246,58 +233,14 @@ export default async function DashboardPage() {
   const totalOrders = orders.filter(o => completedStatuses.has(o.status)).length
   const activeOrders = orders.filter(o => activeStatuses.has(o.status)).length
 
-  const partnerTier    = getPartnerTier(totalSpent)
-  const smartReorders  = computeSmartReorders(orders)
-  const categoryBreak  = computeCategoryBreakdown(orders)
+  const partnerTier   = getPartnerTier(totalSpent)
+  const smartReorders = computeSmartReorders(orders)
+  const categoryBreak = computeCategoryBreakdown(orders)
 
   const recentOrders: RecentOrder[] = orders.slice(0, 3).map(o => ({
-    id:          o.id,
-    referenceNo: o.referenceNo,
-    status:      o.status,
-    totalAmount: Number(o.totalAmount ?? 0),
-    createdAt:   o.createdAt,
-    itemCount:   o.items.length,
+    id: o.id, referenceNo: o.referenceNo, status: o.status,
+    totalAmount: Number(o.totalAmount ?? 0), createdAt: o.createdAt, itemCount: o.items.length,
   }))
-
-  // ── QNE Balance (graceful fallback if VPN down) ────────────────────────────
-  let qneBalance: {
-    outstanding: number; paymentTerm: string | null
-    isCached: boolean
-    recentInvoices: { invoiceNo: string; invoiceDate: string; dueDate: string | null; amount: number }[]
-    aging: {
-      current: number; overdue30: number; overdue60: number
-      overdue90: number; overdueAbove90: number
-      totalOutstanding: number; creditLimit: number | null
-    } | null
-  } | null = null
-
-  if (company?.qneCustomerCode) {
-    try {
-      const fin = await fetchQneFinancialDataCached(company.qneCustomerCode)
-      qneBalance = {
-        outstanding:    fin.customer.currentBalance,
-        paymentTerm:    fin.customer.paymentTerm,
-        isCached:       false,
-        recentInvoices: fin.recentInvoices.slice(0, 3),
-        aging:          fin.aging,
-      }
-    } catch (e) {
-      if (e instanceof QneUnavailableError) {
-        // Fall back to locally cached balance
-        if (company.outstandingBalance !== null) {
-          qneBalance = {
-            outstanding:    Number(company.outstandingBalance),
-            paymentTerm:    null,
-            isCached:       true,
-            recentInvoices: [],
-            aging:          null,
-          }
-        }
-      }
-    }
-  }
-
-  const greeting = getDayGreeting(user.name)
 
   // WhatsApp deep link for salesperson
   const spWaNumber = salesperson?.mobileNo?.replace(/[^0-9]/g, '')
@@ -305,13 +248,14 @@ export default async function DashboardPage() {
     ? `https://wa.me/6${spWaNumber.startsWith('0') ? spWaNumber : '0' + spWaNumber}?text=${encodeURIComponent(`Hi ${salesperson?.name?.split(' ')[0] ?? ''}, I'm reaching out regarding my Flexxo account (${company?.name ?? ''}).`)}`
     : null
 
+  const greeting = getDayGreeting(user.name)
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
 
       {/* ── Hero greeting ─────────────────────────────────────────────── */}
       <div className="bg-gradient-to-br from-green-900 via-green-800 to-green-700 px-4 pt-8 pb-16 relative overflow-hidden">
-        {/* Decorative circles */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/5" />
           <div className="absolute bottom-0 -left-8 w-32 h-32 rounded-full bg-green-600/30" />
@@ -321,9 +265,8 @@ export default async function DashboardPage() {
           <p className="text-2xl font-bold text-white">{greeting}</p>
           <p className="text-green-200 text-sm mt-1">{company?.name ?? 'Your account'}</p>
 
-          {/* Partner tier + member since */}
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-white/10 text-white border-white/20`}>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-white/10 text-white border-white/20">
               {partnerTier.emoji} {partnerTier.tier}
             </span>
             <span className="text-xs text-green-300">
@@ -336,7 +279,6 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* Tagline */}
           <p className="text-green-200 text-xs mt-4 leading-relaxed max-w-md">
             Your dedicated procurement partner — one supplier, zero hassle. We handle stationery, pantry, hygiene, furniture and more so your team can focus on what matters.
           </p>
@@ -344,10 +286,15 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── Metric cards (pulled up over hero) ────────────────────────── */}
+      {/*
+        3 cards render immediately (DB data).
+        Outstanding card streams in via Suspense — shows skeleton while
+        QNE financial data loads. No spinner blocks the rest of the page.
+      */}
       <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
-          {/* Total Spent */}
+          {/* Total Spent — fast */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">Total Spent</p>
             <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
@@ -356,35 +303,22 @@ export default async function DashboardPage() {
             <p className="text-[10px] text-gray-400 mt-0.5">lifetime</p>
           </div>
 
-          {/* Orders */}
+          {/* Orders Placed — fast */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">Orders Placed</p>
             <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{totalOrders}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">all time</p>
           </div>
 
-          {/* Outstanding Balance */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-400 font-medium">Outstanding</p>
-            {qneBalance !== null ? (
-              <>
-                <p className={`text-lg font-bold mt-1 tabular-nums ${qneBalance.outstanding > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  MYR {qneBalance.outstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                </p>
-                <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-0.5">
-                  {qneBalance.isCached ? '⚠ cached' : '● live'}
-                  {qneBalance.paymentTerm && ` · ${qneBalance.paymentTerm}`}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-lg font-bold text-gray-300 mt-1">—</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">contact manager</p>
-              </>
-            )}
-          </div>
+          {/* Outstanding — streams in from QNE (skeleton while loading) */}
+          <Suspense fallback={<OutstandingCardSkeleton />}>
+            <OutstandingCard
+              qneCustomerCode={company?.qneCustomerCode}
+              fallbackBalance={company?.outstandingBalance}
+            />
+          </Suspense>
 
-          {/* Loyalty / Vouchers */}
+          {/* Vouchers — static */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">Vouchers</p>
             <p className="text-lg font-bold text-gray-300 mt-1">0</p>
@@ -428,7 +362,6 @@ export default async function DashboardPage() {
             </div>
             <div className="px-4 py-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                {/* Avatar */}
                 <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
                   <span className="text-sm font-bold text-green-700">
                     {salesperson.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}
@@ -450,7 +383,10 @@ export default async function DashboardPage() {
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.122.55 4.116 1.517 5.845L0 24l6.338-1.487A11.936 11.936 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.896 0-3.671-.504-5.201-1.385l-.373-.22-3.863.907.921-3.773-.24-.389A9.945 9.945 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.122.55 4.116 1.517 5.845L0 24l6.338-1.487A11.936 11.936 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.896 0-3.671-.504-5.201-1.385l-.373-.22-3.863.907.921-3.773-.24-.389A9.945 9.945 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
+                    </svg>
                     WhatsApp
                   </a>
                 )}
@@ -466,7 +402,7 @@ export default async function DashboardPage() {
             </div>
             <div className="px-4 pb-3">
               <p className="text-[11px] text-gray-400 italic">
-                "Need something urgently? Missing an item? Special pricing? Reach out directly — we respond within the hour."
+                &ldquo;Need something urgently? Missing an item? Special pricing? Reach out directly — we respond within the hour.&rdquo;
               </p>
             </div>
           </div>
@@ -523,124 +459,19 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* ── Outstanding Invoice Detail (if QNE live) ─────────────── */}
-        {qneBalance && !qneBalance.isCached && qneBalance.recentInvoices.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">🧾</span>
-                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Recent Invoices</p>
-              </div>
-              <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
-            </div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-50">
-                  <th className="px-4 py-2 text-left font-medium">Invoice</th>
-                  <th className="px-4 py-2 text-left font-medium">Date</th>
-                  <th className="px-4 py-2 text-left font-medium">Due</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {qneBalance.recentInvoices.map(inv => {
-                  const overdue = inv.dueDate && new Date(inv.dueDate) < new Date()
-                  return (
-                    <tr key={inv.invoiceNo} className="border-b border-gray-50 last:border-0">
-                      <td className="px-4 py-2.5 font-mono text-gray-800">{inv.invoiceNo}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) : '—'}</td>
-                      <td className={`px-4 py-2.5 font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
-                        {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }) : '—'}
-                        {overdue && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded">Overdue</span>}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
-                        MYR {inv.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+        {/* ── QNE invoices + aging — streams in via Suspense ────────── */}
+        {/*
+          These sections only render when QNE data is available.
+          Suspense fallback is null — sections simply don't exist until
+          QNE responds (rather than showing a placeholder that "flashes in").
+          If QNE is unreachable, QneInvoicesAging returns null — sections
+          are silently omitted.
+        */}
+        {company?.qneCustomerCode && (
+          <Suspense fallback={<QneInvoicesSkeleton />}>
+            <QneInvoicesAging qneCustomerCode={company.qneCustomerCode} />
+          </Suspense>
         )}
-
-        {/* ── Aging Breakdown + Credit Limit ───────────────────────── */}
-        {qneBalance && !qneBalance.isCached && qneBalance.aging && qneBalance.aging.totalOutstanding > 0 && (() => {
-          const ag = qneBalance.aging!
-          const total = ag.totalOutstanding || 1   // avoid divide-by-zero
-          const bars: { label: string; val: number; color: string }[] = [
-            { label: 'Current',  val: ag.current,        color: 'bg-green-400' },
-            { label: '1–30d',    val: ag.overdue30,       color: 'bg-yellow-400' },
-            { label: '31–60d',   val: ag.overdue60,       color: 'bg-orange-400' },
-            { label: '61–90d',   val: ag.overdue90,       color: 'bg-red-400' },
-            { label: '90d+',     val: ag.overdueAbove90,  color: 'bg-red-600' },
-          ].filter(b => b.val > 0)
-
-          return (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">📅</span>
-                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Payment Aging</p>
-                </div>
-                <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
-              </div>
-              <div className="px-4 py-4">
-                {/* Stacked bar */}
-                <div className="h-3 rounded-full overflow-hidden flex mb-3">
-                  {bars.map(b => (
-                    <div
-                      key={b.label}
-                      className={`${b.color} h-full transition-all`}
-                      style={{ width: `${Math.round((b.val / total) * 100)}%` }}
-                      title={`${b.label}: MYR ${b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}`}
-                    />
-                  ))}
-                </div>
-                {/* Legend */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
-                  {bars.map(b => (
-                    <div key={b.label} className="flex items-center gap-1.5">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${b.color}`} />
-                      <span className="text-[11px] text-gray-500">{b.label}</span>
-                      <span className="text-[11px] font-semibold text-gray-700 ml-auto tabular-nums">
-                        MYR {b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {/* Credit limit bar (if available) */}
-                {ag.creditLimit !== null && ag.creditLimit > 0 && (
-                  <div className="mt-4 pt-3 border-t border-gray-50">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-gray-500 font-medium">Credit Utilisation</span>
-                      <span className="tabular-nums text-gray-700 font-semibold">
-                        MYR {ag.totalOutstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                        {' / '}
-                        MYR {ag.creditLimit.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          ag.totalOutstanding / ag.creditLimit > 0.8
-                            ? 'bg-red-500'
-                            : ag.totalOutstanding / ag.creditLimit > 0.5
-                            ? 'bg-amber-400'
-                            : 'bg-green-400'
-                        }`}
-                        style={{ width: `${Math.min(100, Math.round((ag.totalOutstanding / ag.creditLimit) * 100))}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      {Math.round((ag.totalOutstanding / ag.creditLimit) * 100)}% of credit limit used
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
 
         {/* ── Recent Orders ─────────────────────────────────────────── */}
         {recentOrders.length > 0 && (
@@ -698,10 +529,7 @@ export default async function DashboardPage() {
                     <span className="text-gray-400 tabular-nums">{cat.pct}% · MYR {cat.amount.toLocaleString('en-MY', { maximumFractionDigits: 0 })}</span>
                   </div>
                   <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 rounded-full"
-                      style={{ width: `${cat.pct}%` }}
-                    />
+                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${cat.pct}%` }} />
                   </div>
                 </div>
               ))}
@@ -766,10 +594,10 @@ export default async function DashboardPage() {
           <p className="text-xs font-semibold uppercase tracking-widest text-green-300 mb-3">Your Flexxo Advantage</p>
           <div className="grid grid-cols-2 gap-y-3 gap-x-4">
             {[
-              { icon: '🏪', title: 'One-Stop Partner',    desc: 'Stationery to furniture — one supplier, one invoice' },
-              { icon: '⚡', title: 'Fast Response',        desc: 'WhatsApp your manager, solved within the hour' },
-              { icon: '📍', title: 'KL-Based Delivery',   desc: 'Reliable, fast fulfilment across Klang Valley' },
-              { icon: '🔄', title: 'Smart Reordering',    desc: 'We track your pattern so you never run out' },
+              { icon: '🏪', title: 'One-Stop Partner',  desc: 'Stationery to furniture — one supplier, one invoice' },
+              { icon: '⚡', title: 'Fast Response',      desc: 'WhatsApp your manager, solved within the hour' },
+              { icon: '📍', title: 'KL-Based Delivery', desc: 'Reliable, fast fulfilment across Klang Valley' },
+              { icon: '🔄', title: 'Smart Reordering',  desc: 'We track your pattern so you never run out' },
             ].map(v => (
               <div key={v.title} className="flex items-start gap-2">
                 <span className="text-base shrink-0 mt-0.5">{v.icon}</span>
@@ -788,7 +616,8 @@ export default async function DashboardPage() {
             <p className="text-2xl mb-2">👋</p>
             <p className="text-sm font-semibold text-gray-800">Welcome to Flexxo!</p>
             <p className="text-xs text-gray-500 mt-1 mb-4 max-w-xs mx-auto">
-              You&rsquo;re all set. Browse our catalogue or reach out to {salesperson?.name?.split(' ')[0] ?? 'your account manager'} to place your first order.
+              You&rsquo;re all set. Browse our catalogue or reach out to{' '}
+              {salesperson?.name?.split(' ')[0] ?? 'your account manager'} to place your first order.
             </p>
             <Link
               href="/shop/products"
@@ -799,6 +628,234 @@ export default async function DashboardPage() {
           </div>
         )}
 
+      </div>
+    </div>
+  )
+}
+
+// ── Streaming async Server Components ────────────────────────────────────────
+//
+// These components are rendered in <Suspense> boundaries in DashboardPage.
+// They execute concurrently in the background while the main page HTML is
+// already streaming to the client.  When they complete, their HTML is
+// flushed into the stream and injected into the correct position in the DOM.
+//
+// Both call fetchQneFinancialDataCached with the same key — unstable_cache
+// deduplicates concurrent requests so QNE is only contacted once.
+
+/** Outstanding metric card — streams in live QNE balance */
+async function OutstandingCard({
+  qneCustomerCode,
+  fallbackBalance,
+}: {
+  qneCustomerCode: string | null | undefined
+  fallbackBalance:  Decimal | null | undefined
+}) {
+  let outstanding: number | null = null
+  let paymentTerm: string | null = null
+  let isCached = false
+
+  if (qneCustomerCode) {
+    try {
+      const fin = await fetchQneFinancialDataCached(qneCustomerCode)
+      outstanding = fin.customer.currentBalance
+      paymentTerm = fin.customer.paymentTerm
+    } catch (e) {
+      if (e instanceof QneUnavailableError && fallbackBalance != null) {
+        outstanding = Number(fallbackBalance)
+        isCached = true
+      }
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+      <p className="text-xs text-gray-400 font-medium">Outstanding</p>
+      {outstanding !== null ? (
+        <>
+          <p className={`text-lg font-bold mt-1 tabular-nums ${outstanding > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+            MYR {outstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            {isCached ? '⚠ cached' : '● live'}
+            {paymentTerm && ` · ${paymentTerm}`}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-lg font-bold text-gray-300 mt-1">—</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">contact manager</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Skeleton placeholder shown in the Outstanding card slot while QNE loads */
+function OutstandingCardSkeleton() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm animate-pulse">
+      <p className="text-xs text-gray-400 font-medium">Outstanding</p>
+      <div className="h-6 bg-gray-200 rounded-md w-20 mt-1 mb-1" />
+      <div className="h-2.5 bg-gray-100 rounded-md w-14" />
+    </div>
+  )
+}
+
+/** QNE invoice table + aging breakdown — streams in after fast content */
+async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }) {
+  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
+  try {
+    fin = await fetchQneFinancialDataCached(qneCustomerCode)
+  } catch {
+    return null // QNE unreachable — sections silently omitted
+  }
+
+  const recentInvoices = fin.recentInvoices.slice(0, 3)
+  const aging          = fin.aging
+
+  if (recentInvoices.length === 0 && (!aging || aging.totalOutstanding === 0)) return null
+
+  return (
+    <>
+      {/* ── Recent Invoices ──────────────────────────────────────── */}
+      {recentInvoices.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🧾</span>
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Recent Invoices</p>
+            </div>
+            <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-50">
+                <th className="px-4 py-2 text-left font-medium">Invoice</th>
+                <th className="px-4 py-2 text-left font-medium">Date</th>
+                <th className="px-4 py-2 text-left font-medium">Due</th>
+                <th className="px-4 py-2 text-right font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentInvoices.map(inv => {
+                const overdue = inv.dueDate && new Date(inv.dueDate) < new Date()
+                return (
+                  <tr key={inv.invoiceNo} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-mono text-gray-800">{inv.invoiceNo}</td>
+                    <td className="px-4 py-2.5 text-gray-500">
+                      {inv.invoiceDate
+                        ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
+                        : '—'}
+                    </td>
+                    <td className={`px-4 py-2.5 font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
+                      {inv.dueDate
+                        ? new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
+                        : '—'}
+                      {overdue && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded">Overdue</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
+                      MYR {inv.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Aging Breakdown + Credit Limit ──────────────────────── */}
+      {aging && aging.totalOutstanding > 0 && (() => {
+        const total = aging.totalOutstanding || 1
+        const bars: { label: string; val: number; color: string }[] = [
+          { label: 'Current', val: aging.current,        color: 'bg-green-400' },
+          { label: '1–30d',   val: aging.overdue30,      color: 'bg-yellow-400' },
+          { label: '31–60d',  val: aging.overdue60,      color: 'bg-orange-400' },
+          { label: '61–90d',  val: aging.overdue90,      color: 'bg-red-400' },
+          { label: '90d+',    val: aging.overdueAbove90, color: 'bg-red-600' },
+        ].filter(b => b.val > 0)
+
+        return (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📅</span>
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Payment Aging</p>
+              </div>
+              <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
+            </div>
+            <div className="px-4 py-4">
+              <div className="h-3 rounded-full overflow-hidden flex mb-3">
+                {bars.map(b => (
+                  <div
+                    key={b.label}
+                    className={`${b.color} h-full transition-all`}
+                    style={{ width: `${Math.round((b.val / total) * 100)}%` }}
+                    title={`${b.label}: MYR ${b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}`}
+                  />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+                {bars.map(b => (
+                  <div key={b.label} className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${b.color}`} />
+                    <span className="text-[11px] text-gray-500">{b.label}</span>
+                    <span className="text-[11px] font-semibold text-gray-700 ml-auto tabular-nums">
+                      MYR {b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {aging.creditLimit !== null && aging.creditLimit > 0 && (
+                <div className="mt-4 pt-3 border-t border-gray-50">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gray-500 font-medium">Credit Utilisation</span>
+                    <span className="tabular-nums text-gray-700 font-semibold">
+                      MYR {aging.totalOutstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                      {' / '}
+                      MYR {aging.creditLimit.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        aging.totalOutstanding / aging.creditLimit > 0.8 ? 'bg-red-500' :
+                        aging.totalOutstanding / aging.creditLimit > 0.5 ? 'bg-amber-400' : 'bg-green-400'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.round((aging.totalOutstanding / aging.creditLimit) * 100))}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {Math.round((aging.totalOutstanding / aging.creditLimit) * 100)}% of credit limit used
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+    </>
+  )
+}
+
+/** Skeleton shown while QNE invoices + aging load */
+function QneInvoicesSkeleton() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
+      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+        <div className="w-4 h-4 bg-gray-200 rounded" />
+        <div className="h-3 bg-gray-200 rounded w-32" />
+      </div>
+      <div className="px-4 py-4 space-y-2.5">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="h-3 bg-gray-200 rounded flex-1" />
+            <div className="h-3 bg-gray-100 rounded w-12" />
+            <div className="h-3 bg-gray-100 rounded w-12" />
+            <div className="h-3 bg-gray-200 rounded w-20 ml-auto" />
+          </div>
+        ))}
       </div>
     </div>
   )

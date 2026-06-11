@@ -1,5 +1,6 @@
 import { unstable_cache }                      from 'next/cache'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
+import { getRedis }                              from '@/lib/redis'
 
 // ── Response types ────────────────────────────────────────────────────────────
 
@@ -192,33 +193,55 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
   }
 }
 
-// ── Cached version (4-hour TTL via Next.js Data Cache) ───────────────────────
+// ── Two-layer cache: Redis (4h) → unstable_cache fallback ────────────────────
 //
-// On Vercel, `unstable_cache` persists across serverless invocations using the
-// platform's Data Cache — no Redis needed. On local dev it persists for the
-// lifetime of the dev server process.
+// Layer 1 — Upstash Redis (4h TTL):
+//   Persists across server restarts, shared across Vercel instances.
+//   Key: `qne-fin:v1:{qneCustomerCode}`
+//   Configured via UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN.
+//   Falls back to Layer 2 when env vars are absent (local dev without Redis).
 //
-// TTL: 4 hours (14 400 s). Rationale: QNE invoice/balance data changes at most
-// once or twice per business day (payment received, invoice issued). 4 hours
-// limits VPN round-trips to ≤ 6 per client per day in the worst case.
+// Layer 2 — Next.js unstable_cache (4h TTL):
+//   In-process cache, cleared on dev server restart.
+//   Used as fallback when Redis is not configured.
 //
-// Error behaviour: if QNE is unreachable the underlying function throws
-// QneUnavailableError; `unstable_cache` does NOT cache the error — next call
-// retries QNE. The dashboard's try/catch falls back to the DB-cached balance.
+// Error behaviour: errors are NOT cached — next request retries QNE live.
+// Dashboard falls back to the DB-stored balance when QNE is unreachable.
 //
-// To force-invalidate a client's cache (e.g. payment just confirmed):
-//   import { revalidateTag } from 'next/cache'
-//   revalidateTag(`qne-fin-${qneCustomerCode}`)
+// To force-invalidate a client's cache:
+//   Redis: await getRedis()?.del(`qne-fin:v1:${qneCustomerCode}`)
+//   unstable_cache: revalidateTag(`qne-fin-${qneCustomerCode}`)
 
-export function fetchQneFinancialDataCached(qneCustomerCode: string): Promise<QneFinancialData> {
+const QNE_FIN_TTL = 4 * 60 * 60  // 4 hours in seconds
+
+export async function fetchQneFinancialDataCached(qneCustomerCode: string): Promise<QneFinancialData> {
+  const redis = getRedis()
+  const key   = `qne-fin:v1:${qneCustomerCode}`
+
+  // Layer 1: Redis
+  if (redis) {
+    const cached = await redis.get<QneFinancialData>(key).catch(() => null)
+    if (cached) return cached
+
+    const fresh = await fetchQneFinancialData(qneCustomerCode)
+    await redis.set(key, fresh, { ex: QNE_FIN_TTL }).catch(() => undefined)
+    return fresh
+  }
+
+  // Layer 2: unstable_cache (fallback when Redis not configured)
   return unstable_cache(
     () => fetchQneFinancialData(qneCustomerCode),
     [`qne-fin-${qneCustomerCode}`],
-    {
-      revalidate: 4 * 60 * 60,                 // 4 hours
-      tags:       [`qne-fin-${qneCustomerCode}`],
-    }
+    { revalidate: QNE_FIN_TTL, tags: [`qne-fin-${qneCustomerCode}`] }
   )()
+}
+
+/** Invalidate a client's QNE financial cache (call after payment confirmed, etc.) */
+export async function invalidateQneFinancialCache(qneCustomerCode: string): Promise<void> {
+  const redis = getRedis()
+  if (redis) {
+    await redis.del(`qne-fin:v1:${qneCustomerCode}`).catch(() => undefined)
+  }
 }
 
 export { QneUnavailableError }
