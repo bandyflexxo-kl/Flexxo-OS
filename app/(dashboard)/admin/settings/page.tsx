@@ -135,7 +135,7 @@ export default function AdminSettingsPage() {
         title="System Settings"
         actions={<Link href="/admin" className="text-sm text-gray-500 hover:text-gray-700">← Back to Admin</Link>}
       />
-      <div className="p-8 max-w-2xl space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-2xl space-y-6">
         {loading ? (
           <div className="text-sm text-gray-400 animate-pulse">Loading settings…</div>
         ) : (

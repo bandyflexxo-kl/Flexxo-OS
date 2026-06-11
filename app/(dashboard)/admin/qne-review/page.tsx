@@ -10,7 +10,7 @@ export default async function QneReviewPage() {
     return (
       <div>
         <Topbar title="QNE Review" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -72,7 +72,7 @@ export default async function QneReviewPage() {
           </Link>
         }
       />
-      <div className="p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <QneReviewTable rows={rows} stats={stats} />
       </div>
     </div>

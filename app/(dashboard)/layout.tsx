@@ -12,7 +12,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar role={session.role} />
-      <main className="flex-1 flex flex-col overflow-auto">{children}</main>
+      {/* pt-14: clearance for the fixed mobile topbar; removed at lg+ where topbar is hidden */}
+      <main className="flex-1 flex flex-col overflow-auto pt-14 lg:pt-0">{children}</main>
     </div>
   )
 }

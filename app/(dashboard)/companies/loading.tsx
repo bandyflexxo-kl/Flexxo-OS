@@ -2,7 +2,7 @@ export default function CompaniesLoading() {
   return (
     <div>
       {/* Topbar skeleton */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-gray-200 bg-white">
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4 border-b border-gray-200 bg-white">
         <div className="h-6 bg-gray-100 rounded-lg w-28 animate-pulse" />
         <div className="h-9 bg-gray-100 rounded-lg w-32 animate-pulse" />
       </div>

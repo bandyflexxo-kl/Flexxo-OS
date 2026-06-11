@@ -81,7 +81,7 @@ export default async function CompanyDetailPage({
           </Link>
         }
       />
-      <div className="p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         {/* Status bar */}
         <div className="flex items-center gap-3 mb-6">
           <Badge color={statusColor(company.status)}>{company.status}</Badge>

@@ -45,8 +45,13 @@ export const Z = {
   // Status banners
   offlineBanner:  80,   // Offline / connectivity warning banner
 
+  // CRM mobile chrome
+  crmTopbar:     35,    // Mobile CRM top bar (hamburger + brand)
+  crmBackdrop:   100,   // Backdrop overlay behind mobile CRM drawer
+  crmDrawer:     110,   // Mobile CRM sidebar drawer (above backdrop)
+
   // Drawers
-  drawer:        100,   // Side drawers
+  drawer:        100,   // Side drawers (shop/generic)
 
   // Modals
   modalBackdrop: 200,   // Modal backdrop overlay

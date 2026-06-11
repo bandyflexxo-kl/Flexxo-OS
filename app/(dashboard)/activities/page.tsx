@@ -54,7 +54,7 @@ export default async function ActivitiesPage({
   return (
     <div>
       <Topbar title="Activities" />
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
 
         {followUpsDue.length > 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">

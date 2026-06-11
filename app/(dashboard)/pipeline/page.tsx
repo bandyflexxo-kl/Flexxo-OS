@@ -47,7 +47,7 @@ export default async function PipelinePage() {
   return (
     <div>
       <Topbar title="Pipeline Board" />
-      <div className="p-8 overflow-x-auto">
+      <div className="p-4 sm:p-6 lg:p-8 overflow-x-auto">
         <KanbanBoard columns={columnMap} stages={stages} />
       </div>
     </div>

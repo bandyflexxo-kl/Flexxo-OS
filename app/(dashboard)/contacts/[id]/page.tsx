@@ -26,7 +26,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   return (
     <div>
       <Topbar title={contact.name} />
-      <div className="p-8 max-w-2xl space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-2xl space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6 grid grid-cols-2 gap-4">
           <Field label="Company">
             <Link href={`/companies/${contact.companyId}`} className="text-blue-600 hover:underline">

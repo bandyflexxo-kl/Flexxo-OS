@@ -22,7 +22,7 @@ export default async function NewContactPage({
   return (
     <div>
       <Topbar title="Add New Contact" />
-      <div className="p-8 max-w-xl">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-xl">
         <ContactForm companies={companies} defaultCompanyId={companyId} />
       </div>
     </div>

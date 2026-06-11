@@ -11,7 +11,7 @@ export default async function AdminProductsPage() {
     return (
       <div>
         <Topbar title="Product Catalog" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -76,7 +76,7 @@ export default async function AdminProductsPage() {
         title="Product Catalog"
         actions={<Link href="/admin" className="text-sm text-gray-500 hover:text-gray-700">← Back to Admin</Link>}
       />
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-2xl font-bold text-gray-900">{rows.length}</p>

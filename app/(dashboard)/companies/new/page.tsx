@@ -20,7 +20,7 @@ export default async function NewCompanyPage() {
   return (
     <div>
       <Topbar title="Add New Company" />
-      <div className="p-8 max-w-2xl">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-2xl">
         <CompanyForm stages={stages} users={users} />
       </div>
     </div>

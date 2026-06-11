@@ -16,70 +16,80 @@ const LOG_FOLDER_ID = '14KX8_UaoFxN2lfWidcM-hWQurGK3G_ID'
 
 const LOG_CONTENT = `# Flexxo CRM — App Improvement Log
 Date: 9 June 2026
-Build: B2B Shop — Account Page + QNE Last-Sale-Price Pricing
-Commit: 69ba002
+Build: B2B Account Request Review Flow
+Commit: 30665a7
 
 ---
 
 ## What was built
 
-### 1. /shop/account Page (was a 404)
-B2B clients can now access their account page from the top nav "Account" link.
+### Complete B2B Account Request Review Flow
 
-| Section | What it does |
-|---|---|
-| Profile card | Shows name, email, company, mobile, last login |
-| Change password | Current + new + confirm — validated client-side + API |
-| Sign out | Clean sign out button |
+When a customer submits "Request Business Account" on the shop login page,
+admins now have a full review workflow — nothing gets lost.
 
-### 2. Forgot Password hint (login page)
-"Forgot password?" link on login page → expands to contact instructions (email admin@flexxo.com.my). No self-service reset needed — passwords are admin-managed.
+### What was built
 
-### 3. Bottom nav Account tab fix
-Mobile bottom nav "Account" tab now links to /shop/account instead of triggering sign-out.
+**1. /admin/account-requests page**
+- Status tabs: Pending / Contacted / Converted / Rejected
+- Per-request actions:
+  - ✓ Mark Contacted — moves to Contacted tab
+  - Create Account → — opens /admin/customer-accounts pre-filled with name, email, company from the request
+  - ✓ Mark Converted — marks the request closed
+  - ✕ Reject — with optional internal note, confirm dialog
+  - ↩ Reopen — move rejected back to pending
+  - + Add note — internal notes editable inline at any time
 
-### 4. QNE Last-Sale-Price × 1.20 Pricing
-ALL visitors (logged in B2B client or anonymous guest) now see the same price:
-  **Display price = QNE last invoiced price × 1.20**
+**2. Notification Bell**
+- Pending account requests now appear in the 🔔 bell for Admin/Manager users
+- Shows: '🆕 Account Request: [Company Name]' per request
+- Included in urgent count (red badge)
 
-Fallback: if QNE price not yet synced, falls back to cost × margin as before.
+**3. Push notification on submit**
+- When customer submits a request, push notification fires to all subscribed Admin/Manager browsers immediately
+
+**4. Admin home page (/admin)**
+- Amber action banner: "X account requests awaiting review →"
+- New nav card: 🆕 Account Requests (with pending count badge)
+
+**5. Customer Accounts prefill**
+- "Create Account →" from request passes name, email, company as URL params
+- /admin/customer-accounts opens with form pre-filled and modal auto-opened
+- Company hint shown: "Requested company: [name] — find and select it above"
 
 ---
 
 ## Files created
 | File | Purpose |
 |---|---|
-| app/shop/(authenticated)/account/page.tsx | Account page (profile + change password + sign out) |
-| app/api/portal/account/route.ts | GET profile, PATCH change password |
-| lib/qnePriceSync.ts | syncQnePrices() — fetches last 200 invoices from QNE, extracts unit prices per item code, updates products.qne_last_sale_price |
-| app/api/admin/qne/sync-prices/route.ts | POST — Admin/Manager trigger for QNE price sync |
-| components/admin/QnePriceSyncPanel.tsx | Admin UI widget on /admin with Sync button + VPN reminder |
+| app/(dashboard)/admin/account-requests/page.tsx | Review UI — status tabs, request cards, actions |
+| app/api/admin/account-requests/route.ts | GET list |
+| app/api/admin/account-requests/[id]/route.ts | PATCH status/notes |
 
 ## Files modified
 | File | Change |
 |---|---|
-| prisma/schema.prisma | Added qneLastSalePrice + qneLastSalePriceAt to Product model |
-| app/api/portal/products/route.ts | QNE price × 1.20 priority; margin fallback |
-| app/api/portal/products-public/route.ts | Same pricing logic |
-| app/shop/login/page.tsx | Added "Forgot password?" hint section |
-| components/shop/ShopBottomNav.tsx | Account tab → /shop/account instead of logout form |
-| app/(dashboard)/admin/page.tsx | Added QnePriceSyncPanel |
+| lib/notifications.ts | Added account_request type — surfaced in bell for Admin/Manager |
+| components/layout/NotificationBell.tsx | 🆕 emoji + 'Account Request' label |
+| app/shop/login/actions.ts | Fire sendPushToManagers() on new request |
+| app/(dashboard)/admin/page.tsx | Amber banner + nav card with count |
+| app/(dashboard)/admin/customer-accounts/page.tsx | Accept ?prefill= query param |
+| components/admin/CustomerAccountsTable.tsx | Accept prefill prop, auto-open form, hint |
 
 ---
 
-## How to sync QNE prices
-
-1. Ensure Radmin VPN (Flexxokl) is active
-2. Go to /admin (CRM)
-3. Click "↻ Sync Prices" in the QNE Shop Prices Sync panel
-4. Prices update immediately — shop refreshes within 5 min (CDN cache TTL)
+## Flow (end to end)
+1. Customer fills "Request Business Account" → DB saved + push fires + email sent
+2. Admin sees 🔔 badge → click → "🆕 Account Request: Tech Co" → click → /admin/account-requests
+3. Review: click "✓ Mark Contacted" (call the company)
+4. Click "Create Account →" → /admin/customer-accounts opens pre-filled → pick company from CRM → set password → Create
+5. Back to /admin/account-requests → "✓ Mark Converted"
 
 ---
 
 ## Rollback
-git checkout 8dbdf70 -- prisma/schema.prisma app/api/portal/products/route.ts app/api/portal/products-public/route.ts app/shop/login/page.tsx components/shop/ShopBottomNav.tsx app/(dashboard)/admin/page.tsx
-# Also drop new files if needed:
-# git rm app/shop/(authenticated)/account/page.tsx app/api/portal/account/route.ts lib/qnePriceSync.ts app/api/admin/qne/sync-prices/route.ts components/admin/QnePriceSyncPanel.tsx
+git checkout 69ba002 -- lib/notifications.ts components/layout/NotificationBell.tsx app/shop/login/actions.ts app/(dashboard)/admin/page.tsx app/(dashboard)/admin/customer-accounts/page.tsx components/admin/CustomerAccountsTable.tsx
+# Drop new files: git rm app/(dashboard)/admin/account-requests/page.tsx app/api/admin/account-requests/route.ts "app/api/admin/account-requests/[id]/route.ts"
 
 ---
 

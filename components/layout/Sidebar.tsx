@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/layout/NotificationBell'
 import PushNotificationToggle from '@/components/layout/PushNotificationToggle'
+import { Z } from '@/constants/zIndex'
 
 // ── SVG icons ─────────────────────────────────────────────────────────────
 
@@ -113,6 +115,22 @@ function IconSignOut() {
   )
 }
 
+function IconMenu() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+    </svg>
+  )
+}
+
+function IconClose() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  )
+}
+
 // ── Nav item definition ────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
@@ -130,77 +148,195 @@ const NAV_ITEMS = [
   { href: '/admin',              label: 'Admin',      Icon: IconAdmin,        roles: ['Admin', 'Manager'] },
 ] as const
 
+// ── Shared nav list ────────────────────────────────────────────────────────
+
+function NavList({
+  role,
+  pathname,
+  onNavigate,
+}: {
+  role?: string
+  pathname: string
+  onNavigate?: () => void
+}) {
+  return (
+    <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+      {NAV_ITEMS.filter(item =>
+        item.roles === null || (role && (item.roles as readonly string[]).includes(role))
+      ).map(item => {
+        const otherHrefs = (NAV_ITEMS as readonly { href: string }[])
+          .map(n => n.href)
+          .filter(h => h !== item.href)
+        const active = item.href === '/'
+          ? pathname === '/'
+          : (pathname === item.href || pathname.startsWith(item.href + '/'))
+            && !otherHrefs.some(h => h !== '/' && pathname.startsWith(h) && h.length > item.href.length)
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+              active
+                ? 'bg-blue-50 text-blue-700 font-semibold'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+          >
+            <span className={`shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
+              <item.Icon />
+            </span>
+            {item.label}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────
 
 export default function Sidebar({ role }: { role?: string }) {
   const pathname = usePathname()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // Close drawer on route change
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [pathname])
+
+  // Prevent body scroll when drawer open
+  useEffect(() => {
+    if (drawerOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [drawerOpen])
 
   return (
-    <aside className="w-56 shrink-0 bg-white border-r border-gray-100 flex flex-col min-h-screen">
-      {/* Brand */}
-      <div className="px-5 py-5 border-b border-gray-100">
-        <div className="flex items-center gap-2.5">
+    <>
+      {/* ── Mobile top bar ── */}
+      <header
+        className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-100 h-14 flex items-center px-3 gap-2"
+        style={{ zIndex: Z.crmTopbar }}
+      >
+        {/* Hamburger */}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="p-2 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+          aria-label="Open navigation"
+        >
+          <IconMenu />
+        </button>
+
+        {/* Brand */}
+        <div className="flex items-center gap-2 flex-1">
+          <div className="w-6 h-6 rounded-md bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center tracking-tight shadow-sm">
+            F
+          </div>
+          <span className="font-bold text-gray-900 text-sm tracking-tight">Flexxo OS</span>
+        </div>
+
+        {/* Notification bell on mobile */}
+        <NotificationBell />
+      </header>
+
+      {/* ── Mobile drawer backdrop ── */}
+      {drawerOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 transition-opacity"
+          style={{ zIndex: Z.crmBackdrop }}
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ── Mobile drawer ── */}
+      <aside
+        className={`lg:hidden fixed top-0 left-0 bottom-0 w-72 bg-white border-r border-gray-100 flex flex-col transform transition-transform duration-300 ease-in-out ${
+          drawerOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ zIndex: Z.crmDrawer }}
+      >
+        {/* Drawer header */}
+        <div className="px-4 py-4 border-b border-gray-100 flex items-center gap-3 shrink-0">
           <div className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center tracking-tight shadow-sm">
             F
           </div>
-          <div>
+          <div className="flex-1">
             <span className="font-bold text-gray-900 text-sm tracking-tight">Flexxo OS</span>
             <p className="text-xs text-gray-400 leading-none mt-0.5">Sales Operations</p>
           </div>
-        </div>
-      </div>
-
-      {/* Notification bell */}
-      <div className="px-3 pt-3 pb-1 border-b border-gray-50">
-        <NotificationBell />
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.filter(item =>
-          item.roles === null || (role && (item.roles as readonly string[]).includes(role))
-        ).map(item => {
-          // A more specific nav item takes precedence — check exact match or
-          // startsWith(href) only when no sibling nav item has a longer matching prefix.
-          const otherHrefs = (NAV_ITEMS as readonly { href: string }[])
-            .map(n => n.href)
-            .filter(h => h !== item.href)
-          const active = item.href === '/'
-            ? pathname === '/'
-            : (pathname === item.href || pathname.startsWith(item.href + '/'))
-              && !otherHrefs.some(h => h !== '/' && pathname.startsWith(h) && h.length > item.href.length)
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                active
-                  ? 'bg-blue-50 text-blue-700 font-semibold'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <span className={`shrink-0 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
-                <item.Icon />
-              </span>
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
-
-      {/* Footer */}
-      <div className="px-3 py-4 border-t border-gray-100 space-y-1">
-        <PushNotificationToggle />
-        <form action="/api/auth/logout" method="POST">
           <button
-            type="submit"
-            className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            onClick={() => setDrawerOpen(false)}
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            aria-label="Close navigation"
           >
-            <IconSignOut />
-            Sign out
+            <IconClose />
           </button>
-        </form>
-      </div>
-    </aside>
+        </div>
+
+        {/* Notification bell inside drawer */}
+        <div className="px-3 pt-3 pb-1 border-b border-gray-50 shrink-0">
+          <NotificationBell />
+        </div>
+
+        {/* Nav list */}
+        <NavList role={role} pathname={pathname} onNavigate={() => setDrawerOpen(false)} />
+
+        {/* Footer */}
+        <div className="px-3 py-4 border-t border-gray-100 space-y-1 shrink-0">
+          <PushNotificationToggle />
+          <form action="/api/auth/logout" method="POST">
+            <button
+              type="submit"
+              className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            >
+              <IconSignOut />
+              Sign out
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      {/* ── Desktop sidebar (static) ── */}
+      <aside className="hidden lg:flex w-56 shrink-0 bg-white border-r border-gray-100 flex-col min-h-screen">
+        {/* Brand */}
+        <div className="px-5 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center tracking-tight shadow-sm">
+              F
+            </div>
+            <div>
+              <span className="font-bold text-gray-900 text-sm tracking-tight">Flexxo OS</span>
+              <p className="text-xs text-gray-400 leading-none mt-0.5">Sales Operations</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Notification bell */}
+        <div className="px-3 pt-3 pb-1 border-b border-gray-50">
+          <NotificationBell />
+        </div>
+
+        {/* Nav */}
+        <NavList role={role} pathname={pathname} />
+
+        {/* Footer */}
+        <div className="px-3 py-4 border-t border-gray-100 space-y-1">
+          <PushNotificationToggle />
+          <form action="/api/auth/logout" method="POST">
+            <button
+              type="submit"
+              className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            >
+              <IconSignOut />
+              Sign out
+            </button>
+          </form>
+        </div>
+      </aside>
+    </>
   )
 }

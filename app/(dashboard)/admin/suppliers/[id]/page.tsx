@@ -15,7 +15,7 @@ export default async function SupplierDetailPage({
     return (
       <div>
         <Topbar title="Supplier" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -77,7 +77,7 @@ export default async function SupplierDetailPage({
           </Link>
         }
       />
-      <div className="p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <SupplierDetail
           supplier={supplierData}
           isGoogleConnected={isGoogleConnected}

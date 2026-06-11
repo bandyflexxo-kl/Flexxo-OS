@@ -10,7 +10,7 @@ export default async function AdminUsersPage() {
     return (
       <div>
         <Topbar title="Users" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -61,7 +61,7 @@ export default async function AdminUsersPage() {
           </Link>
         }
       />
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Summary cards */}
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5">

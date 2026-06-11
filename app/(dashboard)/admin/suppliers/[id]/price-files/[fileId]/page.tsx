@@ -15,7 +15,7 @@ export default async function PriceFileStagingPage({
     return (
       <div>
         <Topbar title="Price File Review" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -81,7 +81,7 @@ export default async function PriceFileStagingPage({
           </Link>
         }
       />
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-8 text-sm">
           <div>
             <p className="text-xs text-gray-400">File</p>

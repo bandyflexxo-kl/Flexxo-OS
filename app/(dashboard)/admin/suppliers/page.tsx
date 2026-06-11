@@ -10,7 +10,7 @@ export default async function SuppliersPage() {
     return (
       <div>
         <Topbar title="Suppliers" />
-        <div className="p-8 text-sm text-gray-500">Admin access required.</div>
+        <div className="p-4 sm:p-6 lg:p-8 text-sm text-gray-500">Admin access required.</div>
       </div>
     )
   }
@@ -54,7 +54,7 @@ export default async function SuppliersPage() {
           </Link>
         }
       />
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
 
         {/* Google Drive connection banner */}
         {!isGoogleConnected ? (
