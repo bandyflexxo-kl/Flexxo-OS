@@ -12,7 +12,12 @@ export default async function NewCompanyPage() {
       orderBy: { sortOrder: 'asc' },
     }),
     prisma.user.findMany({
-      where: { isActive: true },
+      // Assignable account owners = active Salesperson, Director, or Admin users.
+      // Director is included because they go out and do sales too.
+      where: {
+        isActive:  true,
+        userRoles: { some: { role: { name: { in: ['Salesperson', 'Director', 'Admin'] } }, revokedAt: null } },
+      },
       orderBy: { name: 'asc' },
     }),
   ])

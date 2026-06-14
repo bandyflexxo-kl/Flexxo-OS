@@ -5,7 +5,7 @@ import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 export async function GET() {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const [products, globalSetting] = await Promise.all([
     prisma.product.findMany({

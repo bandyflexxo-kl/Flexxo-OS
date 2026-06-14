@@ -43,6 +43,7 @@ export type ProductMatch = {
   score:                  number
   isVisible:              boolean   // true = stocked (isVisibleToCustomers)
   orderFreq:              number    // # of times quoted across all quotations
+  availableQty:           number | null  // QNE stock; null = not yet synced
 }
 
 export type MatchedLine = ParsedLine & {
@@ -249,6 +250,8 @@ type CatalogueProduct = {
   qneItemCode:      string | null
   isVisible:        boolean          // isVisibleToCustomers — our proxy for "in stock"
   orderFreq:        number           // historical quotation count (most-ordered signal)
+  availableQty:     number | null    // QNE stock; null = not yet synced
+  parentCategoryName: string | null  // top-level category (e.g. "Office Stationery")
   category:         { name: string; defaultMarginPct: Prisma.Decimal | null }
   defaultMarginPct: Prisma.Decimal | null
   priceVersions:    Array<{
@@ -282,8 +285,9 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
         unit:                 true,
         qneItemCode:          true,
         isVisibleToCustomers: true,
+        qneAvailableQty:      true,
         defaultMarginPct:     true,
-        category: { select: { name: true, defaultMarginPct: true } },
+        category: { select: { name: true, defaultMarginPct: true, parentCategory: { select: { name: true } } } },
         priceVersions: {
           where:   { isCurrent: true },
           orderBy: { approvedAt: 'desc' },
@@ -304,10 +308,12 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
 
   const freqMap = new Map(freqRows.map(r => [r.productId!, r._count.productId]))
 
-  const enriched = (products as Array<typeof products[0] & { isVisibleToCustomers: boolean }>).map(p => ({
+  const enriched = products.map(p => ({
     ...p,
-    isVisible: p.isVisibleToCustomers,
-    orderFreq: freqMap.get(p.id) ?? 0,
+    isVisible:          p.isVisibleToCustomers,
+    orderFreq:          freqMap.get(p.id) ?? 0,
+    availableQty:       p.qneAvailableQty ?? null,
+    parentCategoryName: p.category.parentCategory?.name ?? null,
   }))
 
   _cache = {
@@ -361,7 +367,12 @@ export async function matchProductsForLines(lines: ParsedLine[]): Promise<Matche
         // 1. Stocked items (isVisibleToCustomers=true) get a 35% boost.
         //    Effect: a stocked product at 0.59 beats a non-stocked product at 0.79.
         if (p.isVisible) adjustedScore = rawScore * 1.35
-        // 2. Order-frequency bonus — cap contribution at +0.08 (20 orders = +0.08)
+        // 2. Aplus-first for stationery — push the house brand to the top so reps
+        //    quote what we stock. Only within Office Stationery.
+        if (p.parentCategoryName === 'Office Stationery' && (p.brand ?? '').toUpperCase() === 'APLUS') {
+          adjustedScore *= 1.3
+        }
+        // 3. Order-frequency bonus — cap contribution at +0.08 (20 orders = +0.08)
         adjustedScore += Math.min(p.orderFreq, 20) * 0.004
       }
 
@@ -370,7 +381,11 @@ export async function matchProductsForLines(lines: ParsedLine[]): Promise<Matche
 
     // Sort by adjustedScore (stock/freq priority), fall back to rawScore for ties
     scored.sort((a, b) => b.adjustedScore - a.adjustedScore || b.score - a.score)
-    const top3 = scored.slice(0, 3).filter(s => s.adjustedScore >= 0.15)
+    // Drop options synced to 0 stock — only offer items the rep can actually quote.
+    // Items never synced (availableQty === null) stay eligible.
+    const top3 = scored
+      .filter(s => s.adjustedScore >= 0.15 && s.product.availableQty !== 0)
+      .slice(0, 3)
 
     const alternatives: ProductMatch[] = top3.map(({ product: p, score, adjustedScore }) => {
       const { selling, currency, versionId } = getProductPrice(p, globalMargin)
@@ -387,6 +402,7 @@ export async function matchProductsForLines(lines: ParsedLine[]): Promise<Matche
         score:                  Math.min(adjustedScore, 1.0),  // cap at 1.0 for display; business priority baked in
         isVisible:              p.isVisible,
         orderFreq:              p.orderFreq,
+        availableQty:           p.availableQty,
       }
     })
 

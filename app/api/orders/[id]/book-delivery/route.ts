@@ -1,13 +1,21 @@
-import { verifySession }        from '@/lib/session'
-import { isPrivilegedRole }      from '@/lib/authorization'
-import { bookLalamoveDelivery }  from '@/lib/fulfillment'
+import { z }                       from 'zod'
+import { verifySession }            from '@/lib/session'
+import { isPrivilegedRole }          from '@/lib/authorization'
+import { bookLalamoveDelivery }      from '@/lib/fulfillment'
+
+const BodySchema = z.object({
+  // Pre-fetched quote from GET /delivery-quote — pass through to skip a second Lalamove API call
+  quoteId:     z.string().optional(),
+  serviceType: z.string().optional(),
+  priceMyr:    z.number().optional(),
+}).optional()
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  // Allow Admin/Manager OR cron (CRON_SECRET header)
-  const cronSecret = _request.headers.get('Authorization')
+  // Allow Admin/Manager/Director OR cron (CRON_SECRET header)
+  const cronSecret = request.headers.get('Authorization')
   const isCron     = cronSecret === `Bearer ${process.env.CRON_SECRET}`
 
   if (!isCron) {
@@ -17,7 +25,20 @@ export async function POST(
   }
 
   const { id } = await params
-  const result = await bookLalamoveDelivery(id)
+
+  // Parse optional pre-fetched quote
+  let preQuote: { quoteId: string; serviceType: string; priceMyr: number } | undefined
+  const rawBody = await request.json().catch(() => null) as unknown
+  const parsed  = BodySchema.safeParse(rawBody)
+  if (parsed.success && parsed.data?.quoteId && parsed.data?.serviceType && parsed.data?.priceMyr !== undefined) {
+    preQuote = {
+      quoteId:     parsed.data.quoteId,
+      serviceType: parsed.data.serviceType,
+      priceMyr:    parsed.data.priceMyr,
+    }
+  }
+
+  const result = await bookLalamoveDelivery(id, preQuote)
 
   if (!result.ok) return Response.json({ error: result.error }, { status: 422 })
 

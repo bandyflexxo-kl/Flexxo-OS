@@ -20,6 +20,7 @@ type StagingRow = {
 type Category = {
   id:   string
   name: string
+  parentCategory?: { name: string } | null
 }
 
 type Stats = {
@@ -391,8 +392,24 @@ export default function PriceFileStagingTable({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
               >
                 <option value="">— Select category —</option>
-                {categories.map(c => (
+                {/* Top-level categories first, then subcategories grouped by parent */}
+                {categories.filter(c => !c.parentCategory).map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                {Array.from(
+                  categories.filter(c => c.parentCategory).reduce((m, c) => {
+                    const key  = c.parentCategory!.name
+                    const list = m.get(key) ?? []
+                    list.push(c)
+                    m.set(key, list)
+                    return m
+                  }, new Map<string, Category[]>())
+                ).sort((a, b) => a[0].localeCompare(b[0])).map(([parentName, subs]) => (
+                  <optgroup key={parentName} label={parentName}>
+                    {subs.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

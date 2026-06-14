@@ -53,7 +53,7 @@ export async function GET() {
   const salespersons = await prisma.user.findMany({
     where: {
       isActive:  true,
-      userRoles: { some: { revokedAt: null, role: { name: { in: ['Salesperson', 'Admin', 'Manager'] } } } },
+      userRoles: { some: { revokedAt: null, role: { name: { in: ['Salesperson', 'Director', 'Admin', 'Manager'] } } } },
     },
     select: { id: true, name: true, email: true },
     orderBy: { name: 'asc' },

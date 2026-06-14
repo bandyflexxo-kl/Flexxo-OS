@@ -6,27 +6,29 @@ const nextConfig: NextConfig = {
   // inline event handlers and Google Fonts; a strict CSP needs careful tuning
   // per-page and is left for Phase 5. All other headers are safe to add now.
   async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          // Prevent framing (clickjacking)
-          { key: 'X-Frame-Options',          value: 'DENY' },
-          // Stop MIME-type sniffing (e.g. serving a JS file as text/plain)
-          { key: 'X-Content-Type-Options',   value: 'nosniff' },
-          // Only send full referrer to same origin; just origin to cross-origin
-          { key: 'Referrer-Policy',          value: 'strict-origin-when-cross-origin' },
-          // Disable browser features Flexxo doesn't use
-          { key: 'Permissions-Policy',       value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
-          // Legacy XSS filter (still helps older browsers)
-          { key: 'X-XSS-Protection',         value: '1; mode=block' },
-          // Force HTTPS for 2 years (production only — localhost will be overridden by browser)
-          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-          // Prevent DNS prefetch leaking internal URLs to third parties
-          { key: 'X-DNS-Prefetch-Control',   value: 'off' },
-        ],
-      },
+    const baseHeaders = [
+      // Prevent framing (clickjacking)
+      { key: 'X-Frame-Options',          value: 'DENY' },
+      // Stop MIME-type sniffing (e.g. serving a JS file as text/plain)
+      { key: 'X-Content-Type-Options',   value: 'nosniff' },
+      // Only send full referrer to same origin; just origin to cross-origin
+      { key: 'Referrer-Policy',          value: 'strict-origin-when-cross-origin' },
+      // Disable browser features Flexxo doesn't use
+      { key: 'Permissions-Policy',       value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
+      // Legacy XSS filter (still helps older browsers)
+      { key: 'X-XSS-Protection',         value: '1; mode=block' },
+      // Prevent DNS prefetch leaking internal URLs to third parties
+      { key: 'X-DNS-Prefetch-Control',   value: 'off' },
     ]
+
+    // HSTS only in production. On localhost the browser honours it and pins
+    // http→https upgrades, which breaks the http-only dev server (the upgrade
+    // has no TLS endpoint to reach). Never send it in development.
+    if (process.env.NODE_ENV === 'production') {
+      baseHeaders.push({ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' })
+    }
+
+    return [{ source: '/(.*)', headers: baseHeaders }]
   },
 
   // Allow builds to succeed even when TypeScript errors exist in code that

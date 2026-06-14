@@ -6,7 +6,7 @@ import UsersTable from '@/components/admin/UsersTable'
 
 export default async function AdminUsersPage() {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Users" />

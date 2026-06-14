@@ -11,7 +11,7 @@ export default async function PriceFileStagingPage({
   params: Promise<{ id: string; fileId: string }>
 }) {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Price File Review" />
@@ -48,7 +48,7 @@ export default async function PriceFileStagingPage({
     prisma.productCategory.findMany({
       where:   { isActive: true },
       orderBy: { name: 'asc' },
-      select:  { id: true, name: true },
+      select:  { id: true, name: true, parentCategory: { select: { name: true } } },
     }),
   ])
 

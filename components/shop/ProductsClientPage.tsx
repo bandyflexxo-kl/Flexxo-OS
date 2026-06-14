@@ -35,11 +35,14 @@ type ApiProduct = {
   hasPhoto:    boolean
   sellingPrice: string | null
   currency:    string
+  availableQty?: number | null   // QNE stock; null/undefined = not yet synced
   // catalogDescription removed — it lives on the product detail page only.
   // Removing it from the listing API payload saves ~400 KB per request.
 }
 
-export type Category = { id: string; name: string }
+export type Category = { id: string; name: string; parentCategoryId?: string | null }
+
+type CategoryNode = Category & { children: Category[] }
 
 // ---------------------------------------------------------------------------
 // Module-level product cache
@@ -60,7 +63,7 @@ async function loadAllProducts(cacheKey: string, apiUrl: string): Promise<ApiPro
   if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return cached.data
   const existing = inflightByKey.get(cacheKey)
   if (existing) return existing
-  const promise = fetch(apiUrl)
+  const promise = fetch(apiUrl, { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ApiProduct[]> })
     .then(data => { productCache.set(cacheKey, { data, fetchedAt: Date.now() }); inflightByKey.delete(cacheKey); return data })
     .catch(err => { inflightByKey.delete(cacheKey); throw err })
@@ -181,8 +184,39 @@ export default function ProductsClientPage({
   })
   const [loadError,      setLoadError]      = useState(false)
 
+  // ── Category tree (two-level: parent ← QNE category, child ← QNE group) ──
+  const categoryTree = useMemo<CategoryNode[]>(() => {
+    const parents = categories.filter(c => !c.parentCategoryId)
+    return parents.map(p => ({
+      ...p,
+      children: categories.filter(c => c.parentCategoryId === p.id),
+    }))
+  }, [categories])
+
+  // parentId → all descendant ids (parent itself + children) for filtering
+  const idsUnderParent = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const node of categoryTree) m.set(node.id, [node.id, ...node.children.map(c => c.id)])
+    return m
+  }, [categoryTree])
+
+  // childId → parentId, for auto-expanding the right parent
+  const parentOfChild = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of categories) if (c.parentCategoryId) m.set(c.id, c.parentCategoryId)
+    return m
+  }, [categories])
+
   // ── Filters ───────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState(initialCategoryId ?? '')
+  // Parents whose subcategory list is expanded in the sidebar.
+  // Seed with the active category's parent so deep links open expanded.
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(() => {
+    const init = initialCategoryId ?? ''
+    if (!init) return new Set()
+    const parent = categories.find(c => c.id === init)?.parentCategoryId
+    return new Set([parent ?? init])
+  })
   const [searchInput,    setSearchInput]    = useState(initialQ ?? '')
   const [searchQuery,    setSearchQuery]    = useState(initialQ ?? '')
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -327,7 +361,22 @@ export default function ProductsClientPage({
 
   function selectCategory(id: string) {
     setActiveCategory(id)
+    // Keep the relevant parent expanded: selecting a parent expands it,
+    // selecting a child keeps its parent open, clearing collapses nothing.
+    if (id) {
+      const parent = parentOfChild.get(id) ?? id
+      setExpandedParents(prev => new Set(prev).add(parent))
+    }
     pushUrl(id, searchQuery)
+  }
+
+  function toggleExpand(parentId: string) {
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
+      return next
+    })
   }
 
   function clearAll() {
@@ -339,22 +388,31 @@ export default function ProductsClientPage({
   const filtered = useMemo(() => {
     if (!allProducts) return []
     const q = searchQuery.trim().toLowerCase()
+    // Parent category active → match the parent itself + all its subcategories
+    const catSet = activeCategory
+      ? new Set(idsUnderParent.get(activeCategory) ?? [activeCategory])
+      : null
     return allProducts.filter(p => {
-      const matchCat = !activeCategory || p.category.id === activeCategory
+      const matchCat = !catSet || catSet.has(p.category.id)
       const matchQ   = !q ||
         p.name.toLowerCase().includes(q) ||
         (p.brand ?? '').toLowerCase().includes(q) ||
         (p.qneItemCode ?? '').toLowerCase().includes(q)
       return matchCat && matchQ
     })
-  }, [allProducts, activeCategory, searchQuery])
+  }, [allProducts, activeCategory, searchQuery, idsUnderParent])
 
   const countByCategory = useMemo(() => {
     if (!allProducts) return new Map<string, number>()
     const m = new Map<string, number>()
     for (const p of allProducts) m.set(p.category.id, (m.get(p.category.id) ?? 0) + 1)
+    // Roll child counts up into parents (parent count = own products + children's)
+    for (const node of categoryTree) {
+      const total = (m.get(node.id) ?? 0) + node.children.reduce((n, c) => n + (m.get(c.id) ?? 0), 0)
+      if (total > 0) m.set(node.id, total)
+    }
     return m
-  }, [allProducts])
+  }, [allProducts, categoryTree])
 
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
@@ -401,10 +459,16 @@ export default function ProductsClientPage({
 
   // Category emoji map for visual flavour on mobile pills
   const CAT_EMOJI: Record<string, string> = {
-    Battery: '🔋', Stationery: '✏️', Pantry: '☕', Hygiene: '🧴',
-    Furniture: '🪑', 'Printer Consumables': '🖨️', 'Thermal Rolls': '🧻',
-    'Corporate Gifts': '🎁', Packaging: '📦', Safety: '🦺',
-    Cleaning: '🧹', 'IT Accessories': '💻',
+    'Office Stationery':            '✏️',
+    'Office Furniture':             '🪑',
+    'Printer Supplies':             '🖨️',
+    'Computer Hardware & Software': '💻',
+    'Office Security':              '🔒',
+    'Office Machine':               '⚙️',
+    'Office Equipment':             '🔧',
+    'Breakroom':                    '☕',
+    'Janitorial':                   '🧹',
+    'Safety Kits':                  '🦺',
   }
 
   return (
@@ -430,24 +494,69 @@ export default function ProductsClientPage({
             )}
           </button>
 
-          {categories.map(cat => {
-            const count  = countByCategory.get(cat.id) ?? 0
-            const active = activeCategory === cat.id
+          {categoryTree.map(cat => {
+            const count    = countByCategory.get(cat.id) ?? 0
+            const active   = activeCategory === cat.id
+            const expanded = expandedParents.has(cat.id)
+            const hasKids  = cat.children.length > 0
             return (
-              <button
-                key={cat.id}
-                onClick={() => selectCategory(cat.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between group ${
+              <div key={cat.id}>
+                <div className={`w-full rounded-lg text-sm transition-colors flex items-center group ${
                   active ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <span className="truncate pr-1">{cat.name}</span>
-                {allProducts && count > 0 && (
-                  <span className={`text-xs tabular-nums shrink-0 ${active ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
-                    {count}
-                  </span>
+                }`}>
+                  <button
+                    onClick={() => selectCategory(cat.id)}
+                    className="flex-1 min-w-0 text-left px-3 py-2 flex items-center justify-between"
+                  >
+                    <span className="truncate pr-1">{cat.name}</span>
+                    {allProducts && count > 0 && (
+                      <span className={`text-xs tabular-nums shrink-0 ${active ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                  {hasKids && (
+                    <button
+                      onClick={() => toggleExpand(cat.id)}
+                      className="px-2 py-2 shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                      aria-label={expanded ? `Collapse ${cat.name}` : `Expand ${cat.name}`}
+                    >
+                      <svg
+                        className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Subcategories */}
+                {hasKids && expanded && (
+                  <div className="ml-3 border-l border-gray-200 pl-1 mt-0.5 mb-1 space-y-0.5">
+                    {cat.children.map(sub => {
+                      const subCount  = countByCategory.get(sub.id) ?? 0
+                      const subActive = activeCategory === sub.id
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => selectCategory(sub.id)}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-[13px] transition-colors flex items-center justify-between group ${
+                            subActive ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                          }`}
+                        >
+                          <span className="truncate pr-1">{sub.name}</span>
+                          {allProducts && subCount > 0 && (
+                            <span className={`text-[11px] tabular-nums shrink-0 ${subActive ? 'text-green-400' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                              {subCount}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
-              </button>
+              </div>
             )
           })}
         </nav>
@@ -474,9 +583,10 @@ export default function ProductsClientPage({
                 </span>
               )}
             </button>
-            {categories.map(cat => {
+            {categoryTree.map(cat => {
               const count  = countByCategory.get(cat.id) ?? 0
-              const active = activeCategory === cat.id
+              // Parent pill highlights when it OR one of its children is active
+              const active = activeCategory === cat.id || parentOfChild.get(activeCategory) === cat.id
               const emoji  = CAT_EMOJI[cat.name] ?? '📋'
               return (
                 <button
@@ -498,6 +608,48 @@ export default function ProductsClientPage({
               )
             })}
           </div>
+
+          {/* Subcategory pill row — shown when the active category (or its
+              parent) has subcategories */}
+          {(() => {
+            const activeParentId = parentOfChild.get(activeCategory) ?? activeCategory
+            const parentNode     = categoryTree.find(c => c.id === activeParentId)
+            if (!parentNode || parentNode.children.length === 0) return null
+            return (
+              <div className="flex gap-2 overflow-x-auto pb-1 pt-2 no-scrollbar snap-x snap-mandatory">
+                <button
+                  onClick={() => selectCategory(parentNode.id)}
+                  className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border touch-manipulation ${
+                    activeCategory === parentNode.id
+                      ? 'bg-green-100 text-green-700 border-green-300'
+                      : 'bg-white text-gray-500 border-gray-200'
+                  }`}
+                >
+                  All {parentNode.name}
+                </button>
+                {parentNode.children.map(sub => {
+                  const subCount  = countByCategory.get(sub.id) ?? 0
+                  const subActive = activeCategory === sub.id
+                  return (
+                    <button
+                      key={sub.id}
+                      onClick={() => selectCategory(sub.id)}
+                      className={`shrink-0 snap-start flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border touch-manipulation ${
+                        subActive
+                          ? 'bg-green-100 text-green-700 border-green-300'
+                          : 'bg-white text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      {sub.name}
+                      {allProducts && subCount > 0 && (
+                        <span className="tabular-nums text-[10px] text-gray-400">{subCount}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
 
         {/* ── Search bar with dropdown ──────────────────────────── */}
@@ -748,6 +900,7 @@ export default function ProductsClientPage({
                     sellingPrice={p.sellingPrice}
                     currency={p.currency}
                     hasPhoto={p.hasPhoto}
+                    availableQty={p.availableQty}
                     isB2B={isB2B}
                   />
                 </div>

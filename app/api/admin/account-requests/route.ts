@@ -15,7 +15,7 @@ import { prisma }        from '@/lib/prisma'
 export async function GET(req: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin' && session.role !== 'Manager') {
+  if (!['Admin','Director'].includes(session.role) && session.role !== 'Manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

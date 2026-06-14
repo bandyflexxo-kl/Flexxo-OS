@@ -7,7 +7,7 @@ type MatchHow = 'exact' | 'fuzzy' | 'name_exact' | 'name_fuzzy' | 'brand_name'
 export async function POST(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const url    = new URL(request.url)
   const dryRun = url.searchParams.get('dryRun') === 'true'

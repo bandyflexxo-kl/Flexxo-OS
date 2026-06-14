@@ -91,6 +91,19 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
   const [doData,        setDoData]        = useState<Record<string, unknown> | null>(null)
   const [loadingDo,     setLoadingDo]     = useState(false)
 
+  type QuoteData = {
+    quoteId:     string
+    serviceType: string
+    priceMyr:    number
+    expiresAt:   string
+    bookingTime: { scheduleAt: string; isScheduled: boolean; label: string }
+    surge:       { isSurge: boolean; baselineMyr: number; label: string }
+    dropoff:     { name: string; phone: string; address: string }
+  }
+  const [quotePhase,  setQuotePhase]  = useState<'idle' | 'fetching' | 'ready' | 'booking'>('idle')
+  const [quoteData,   setQuoteData]   = useState<QuoteData | null>(null)
+  const [quoteError,  setQuoteError]  = useState<string | null>(null)
+
   const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
   const statusSteps  = getStatusSteps(status)
   const currentIdx   = statusSteps.indexOf(status)
@@ -117,16 +130,54 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
     }
   }
 
-  // ── Book delivery manually ────────────────────────────────────────────────
-  async function bookDelivery() {
+  // ── Step 1: fetch Lalamove quote preview ─────────────────────────────────
+  async function fetchQuote() {
+    setQuotePhase('fetching')
+    setQuoteError(null)
+    try {
+      const res  = await fetch(`/api/orders/${initial.id}/delivery-quote`)
+      const data = await res.json() as QuoteData & { error?: string }
+      if (!res.ok) { setQuoteError(data.error ?? 'Could not get quote'); setQuotePhase('idle'); return }
+      setQuoteData(data)
+      setQuotePhase('ready')
+    } catch {
+      setQuoteError('Network error — please try again')
+      setQuotePhase('idle')
+    }
+  }
+
+  // ── Step 2: confirm and book ──────────────────────────────────────────────
+  async function bookDelivery(useQuote?: QuoteData) {
+    setQuotePhase('booking')
     setBooking(true)
     setError(null)
     try {
-      const res  = await fetch(`/api/orders/${initial.id}/book-delivery`, { method: 'POST' })
+      const body = useQuote
+        ? JSON.stringify({ quoteId: useQuote.quoteId, serviceType: useQuote.serviceType, priceMyr: useQuote.priceMyr })
+        : undefined
+      const res  = await fetch(`/api/orders/${initial.id}/book-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
       const data = await res.json() as { ok?: boolean; shareLink?: string; error?: string }
-      if (!res.ok) { setError(data.error ?? 'Booking failed'); return }
+      if (!res.ok) {
+        const msg = data.error ?? 'Booking failed'
+        // Quote may have expired — reset to idle so admin can re-quote
+        if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('quote')) {
+          setQuoteData(null)
+          setQuotePhase('idle')
+          setError(msg + ' — please get a new quote.')
+        } else {
+          setError(msg)
+          setQuotePhase('ready')
+        }
+        return
+      }
       setStatus('Delivering')
       setDelivery(prev => prev ? { ...prev, bookingStatus: 'booked', shareLink: data.shareLink ?? null } : prev)
+      setQuotePhase('idle')
+      setQuoteData(null)
       router.refresh()
     } finally {
       setBooking(false)
@@ -299,31 +350,96 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
         {isPrivileged && status === 'Packed' && (
           <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Choose fulfilment method</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={bookDelivery}
-                disabled={booking || readying || delivering}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
-              >
-                {booking ? 'Booking…' : '🚗 Book Lalamove'}
-              </button>
-              <button
-                onClick={markDelivering}
-                disabled={booking || readying || delivering}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
-              >
-                {delivering ? 'Updating…' : '🚚 Manual Delivery'}
-              </button>
-              <button
-                onClick={markReadyToCollect}
-                disabled={booking || readying || delivering}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
-              >
-                {readying ? 'Updating…' : '🏪 Self-Collection'}
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">Lalamove: auto-books at 10am &amp; 1:45pm KL time (Mon–Sat). Use Manual or Self-Collection for walk-in / own transport.</p>
+
+            {/* ── Quote preview panel ── */}
+            {quotePhase === 'ready' && quoteData ? (
+              <div className={`rounded-xl border p-4 space-y-3 ${quoteData.surge.isSurge ? 'border-yellow-300 bg-yellow-50' : 'border-purple-200 bg-purple-50'}`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="font-semibold text-gray-900 text-sm">🚗 Lalamove Quote</p>
+                  {quoteData.surge.isSurge && (
+                    <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full">⚡ Surge Pricing</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-400">Service</p>
+                    <p className="font-medium">{quoteData.serviceType}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Price</p>
+                    <p className={`font-bold text-base ${quoteData.surge.isSurge ? 'text-yellow-700' : 'text-purple-700'}`}>
+                      MYR {quoteData.priceMyr.toFixed(2)}
+                    </p>
+                    {quoteData.surge.isSurge && (
+                      <p className="text-xs text-yellow-600">{quoteData.surge.label}</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Pickup time</p>
+                    <p className="font-medium text-sm">{quoteData.bookingTime.label}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Deliver to</p>
+                    <p className="font-medium text-sm truncate">{quoteData.dropoff.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{quoteData.dropoff.address}</p>
+                  </div>
+                </div>
+                {quoteData.surge.isSurge && (
+                  <p className="text-xs text-yellow-700 bg-yellow-100 rounded-lg px-3 py-2">
+                    ⚡ Surge detected. Normal price ~RM {quoteData.surge.baselineMyr.toFixed(0)}. You can confirm anyway or try again during off-peak hours.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    onClick={() => bookDelivery(quoteData)}
+                    disabled={booking}
+                    className={`px-4 py-2 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors ${
+                      quoteData.surge.isSurge
+                        ? 'bg-yellow-500 hover:bg-yellow-600'
+                        : 'bg-purple-600 hover:bg-purple-700'
+                    }`}
+                  >
+                    {booking ? 'Booking…' : quoteData.surge.isSurge ? '⚡ Confirm Anyway' : '✓ Confirm Booking'}
+                  </button>
+                  <button
+                    onClick={() => { setQuoteData(null); setQuotePhase('idle') }}
+                    disabled={booking}
+                    className="px-4 py-2 bg-white border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Choose fulfilment method</p>
+                {quoteError && <p className="text-sm text-red-600">{quoteError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={fetchQuote}
+                    disabled={quotePhase === 'fetching' || readying || delivering}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+                  >
+                    {quotePhase === 'fetching' ? 'Getting quote…' : '🚗 Get Lalamove Quote'}
+                  </button>
+                  <button
+                    onClick={markDelivering}
+                    disabled={quotePhase === 'fetching' || readying || delivering}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+                  >
+                    {delivering ? 'Updating…' : '🚚 Manual Delivery'}
+                  </button>
+                  <button
+                    onClick={markReadyToCollect}
+                    disabled={quotePhase === 'fetching' || readying || delivering}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors"
+                  >
+                    {readying ? 'Updating…' : '🏪 Self-Collection'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">Lalamove: shows price + pickup time before confirming. Avoids lunch hours (12–2 PM) and after 5 PM automatically.</p>
+              </>
+            )}
           </div>
         )}
 
@@ -445,11 +561,11 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
           )}
           {isPrivileged && status === 'Packed' && (
             <button
-              onClick={bookDelivery}
-              disabled={booking}
+              onClick={fetchQuote}
+              disabled={quotePhase === 'fetching'}
               className="px-4 py-1.5 text-xs rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors"
             >
-              {booking ? 'Booking…' : 'Retry Booking'}
+              {quotePhase === 'fetching' ? 'Getting quote…' : '🚗 Retry Booking'}
             </button>
           )}
         </div>

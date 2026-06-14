@@ -5,7 +5,7 @@ import { listDriveFolder } from '@/lib/googleDrive'
 export async function GET(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const folderId = searchParams.get('folderId') ?? process.env.GOOGLE_DRIVE_FOLDER_ID

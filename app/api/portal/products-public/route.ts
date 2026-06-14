@@ -9,18 +9,14 @@ import { fetchProductsCached } from '@/lib/products-api'
  * Pricing + caching handled by lib/products-api.ts (Redis-backed, 24h TTL).
  */
 
-// Tell Vercel edge CDN: ISR-cache for 24 hours
-export const revalidate = 86400
+// Do NOT set browser or CDN cache — Redis (24h) handles all caching.
+// This lets us bust the cache server-side instantly via invalidateProductsCache().
+export const revalidate = false
 
 export async function GET(_request: Request) {
-  // Cache-Control:
-  //   public               — browser + CDN both cache
-  //   max-age=86400        — 24 h browser cache; reload = instant disk cache hit
-  //   s-maxage=86400       — 24 h CDN cache
-  //   stale-while-revalidate=3600 — serve stale immediately while refreshing
   return Response.json(await fetchProductsCached('retail'), {
     headers: {
-      'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600',
+      'Cache-Control': 'no-store',
     },
   })
 }

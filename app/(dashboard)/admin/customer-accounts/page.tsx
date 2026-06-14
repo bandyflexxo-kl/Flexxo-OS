@@ -10,7 +10,7 @@ export default async function CustomerAccountsPage({
   searchParams: Promise<{ prefill?: string }>
 }) {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Customer Accounts" />

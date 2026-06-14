@@ -1,7 +1,8 @@
-import { verifySession }    from '@/lib/session'
-import { prisma }            from '@/lib/prisma'
-import { isPrivilegedRole }  from '@/lib/authorization'
-import { sendPushToUser }    from '@/lib/webpush'
+import { verifySession }          from '@/lib/session'
+import { prisma }                  from '@/lib/prisma'
+import { isPrivilegedRole }        from '@/lib/authorization'
+import { sendPushToUser }          from '@/lib/webpush'
+import { stageQneDeliveryOrder }   from '@/lib/fulfillment'
 import { z } from 'zod'
 
 const Schema = z.object({
@@ -58,6 +59,9 @@ export async function POST(
     })
   })
 
+  // ── Stage the Delivery Order in the QNE simulation layer ─────────────────
+  const doNo = await stageQneDeliveryOrder(id, session.name ?? session.email)
+
   // ── Notify salesperson (fire-and-forget) ─────────────────────────────────
   if (order.createdById && order.createdById !== session.userId) {
     sendPushToUser(order.createdById, {
@@ -67,5 +71,5 @@ export async function POST(
     }).catch(() => undefined)
   }
 
-  return Response.json({ ok: true, status: 'Delivering' })
+  return Response.json({ ok: true, status: 'Delivering', qneDoStaged: doNo })
 }

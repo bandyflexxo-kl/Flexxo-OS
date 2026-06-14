@@ -17,12 +17,12 @@ export async function POST() {
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.role !== 'Admin' && session.role !== 'Manager') {
+  if (!['Admin','Director'].includes(session.role) && session.role !== 'Manager') {
     return NextResponse.json({ error: 'Forbidden — Admin or Manager required' }, { status: 403 })
   }
 
   try {
-    const result = await syncQnePrices(200)
+    const result = await syncQnePrices()
     // Invalidate Redis product cache so clients see updated prices immediately
     // on their next page load (instead of waiting up to 24h for TTL expiry).
     // Fire-and-forget — sync result is not affected by cache invalidation.

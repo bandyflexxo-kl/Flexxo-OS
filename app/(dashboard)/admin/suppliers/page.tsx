@@ -6,7 +6,7 @@ import SuppliersTable from '@/components/admin/SuppliersTable'
 
 export default async function SuppliersPage() {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Suppliers" />

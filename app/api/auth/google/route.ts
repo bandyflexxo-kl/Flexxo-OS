@@ -4,7 +4,7 @@ import { getGoogleAuthUrl } from '@/lib/googleDrive'
 export async function GET(request: Request) {
   const session = await getOptionalSession()
   if (!session) return Response.redirect(new URL('/login', request.url))
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const returnUrl = searchParams.get('returnUrl') ?? '/admin/settings'

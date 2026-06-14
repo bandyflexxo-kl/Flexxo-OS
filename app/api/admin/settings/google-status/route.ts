@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 export async function GET() {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const hasClientId = !!process.env.GOOGLE_CLIENT_ID
 
@@ -28,7 +28,7 @@ export async function GET() {
 export async function DELETE() {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   await prisma.user.update({
     where: { id: session.userId },

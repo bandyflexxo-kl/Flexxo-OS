@@ -90,9 +90,10 @@ export async function getLalamoveQuotation(params: {
   dropoff:     LalamoveLocation
   sender:      LalamoveContact
   recipient:   LalamoveContact
+  scheduleAt?: string   // ISO 8601 UTC — omit for immediate pickup
 }): Promise<LalamoveQuotation> {
   const path = '/v3/quotations'
-  const body = JSON.stringify({
+  const payload: Record<string, unknown> = {
     serviceType: params.serviceType,
     language:    'en_MY',
     stops: [
@@ -110,7 +111,9 @@ export async function getLalamoveQuotation(params: {
       toContact: { name: params.recipient.name, phoneNumber: params.recipient.phone },
       toStop:    1,
     }],
-  })
+  }
+  if (params.scheduleAt) payload.scheduleAt = params.scheduleAt
+  const body = JSON.stringify(payload)
 
   const res  = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers: headers('POST', path, body), body })
   if (!res.ok) throw new Error(`Lalamove quotation failed (${params.serviceType}): ${res.status}`)
@@ -128,10 +131,11 @@ export async function getLalamoveQuotation(params: {
 
 // ── Try all service types and return cheapest ─────────────────────────────────
 export async function getCheapestLalamoveQuote(params: {
-  pickup:    LalamoveLocation
-  dropoff:   LalamoveLocation
-  sender:    LalamoveContact
-  recipient: LalamoveContact
+  pickup:     LalamoveLocation
+  dropoff:    LalamoveLocation
+  sender:     LalamoveContact
+  recipient:  LalamoveContact
+  scheduleAt?: string
 }): Promise<LalamoveQuotation | null> {
   const serviceTypes: ServiceType[] = ['MOTORCYCLE', 'MPV', 'VAN']
   const results = await Promise.allSettled(

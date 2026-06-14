@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { decrypt, encrypt, sessionDurationMs, CRM_COOKIE, SHOP_COOKIE } from '@/lib/session'
+import { canAccessPath, homeFor } from '@/lib/access'
 
 /**
  * Subdomain routing + auth guard
@@ -121,11 +122,25 @@ export default async function proxy(req: NextRequest) {
 
   // Already logged in + on login page → redirect to home
   if (session?.userId && pathname.startsWith(loginUrl)) {
-    // B2B clients go to their dashboard; CRM staff go to CRM home
+    // B2B clients go to their dashboard; CRM staff go to their role's home
     const homePath = isShopPath
       ? (session.role === 'B2B Client' ? '/shop/dashboard' : '/shop/products')
-      : '/'
+      : homeFor(session.role)
     return NextResponse.redirect(new URL(homePath, req.url))
+  }
+
+  // ── Role-based access control for CRM pages ─────────────────────────────
+  // Enforced here (server edge) so denied pages never render — this is the
+  // hard guard; the sidebar merely hides links. /change-password is always
+  // allowed for any logged-in role.
+  if (
+    session?.userId &&
+    session.role !== 'B2B Client' &&
+    !isShopPath &&
+    pathname !== '/change-password' &&
+    !canAccessPath(session.role, pathname)
+  ) {
+    return NextResponse.redirect(new URL(homeFor(session.role), req.url))
   }
 
   // ── Sliding window session renewal ─────────────────────────────────────

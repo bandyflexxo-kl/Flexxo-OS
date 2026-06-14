@@ -16,14 +16,11 @@ export async function GET(_request: Request) {
   const session = await getOptionalShopSession()
   const tier    = session?.role === 'B2B Client' ? 'b2b' : 'retail'
 
-  // Cache-Control:
-  //   private              — browser caches; CDN cannot (session pricing)
-  //   max-age=86400        — 24 h browser cache; reload = instant disk cache hit
-  //   stale-while-revalidate=3600 — after 24 h, serve stale immediately while
-  //                                  fetching fresh in background (no spinner)
+  // Do NOT set browser cache — Redis (24h) handles all caching.
+  // This lets us bust the cache server-side instantly via invalidateProductsCache().
   return Response.json(await fetchProductsCached(tier), {
     headers: {
-      'Cache-Control': 'private, max-age=86400, stale-while-revalidate=3600',
+      'Cache-Control': 'no-store',
     },
   })
 }

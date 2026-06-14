@@ -53,7 +53,13 @@ export async function loginAction(state: LoginState, formData: FormData): Promis
     data: { lastLoginAt: new Date() },
   })
 
-  const role = user.userRoles[0]?.role?.name ?? 'Viewer'
+  // Pick the highest-priority active role (a user may hold multiple roles,
+  // e.g. Director + legacy Salesperson; we always want the highest).
+  const ROLE_PRIORITY = ['Director', 'Manager', 'Admin', 'Salesperson', 'Warehouse', 'Viewer', 'B2B Client']
+  const activeRoleNames = user.userRoles
+    .filter(r => r.revokedAt === null)
+    .map(r => r.role.name)
+  const role = ROLE_PRIORITY.find(r => activeRoleNames.includes(r)) ?? 'Viewer'
   await createSession({
     userId: user.id,
     name: user.name,

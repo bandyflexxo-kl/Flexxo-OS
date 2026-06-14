@@ -3,7 +3,8 @@
  * Shared order fulfilment logic — called by both route handlers and cron jobs.
  */
 import { prisma }                     from '@/lib/prisma'
-import { getCheapestLalamoveQuote, placeLalamoveOrder, isLalamoveConfigured } from '@/lib/lalamoveClient'
+import { getCheapestLalamoveQuote, placeLalamoveOrder, isLalamoveConfigured, ServiceType } from '@/lib/lalamoveClient'
+import { getSmartBookingTime } from '@/lib/lalamoveBooking'
 import { sendWabaTemplate }           from '@/lib/wabaClient'
 import { sendGenericEmail }           from '@/lib/email'
 import { sendPushToUser }             from '@/lib/webpush'
@@ -20,8 +21,72 @@ export type BookResult =
   | { ok: true;  bookingId: string; shareLink: string }
   | { ok: false; error: string }
 
+// ── QNE Simulation Layer: stage a Delivery Order for manual QNE entry ────────
+//
+// QNE write access is not granted yet, so instead of POSTing to QNE we stage
+// the DO in qne_pending_actions (same pattern as the invoice staged on order
+// approval). Admin reviews these at /admin/qne-sandbox and enters them in QNE
+// manually — or, once write access is granted, a sync job replays them.
+export async function stageQneDeliveryOrder(orderId: string, actorName: string): Promise<string | null> {
+  try {
+    // Idempotent: don't stage the same order's DO twice
+    const existing = await prisma.qnePendingAction.findFirst({
+      where: { actionType: 'delivery_order', payload: { path: ['orderId'], equals: orderId } },
+      select: { referenceNo: true },
+    })
+    if (existing) return existing.referenceNo
+
+    const order = await prisma.order.findUnique({
+      where:   { id: orderId },
+      include: {
+        company: { select: { name: true } },
+        items:   { include: { product: { select: { name: true, qneItemCode: true, unit: true } } } },
+      },
+    })
+    if (!order) return null
+
+    const year    = new Date().getFullYear()
+    const doCount = await prisma.qnePendingAction.count({ where: { actionType: 'delivery_order' } })
+    const doNo    = `DO-${year}-${String(doCount + 1).padStart(4, '0')}`
+
+    await prisma.qnePendingAction.create({
+      data: {
+        actionType:   'delivery_order',
+        referenceNo:  doNo,
+        originalDate: new Date(),
+        payload: {
+          doNo,
+          orderId,
+          orderRef:    order.referenceNo ?? orderId,
+          companyName: order.company.name,
+          currency:    order.currency,
+          totalAmount: order.totalAmount?.toString() ?? '0',
+          items: order.items.map(i => ({
+            qneItemCode: i.product?.qneItemCode ?? null,
+            name:        i.product?.name ?? 'Unknown item',
+            qty:         i.qty.toString(),
+            unit:        i.product?.unit ?? null,
+            unitPrice:   i.unitPrice.toString(),
+            lineTotal:   i.lineTotal.toString(),
+          })),
+          stagedBy: actorName,
+        },
+        status: 'pending',
+        notes:  `Auto-staged when order ${order.referenceNo ?? orderId} went out for delivery.`,
+      },
+    })
+    return doNo
+  } catch (err) {
+    console.error('[fulfillment] Failed to stage QNE delivery order:', err)
+    return null
+  }
+}
+
 // ── Book Lalamove delivery for a single order ─────────────────────────────────
-export async function bookLalamoveDelivery(orderId: string): Promise<BookResult> {
+export async function bookLalamoveDelivery(
+  orderId:   string,
+  preQuote?: { quoteId: string; serviceType: string; priceMyr: number },
+): Promise<BookResult> {
   if (!isLalamoveConfigured()) {
     return { ok: false, error: 'Lalamove not configured (missing API key/secret)' }
   }
@@ -61,16 +126,21 @@ export async function bookLalamoveDelivery(orderId: string): Promise<BookResult>
     return { ok: false, error: 'No phone number on primary contact. Add a mobile number to the contact.' }
   }
 
-  // Get cheapest quote
-  const quote = await getCheapestLalamoveQuote({
-    pickup:    { lat: PICKUP_LAT, lng: PICKUP_LNG, address: PICKUP_ADDRESS },
-    dropoff:   { lat: addr.lat,   lng: addr.lng,   address: [addr.line1, addr.city, addr.postcode].filter(Boolean).join(', ') },
-    sender:    { name: PICKUP_NAME, phone: PICKUP_PHONE },
-    recipient: { name: recipientName, phone: normalisePhone(recipientPhone) },
-  })
-
-  if (!quote) {
-    return { ok: false, error: 'Lalamove returned no quotes. Check coordinates and phone number.' }
+  // Use pre-fetched quote (from delivery-quote preview) or fetch a fresh one
+  let quote: { quoteId: string; serviceType: ServiceType; priceMyr: number }
+  if (preQuote) {
+    quote = { quoteId: preQuote.quoteId, serviceType: preQuote.serviceType as ServiceType, priceMyr: preQuote.priceMyr }
+  } else {
+    const bookingTime = getSmartBookingTime()
+    const fresh = await getCheapestLalamoveQuote({
+      pickup:     { lat: PICKUP_LAT, lng: PICKUP_LNG, address: PICKUP_ADDRESS },
+      dropoff:    { lat: addr.lat,   lng: addr.lng,   address: [addr.line1, addr.city, addr.postcode].filter(Boolean).join(', ') },
+      sender:     { name: PICKUP_NAME, phone: PICKUP_PHONE },
+      recipient:  { name: recipientName, phone: normalisePhone(recipientPhone) },
+      scheduleAt: bookingTime.scheduleAt.toISOString(),
+    })
+    if (!fresh) return { ok: false, error: 'Lalamove returned no quotes. Check coordinates and phone number.' }
+    quote = fresh
   }
 
   // Place order
@@ -123,6 +193,9 @@ export async function bookLalamoveDelivery(orderId: string): Promise<BookResult>
 
   // Send tracking notification to client (fire-and-forget)
   sendTrackingNotification(orderId, order.company.name, recipientPhone, result.shareLink, order.referenceNo ?? orderId).catch(() => undefined)
+
+  // Stage the Delivery Order for QNE manual entry (fire-and-forget)
+  stageQneDeliveryOrder(orderId, 'Lalamove auto-booking').catch(() => undefined)
 
   return { ok: true, bookingId: result.orderId, shareLink: result.shareLink }
 }

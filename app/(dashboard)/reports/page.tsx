@@ -1,6 +1,6 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
-import { isPrivilegedRole } from '@/lib/authorization'
+import { isExecutiveRole } from '@/lib/authorization'
 import Topbar from '@/components/layout/Topbar'
 import TeamPortfolio from '@/components/reports/TeamPortfolio'
 import Link from 'next/link'
@@ -9,8 +9,9 @@ import { redirect } from 'next/navigation'
 export default async function ReportsPage() {
   const session = await verifySession()
 
-  // Only Admin / Manager
-  if (!isPrivilegedRole(session.role)) redirect('/')
+  // Executives only (Director / Manager) — Admin ops staff excluded:
+  // margins and team performance are strategic data.
+  if (!isExecutiveRole(session.role)) redirect('/')
 
   // ── Date boundaries ──────────────────────────────────────────────────────
   const now      = new Date()

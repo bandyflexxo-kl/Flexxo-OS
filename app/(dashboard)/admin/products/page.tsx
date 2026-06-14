@@ -7,7 +7,7 @@ import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 
 export default async function AdminProductsPage() {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Product Catalog" />
@@ -21,7 +21,7 @@ export default async function AdminProductsPage() {
       where:   { isActive: true },
       orderBy: { name: 'asc' },
       include: {
-        category:      { select: { id: true, name: true, defaultMarginPct: true } },
+        category:      { select: { id: true, name: true, defaultMarginPct: true, parentCategory: { select: { name: true } } } },
         priceVersions: {
           where:   { isCurrent: true },
           orderBy: { approvedAt: 'desc' },
@@ -56,7 +56,7 @@ export default async function AdminProductsPage() {
       unit:                 p.unit,
       internalSku:          p.internalSku,
       qneItemCode:          p.qneItemCode,
-      category:             { id: p.category.id, name: p.category.name },
+      category:             { id: p.category.id, name: p.category.name, parentName: p.category.parentCategory?.name ?? null },
       catalogDescription:   p.catalogDescription,
       defaultMarginPct:     p.defaultMarginPct?.toString() ?? null,
       googleDrivePhotoId:   p.googleDrivePhotoId,

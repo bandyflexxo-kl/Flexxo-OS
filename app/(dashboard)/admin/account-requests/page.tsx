@@ -202,8 +202,6 @@ function RequestCard({
             </button>
             <a
               href={createAccountUrl}
-              target="_blank"
-              rel="noreferrer"
               className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
             >
               Create Account →
@@ -222,8 +220,6 @@ function RequestCard({
           <>
             <a
               href={createAccountUrl}
-              target="_blank"
-              rel="noreferrer"
               className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
             >
               Create Account →

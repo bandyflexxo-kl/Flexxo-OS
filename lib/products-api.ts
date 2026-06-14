@@ -39,6 +39,7 @@ export type ProductListItem = {
   hasPhoto:     boolean
   sellingPrice: string | null
   currency:     string
+  availableQty: number | null   // QNE stock; null = not yet synced
 }
 
 // ── Cache config ──────────────────────────────────────────────────────────────
@@ -53,7 +54,13 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
 
   const [products, retailSetting, b2bSetting] = await Promise.all([
     prisma.product.findMany({
-      where: { isActive: true, isVisibleToCustomers: true },
+      where: {
+        isActive:             true,
+        isVisibleToCustomers: true,
+        // Stock gate: hide only items synced to 0. Never-synced (null) stay visible
+        // so the shop isn't emptied before the first QNE stock sync runs.
+        OR: [{ qneAvailableQty: null }, { qneAvailableQty: { gt: 0 } }],
+      },
       select: {
         id:                  true,
         name:                true,
@@ -63,6 +70,7 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
         defaultMarginPct:    true,
         googleDrivePhotoId:  true,
         qneLastSalePrice:    true,
+        qneAvailableQty:     true,
         category:            { select: { id: true, name: true, defaultMarginPct: true } },
         priceVersions: {
           where:   { isCurrent: true },
@@ -107,6 +115,7 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
       hasPhoto:     !!p.googleDrivePhotoId,
       sellingPrice,
       currency:     p.priceVersions[0]?.currency ?? 'MYR',
+      availableQty: p.qneAvailableQty ?? null,
     }
   })
 }

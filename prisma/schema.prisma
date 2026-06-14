@@ -300,7 +300,10 @@ model Activity {
 
 model ProductCategory {
   id               String    @id @default(uuid())
-  name             String    @unique
+  // name is NOT unique — the same group name can exist under two different
+  // parents (e.g. "Bag" under Corporate Gift AND Clothing). slug is the
+  // unique key (child slugs are namespaced: parent--group).
+  name             String
   slug             String    @unique
   parentCategoryId String?   @map("parent_category_id")
   isActive         Boolean   @default(true) @map("is_active")
@@ -331,6 +334,13 @@ model Product {
   isVisibleToCustomers Boolean   @default(false) @map("is_visible_to_customers")
   qneLastSalePrice     Decimal?  @db.Decimal(12, 4) @map("qne_last_sale_price")
   qneLastSalePriceAt   DateTime? @map("qne_last_sale_price_at")
+  // Live stock availability synced from QNE (GET /api/Stocks/available).
+  // Shop hides products where (qneAvailableQty ?? 0) <= 0.
+  qneAvailableQty      Int?      @map("qne_available_qty")
+  qneStockSyncedAt     DateTime? @map("qne_stock_synced_at")
+  // Raw QNE classification — category (top level) > group (subcategory) > class (brand)
+  qneCategory          String?   @map("qne_category")
+  qneGroup             String?   @map("qne_group")
   createdAt            DateTime  @default(now()) @map("created_at")
   createdById          String    @map("created_by")
 

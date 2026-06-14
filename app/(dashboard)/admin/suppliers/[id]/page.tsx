@@ -11,7 +11,7 @@ export default async function SupplierDetailPage({
   params: Promise<{ id: string }>
 }) {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="Supplier" />

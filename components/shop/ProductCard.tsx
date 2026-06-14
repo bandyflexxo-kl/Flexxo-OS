@@ -19,11 +19,12 @@ type Props = {
   sellingPrice: string | null
   currency:     string
   hasPhoto:     boolean
+  availableQty?: number | null   // QNE stock; null/undefined = not yet synced
   isB2B?:       boolean   // optional — card works without it (guest add-to-cart)
 }
 
 export default function ProductCard({
-  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, isB2B = false,
+  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, availableQty = null, isB2B = false,
 }: Props) {
   const router = useRouter()
   const [cartState, setCartState] = useState<'idle' | 'loading' | 'added'>('idle')
@@ -122,6 +123,9 @@ export default function ProductCard({
               </div>
             ) : (
               <p className="text-xs text-gray-400 italic">Price on request</p>
+            )}
+            {typeof availableQty === 'number' && availableQty > 0 && availableQty <= 10 && (
+              <p className="text-[10px] text-amber-600 font-medium mt-0.5">Only {availableQty} left</p>
             )}
           </div>
         </div>

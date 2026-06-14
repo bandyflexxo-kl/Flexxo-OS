@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs'
 export async function GET() {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const users = await prisma.user.findMany({
     where: {
@@ -41,7 +41,7 @@ const CreateSchema = z.object({
 export async function POST(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const body   = await request.json() as unknown
   const parsed = CreateSchema.safeParse(body)
@@ -78,6 +78,17 @@ export async function POST(request: Request) {
     })
     return newUser
   })
+
+  // Auto-convert any open account request with this email — the admin
+  // shouldn't have to go back and click "Mark Converted" manually.
+  try {
+    await prisma.accountRequest.updateMany({
+      where: { email: { equals: email, mode: 'insensitive' }, status: { in: ['pending', 'contacted'] } },
+      data:  { status: 'converted' },
+    })
+  } catch (err) {
+    console.error('[customer-accounts] Failed to auto-convert account request:', err)
+  }
 
   // Send welcome email with login credentials (outside transaction — failure is non-fatal)
   try {

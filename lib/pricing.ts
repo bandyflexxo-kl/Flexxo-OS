@@ -40,8 +40,12 @@ export function calculateRetailPrice(
 }
 
 /**
- * Rounds a Decimal to 2 decimal places (standard currency rounding).
+ * Rounds a price UP to the nearest RM 0.10 (10 sen).
+ * Eliminates partial-cent prices: RM 12.31 → RM 12.40, RM 8.93 → RM 9.00.
+ *
+ * Uses Decimal.js exact arithmetic to avoid floating-point drift.
  */
 export function roundPrice(price: Prisma.Decimal): Prisma.Decimal {
-  return price.toDecimalPlaces(2)
+  // times(10) → ceil (round UP to nearest integer) → dividedBy(10)
+  return price.times(10).ceil().dividedBy(10)
 }

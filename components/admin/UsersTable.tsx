@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Modal from '@/components/ui/Modal'
 
 type UserRow = {
@@ -32,6 +32,24 @@ export default function UsersTable({
   const [busy,    setBusy]    = useState<Set<string>>(new Set())
   const [error,   setError]   = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // ── Tab split: internal team vs customer (B2B Client) accounts ──────────
+  const [tab,        setTab]        = useState<'internal' | 'customers'>('internal')
+  const [roleFilter, setRoleFilter] = useState('')
+
+  const internalUsers = useMemo(() => users.filter(u => u.role !== 'B2B Client'), [users])
+  const customerUsers = useMemo(() => users.filter(u => u.role === 'B2B Client'), [users])
+
+  // Role options present among internal users (for the filter dropdown)
+  const internalRoles = useMemo(
+    () => [...new Set(internalUsers.map(u => u.role))].sort(),
+    [internalUsers]
+  )
+
+  const visibleUsers = useMemo(() => {
+    if (tab === 'customers') return customerUsers
+    return roleFilter ? internalUsers.filter(u => u.role === roleFilter) : internalUsers
+  }, [tab, roleFilter, internalUsers, customerUsers])
 
   // Password modal state
   const [pwModal,   setPwModal]   = useState<UserRow | null>(null)
@@ -164,6 +182,47 @@ export default function UsersTable({
         </div>
       )}
 
+      {/* ── Tab bar: Internal Team / Customers + role filter ─────────── */}
+      <div className="flex items-center flex-wrap gap-3">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+          <button
+            onClick={() => { setTab('internal'); setRoleFilter('') }}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              tab === 'internal' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            👥 Internal Team
+            <span className="ml-1.5 text-xs text-gray-400 tabular-nums">{internalUsers.length}</span>
+          </button>
+          <button
+            onClick={() => { setTab('customers'); setRoleFilter('') }}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              tab === 'customers' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            🏢 Customers
+            <span className="ml-1.5 text-xs text-gray-400 tabular-nums">{customerUsers.length}</span>
+          </button>
+        </div>
+
+        {tab === 'internal' && (
+          <select
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-gray-700"
+          >
+            <option value="">All Roles</option>
+            {internalRoles.map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        )}
+
+        <span className="text-xs text-gray-400">
+          {visibleUsers.length} user{visibleUsers.length !== 1 ? 's' : ''} shown
+        </span>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -179,7 +238,14 @@ export default function UsersTable({
             </tr>
           </thead>
           <tbody>
-            {users.map(user => {
+            {visibleUsers.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">
+                  No {tab === 'customers' ? 'customer accounts' : roleFilter ? `${roleFilter} users` : 'internal users'} found.
+                </td>
+              </tr>
+            )}
+            {visibleUsers.map(user => {
               const isBusy   = busy.has(user.id)
               const isSelf   = user.id === currentUserId
               const isInternal = user.email.endsWith('@flexxo.internal')

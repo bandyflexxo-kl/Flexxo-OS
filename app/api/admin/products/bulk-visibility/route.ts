@@ -11,7 +11,7 @@ const Schema = z.object({
 export async function POST(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const body   = await request.json() as unknown
   const parsed = Schema.safeParse(body)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 
 type QnePendingItem = {
   id:           string
@@ -150,8 +150,8 @@ export default function QneSandboxClient() {
             </thead>
             <tbody>
               {items.map(item => (
-                <>
-                  <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                <Fragment key={item.id}>
+                  <tr className="border-b border-gray-50 hover:bg-gray-50/50">
                     <td className="px-4 py-3 font-medium">
                       {ACTION_TYPE_LABELS[item.actionType] ?? item.actionType}
                     </td>
@@ -225,7 +225,7 @@ export default function QneSandboxClient() {
                     )}
                   </tr>
                   {expanded === item.id && (
-                    <tr key={`${item.id}-payload`} className="bg-gray-50 border-b border-gray-100">
+                    <tr className="bg-gray-50 border-b border-gray-100">
                       <td colSpan={6} className="px-4 py-3">
                         <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-auto max-h-48 bg-white rounded-lg p-3 border border-gray-200">
                           {JSON.stringify(item.payload, null, 2)}
@@ -236,7 +236,7 @@ export default function QneSandboxClient() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>

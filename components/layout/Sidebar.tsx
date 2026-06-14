@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/layout/NotificationBell'
 import PushNotificationToggle from '@/components/layout/PushNotificationToggle'
 import { Z } from '@/constants/zIndex'
+import { rolesForNav } from '@/lib/access'
 
 // ── SVG icons ─────────────────────────────────────────────────────────────
 
@@ -133,19 +134,22 @@ function IconClose() {
 
 // ── Nav item definition ────────────────────────────────────────────────────
 
+// Visibility is driven by the central access matrix in lib/access.ts —
+// the middleware enforces the same matrix server-side, so hiding a link
+// here is cosmetic; the hard guard lives in middleware.ts.
 const NAV_ITEMS = [
-  { href: '/',            label: 'Dashboard',  Icon: IconDashboard,   roles: null },
-  { href: '/companies',  label: 'Companies',  Icon: IconCompanies,   roles: null },
-  { href: '/contacts',   label: 'Contacts',   Icon: IconContacts,    roles: null },
-  { href: '/pipeline',   label: 'Pipeline',   Icon: IconPipeline,    roles: null },
-  { href: '/activities', label: 'Activities', Icon: IconActivities,  roles: null },
-  { href: '/quotations', label: 'Quotations', Icon: IconQuotations,  roles: null },
-  { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: null },
-  { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: ['Admin', 'Manager', 'Warehouse'] },
-  { href: '/reports',             label: 'Reports',       Icon: IconReports,      roles: ['Admin', 'Manager'] },
-  { href: '/market-scout',       label: 'Market Scout',  Icon: IconMarketScout,  roles: null },
-  { href: '/admin/qne-sandbox',  label: 'QNE Sandbox',   Icon: IconQneSandbox,   roles: ['Admin', 'Manager'] },
-  { href: '/admin',              label: 'Admin',      Icon: IconAdmin,        roles: ['Admin', 'Manager'] },
+  { href: '/',            label: 'Dashboard',  Icon: IconDashboard,   roles: rolesForNav('/') },
+  { href: '/companies',  label: 'Companies',  Icon: IconCompanies,   roles: rolesForNav('/companies') },
+  { href: '/contacts',   label: 'Contacts',   Icon: IconContacts,    roles: rolesForNav('/contacts') },
+  { href: '/pipeline',   label: 'Pipeline',   Icon: IconPipeline,    roles: rolesForNav('/pipeline') },
+  { href: '/activities', label: 'Activities', Icon: IconActivities,  roles: rolesForNav('/activities') },
+  { href: '/quotations', label: 'Quotations', Icon: IconQuotations,  roles: rolesForNav('/quotations') },
+  { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: rolesForNav('/orders') },
+  { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: rolesForNav('/warehouse') },
+  { href: '/reports',             label: 'Reports',       Icon: IconReports,      roles: rolesForNav('/reports') },
+  { href: '/market-scout',       label: 'Market Scout',  Icon: IconMarketScout,  roles: rolesForNav('/market-scout') },
+  { href: '/admin/qne-sandbox',  label: 'QNE Sandbox',   Icon: IconQneSandbox,   roles: rolesForNav('/admin') },
+  { href: '/admin',              label: 'Admin',      Icon: IconAdmin,        roles: rolesForNav('/admin') },
 ] as const
 
 // ── Shared nav list ────────────────────────────────────────────────────────

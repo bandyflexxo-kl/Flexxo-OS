@@ -43,7 +43,16 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
     ? await Promise.all([
         prisma.company.findUnique({
           where:  { id: session.customerCompanyId },
-          select: { name: true },
+          select: {
+            name: true,
+            // Dedicated salesperson — drives the floating WhatsApp button
+            assignments: {
+              where:   { unassignedAt: null },
+              orderBy: { isPrimary: 'desc' },
+              take:    1,
+              select:  { user: { select: { name: true, mobileNo: true } } },
+            },
+          },
         }),
         prisma.quotationItem.count({
           where: { quotation: { status: 'cart', createdById: session.userId } },
@@ -53,6 +62,10 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
 
   const companyName  = company?.name ?? null
   const cartCount    = isB2B ? (dbCartCount ?? 0) : null
+  const salesperson  = company?.assignments[0]?.user ?? null
+  // Salesperson's own number first; company-wide number as fallback so a
+  // logged-in client always has a contact channel.
+  const waPhone = salesperson?.mobileNo ?? process.env.NEXT_PUBLIC_WHATSAPP_PHONE ?? null
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -74,8 +87,14 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
         isLoggedIn={isB2B}
         dbCartCount={cartCount}
       />
-      {/* T4-9: Floating WhatsApp contact button — every page */}
-      <WhatsAppButton />
+      {/* T4-9: Floating WhatsApp button — logged-in B2B clients only,
+          linked to their dedicated salesperson's number */}
+      {isB2B && (
+        <WhatsAppButton
+          phone={waPhone}
+          salespersonName={salesperson?.name ?? null}
+        />
+      )}
     </div>
   )
 }

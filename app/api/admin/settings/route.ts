@@ -5,7 +5,7 @@ import { z } from 'zod'
 export async function GET() {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const settings = await prisma.systemSetting.findMany()
   const map = Object.fromEntries(settings.map(s => [s.key, s.value]))
@@ -23,7 +23,7 @@ const Schema = z.object({
 export async function PATCH(request: Request) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  if (session.role !== 'Admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!['Admin','Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await request.json() as unknown
   const parsed = Schema.safeParse(body)

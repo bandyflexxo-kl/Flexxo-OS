@@ -17,6 +17,7 @@ import { resolve } from 'path'
 config({ path: resolve(process.cwd(), '.env.local') })
 
 import fetch from 'node-fetch'
+import { qneParentSlug, qneChildSlug } from '../lib/categorySlug'
 
 const BASE_URL = process.env.QNE_API_BASE_URL ?? 'http://26.255.19.220:82'
 const DB_CODE  = process.env.QNE_DB_CODE       ?? 'FKLSB'
@@ -231,7 +232,15 @@ async function main() {
 
   for (const stock of valid) {
     try {
-      const slug     = mapCategory(stock.category)
+      // Category assignment — prefer the QNE-mirrored tree (created by
+      // scripts/buildCategoryTree.ts): child slug `category--group`, then
+      // parent slug `category`. Fall back to the legacy keyword map.
+      const rawCat   = stock.category?.trim() || null
+      const rawGroup = stock.group?.trim()    || null
+      const treeSlug =
+        (rawCat && rawGroup && catMap[qneChildSlug(rawCat, rawGroup)] ? qneChildSlug(rawCat, rawGroup) : null) ??
+        (rawCat && catMap[qneParentSlug(rawCat)] ? qneParentSlug(rawCat) : null)
+      const slug     = treeSlug ?? mapCategory(stock.category)
       const catId    = catMap[slug] ?? catMap['other']
       const brand    = stock.class?.trim() || null
       const unit     = stock.baseUOM?.trim() || null
@@ -249,6 +258,10 @@ async function main() {
 
       let product: { id: string }
 
+      // Raw QNE classification: category (top) > group (subcategory) > class (brand)
+      const qneCategory = stock.category?.trim() || null
+      const qneGroup    = stock.group?.trim()    || null
+
       if (existingProduct) {
         product = await prisma.product.update({
           where: { id: existingProduct.id },
@@ -258,6 +271,8 @@ async function main() {
             unit,
             categoryId: catId,
             isActive:   true,
+            qneCategory,
+            qneGroup,
           },
           select: { id: true },
         })
@@ -272,6 +287,8 @@ async function main() {
             categoryId:  catId,
             isActive:    true,
             createdById: admin.id,
+            qneCategory,
+            qneGroup,
           },
           select: { id: true },
         })

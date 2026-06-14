@@ -1,9 +1,10 @@
-import { verifySession }    from '@/lib/session'
-import { prisma }            from '@/lib/prisma'
-import Topbar                from '@/components/layout/Topbar'
-import Badge, { statusColor } from '@/components/ui/Badge'
-import Link                  from 'next/link'
-import { isPrivilegedRole }  from '@/lib/authorization'
+import { verifySession }          from '@/lib/session'
+import { prisma }                 from '@/lib/prisma'
+import Topbar                     from '@/components/layout/Topbar'
+import Badge, { statusColor }     from '@/components/ui/Badge'
+import Link                       from 'next/link'
+import { isPrivilegedRole, isExecutiveRole } from '@/lib/authorization'
+import TodoSection                from '@/components/dashboard/TodoSection'
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ const STAT_CARDS = [
 export default async function DashboardPage() {
   const session      = await verifySession()
   const isPrivileged = isPrivilegedRole(session.role)
+  const isExecutive  = isExecutiveRole(session.role)   // Director | Manager only
 
   // Malaysia time greeting
   const mykHour = (new Date().getUTCHours() + 8) % 24
@@ -163,12 +165,9 @@ export default async function DashboardPage() {
         take: 10,
       }),
       prisma.activity.findMany({
-        where: {
-          ...companyFkFilter,
-          ...(!isPrivileged ? { userId: session.userId } : {}),
-        },
+        where:   { ...companyFkFilter },
         orderBy: { createdAt: 'desc' },
-        take: 8,
+        take:    8,
         include: { company: true, user: true },
       }),
       prisma.company.findMany({
@@ -196,6 +195,9 @@ export default async function DashboardPage() {
       <Topbar title={`${greeting}, ${session.name.split(' ')[0]} 👋`} />
 
       <div className="p-6 lg:p-8 space-y-6">
+
+        {/* ── To-Do List — most important, always first ────────── */}
+        <TodoSection session={session} />
 
         {/* ── Stat cards ──────────────────────────────────────── */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
@@ -365,51 +367,53 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Recent activity feed ─────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-sm font-semibold text-gray-800">Recent Activities</h2>
-            <Link href="/activities" className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors">
-              View all →
-            </Link>
-          </div>
-
-          {recentActivities.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No activities logged yet.</p>
-          ) : (
-            <div className="space-y-1">
-              {recentActivities.map((a, i) => (
-                <div key={a.id} className="flex gap-3 group">
-                  {/* Timeline line + dot */}
-                  <div className="flex flex-col items-center shrink-0">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${activityTypeColor(a.activityType)}`}>
-                      {activityTypeIcon(a.activityType)}
-                    </div>
-                    {i < recentActivities.length - 1 && (
-                      <div className="w-px flex-1 bg-gray-100 my-1" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <Link href={`/companies/${a.companyId}`} className="text-sm font-semibold text-gray-900 hover:text-blue-700 transition-colors truncate block">
-                          {a.company.name}
-                        </Link>
-                        <p className="text-xs text-gray-500 truncate mt-0.5">{a.subject}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-gray-400">{timeAgo(new Date(a.createdAt))}</span>
-                        <span className="text-xs text-gray-400 hidden sm:inline">· {a.user.name.split(' ')[0]}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* ── Recent activity feed — executives only ──────────── */}
+        {isExecutive && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-sm font-semibold text-gray-800">Recent Activities</h2>
+              <Link href="/activities" className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors">
+                View all →
+              </Link>
             </div>
-          )}
-        </div>
+
+            {recentActivities.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No activities logged yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {recentActivities.map((a, i) => (
+                  <div key={a.id} className="flex gap-3 group">
+                    {/* Timeline line + dot */}
+                    <div className="flex flex-col items-center shrink-0">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${activityTypeColor(a.activityType)}`}>
+                        {activityTypeIcon(a.activityType)}
+                      </div>
+                      {i < recentActivities.length - 1 && (
+                        <div className="w-px flex-1 bg-gray-100 my-1" />
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 pb-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <Link href={`/companies/${a.companyId}`} className="text-sm font-semibold text-gray-900 hover:text-blue-700 transition-colors truncate block">
+                            {a.company.name}
+                          </Link>
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{a.subject}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-gray-400">{timeAgo(new Date(a.createdAt))}</span>
+                          <span className="text-xs text-gray-400 hidden sm:inline">· {a.user.name.split(' ')[0]}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>

@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Badge from '@/components/ui/Badge'
 import Link from 'next/link'
-import { isPrivilegedRole } from '@/lib/authorization'
+import { isPrivilegedRole, isExecutiveRole } from '@/lib/authorization'
+import { redirect } from 'next/navigation'
 
 export default async function ActivitiesPage({
   searchParams,
@@ -11,6 +12,10 @@ export default async function ActivitiesPage({
   searchParams: Promise<{ type?: string; followUpStatus?: string; userId?: string }>
 }) {
   const session = await verifySession()
+  // Executives only (Director / Manager) — the cross-team activity feed is
+  // strategic oversight data. Salespeople log/see activities on their own
+  // company pages; Admin runs ops and doesn't need the full feed.
+  if (!isExecutiveRole(session.role)) redirect('/')
   const sp = await searchParams
   const isPrivileged = isPrivilegedRole(session.role)
 

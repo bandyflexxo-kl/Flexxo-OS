@@ -59,7 +59,7 @@ type Props = {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SmartOrderModal({ quotationId, currency, onSuccess, onCancel }: Props) {
-  const [tab,           setTab]           = useState<'text' | 'photo'>('text')
+  const [tab,           setTab]           = useState<'text' | 'photo' | 'pdf'>('text')
   const [pasteText,     setPasteText]     = useState('')
   const [phase,         setPhase]         = useState<'input' | 'parsing' | 'results' | 'adding'>('input')
   const [rows,          setRows]          = useState<RowState[]>([])
@@ -68,8 +68,11 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
   const [imagePreview,  setImagePreview]  = useState<string | null>(null)
   const [imageBase64,   setImageBase64]   = useState<string | null>(null)
   const [imageMime,     setImageMime]     = useState<string>('image/jpeg')
+  const [pdfBase64,     setPdfBase64]     = useState<string | null>(null)
+  const [pdfName,       setPdfName]       = useState<string | null>(null)
   const [extractedText, setExtractedText] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const fileRef    = useRef<HTMLInputElement>(null)
+  const pdfFileRef = useRef<HTMLInputElement>(null)
 
   // ── Parse text ──────────────────────────────────────────────────────────────
 
@@ -123,6 +126,45 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ imageBase64, mimeType: imageMime }),
+      })
+      const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
+      if (!res.ok || !data.lines) {
+        setParseError(data.error ?? 'Scan failed')
+        setPhase('input')
+        return
+      }
+      setExtractedText(data.extractedText ?? null)
+      setRows(initRows(data.lines))
+      setPhase('results')
+    } catch {
+      setParseError('Network error — please try again')
+      setPhase('input')
+    }
+  }
+
+  // ── Scan PDF ──────────────────────────────────────────────────────────────────
+
+  function handlePdfSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string
+      setPdfBase64(dataUrl.split(',')[1] ?? '')
+      setPdfName(file.name)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function handleScanPdf() {
+    if (!pdfBase64) return
+    setParseError(null)
+    setPhase('parsing')
+    try {
+      const res  = await fetch('/api/smart-order/scan-pdf', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ pdfBase64 }),
       })
       const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
       if (!res.ok || !data.lines) {
@@ -232,6 +274,12 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
             >
               📷 Upload Photo
             </button>
+            <button
+              onClick={() => { setTab('pdf'); setParseError(null) }}
+              className={`px-4 py-1.5 font-medium transition-colors ${tab === 'pdf' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              📄 Upload PDF
+            </button>
           </div>
 
           {/* Text paste */}
@@ -300,6 +348,51 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
               </p>
             </div>
           )}
+
+          {/* PDF upload */}
+          {tab === 'pdf' && (
+            <div className="space-y-3">
+              {pdfName ? (
+                <div className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
+                  <span className="text-sm text-gray-700 truncate">📄 {pdfName}</span>
+                  <button
+                    onClick={() => { setPdfBase64(null); setPdfName(null); if (pdfFileRef.current) pdfFileRef.current.value = '' }}
+                    className="ml-3 text-gray-400 hover:text-red-500 text-sm shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => pdfFileRef.current?.click()}
+                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                >
+                  <p className="text-3xl mb-2">📄</p>
+                  <p className="text-sm font-medium text-gray-700">Click to upload a PDF of the item list</p>
+                  <p className="text-xs text-gray-400 mt-1">PDF — purchase orders, quotes, printed lists</p>
+                </div>
+              )}
+              <input
+                ref={pdfFileRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={handlePdfSelect}
+              />
+              {parseError && <p className="text-sm text-red-600">{parseError}</p>}
+              {pdfBase64 && (
+                <button
+                  onClick={handleScanPdf}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Scan &amp; Match Items →
+                </button>
+              )}
+              <p className="text-xs text-gray-400">
+                Uses AI to read the PDF document and match each line to your catalogue.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -308,7 +401,9 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
         <div className="flex flex-col items-center justify-center py-12 gap-3">
           <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-gray-500">
-            {tab === 'photo' ? 'Reading photo and matching items…' : 'Matching items to catalogue…'}
+            {tab === 'photo' ? 'Reading photo and matching items…'
+              : tab === 'pdf' ? 'Reading PDF and matching items…'
+              : 'Matching items to catalogue…'}
           </p>
         </div>
       )}
@@ -442,7 +537,7 @@ function ResultRow({
             >
               {line.alternatives.map(alt => (
                 <option key={alt.id} value={alt.id}>
-                  {alt.name}{alt.brand ? ` (${alt.brand})` : ''} — {alt.sellingPrice ? `${currency} ${Number(alt.sellingPrice).toFixed(2)}` : 'No price'}
+                  {alt.name}{alt.brand ? ` (${alt.brand})` : ''} — {alt.sellingPrice ? `${currency} ${Number(alt.sellingPrice).toFixed(2)}` : 'No price'}{typeof alt.availableQty === 'number' ? ` · stock ${alt.availableQty}` : ''}
                 </option>
               ))}
               <option value="">✎ Enter manually</option>

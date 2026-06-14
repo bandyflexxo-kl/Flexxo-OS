@@ -1,12 +1,13 @@
 'use client'
 
 /**
- * WhatsAppButton — T4-9
+ * WhatsAppButton — T4-9 (revised)
  * Floating WhatsApp contact button — bottom-right, above bottom nav.
- * Visible on every shop page for both guests and B2B clients.
  *
- * Phone: configured via NEXT_PUBLIC_WHATSAPP_PHONE env var.
- * Pre-filled message: "Hi Flexxo, I'd like to enquire about your products."
+ * Visibility: B2B logged-in clients ONLY. Guests never see it.
+ * Phone: the client's dedicated salesperson (account manager) mobile number,
+ *        passed from the shop layout. Falls back to NEXT_PUBLIC_WHATSAPP_PHONE
+ *        when the assigned salesperson has no mobile number on file.
  *
  * z-index: Z.whatsappBtn (70) — above sticky nav (30) and bottom nav (40),
  * below modals (200) and toasts (300). (G-1 compliant)
@@ -18,17 +19,38 @@
 
 import { Z } from '@/constants/zIndex'
 
-const PHONE   = process.env.NEXT_PUBLIC_WHATSAPP_PHONE ?? '60123456789'
-const MESSAGE = encodeURIComponent("Hi Flexxo! I'd like to enquire about your products.")
-const WA_URL  = `https://wa.me/${PHONE}?text=${MESSAGE}`
+/** Normalise a Malaysian phone for wa.me: digits only, leading 0 → 60. */
+function toWaNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.startsWith('0'))  return '6' + digits
+  if (digits.startsWith('60')) return digits
+  return digits
+}
 
-export default function WhatsAppButton() {
+export default function WhatsAppButton({
+  phone,
+  salespersonName,
+}: {
+  /** Salesperson mobile number — button renders nothing when null/empty. */
+  phone:            string | null
+  salespersonName?: string | null
+}) {
+  if (!phone || !phone.trim()) return null
+
+  const firstName = salespersonName?.split(' ')[0]
+  const message   = encodeURIComponent(
+    firstName
+      ? `Hi ${firstName}, I'd like to enquire about your products.`
+      : "Hi Flexxo! I'd like to enquire about your products."
+  )
+  const waUrl = `https://wa.me/${toWaNumber(phone)}?text=${message}`
+
   return (
     <a
-      href={WA_URL}
+      href={waUrl}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Chat with Flexxo on WhatsApp"
+      aria-label={firstName ? `Chat with ${firstName} on WhatsApp` : 'Chat with Flexxo on WhatsApp'}
       className="fixed right-4 bottom-20 sm:bottom-6 flex items-center justify-center w-13 h-13 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
       style={{
         zIndex:          Z.whatsappBtn,

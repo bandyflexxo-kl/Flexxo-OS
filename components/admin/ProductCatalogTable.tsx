@@ -12,7 +12,7 @@ type ProductRow = {
   unit:                 string | null
   internalSku:          string | null
   qneItemCode:          string | null
-  category:             { id: string; name: string }
+  category:             { id: string; name: string; parentName?: string | null }
   catalogDescription:   string | null
   defaultMarginPct:     string | null
   googleDrivePhotoId:   string | null
@@ -425,8 +425,23 @@ export default function ProductCatalogTable({
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-gray-700"
         >
           <option value="">All Categories</option>
-          {allCategories.map(cat => (
+          {/* Top-level categories (no parent) first, then subcategories grouped by parent */}
+          {allCategories.filter(c => !c.parentName).map(cat => (
             <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+          {Array.from(
+            allCategories.filter(c => c.parentName).reduce((m, c) => {
+              const list = m.get(c.parentName!) ?? []
+              list.push(c)
+              m.set(c.parentName!, list)
+              return m
+            }, new Map<string, typeof allCategories>())
+          ).sort((a, b) => a[0].localeCompare(b[0])).map(([parentName, subs]) => (
+            <optgroup key={parentName} label={parentName}>
+              {subs.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <span className="text-xs text-gray-400">

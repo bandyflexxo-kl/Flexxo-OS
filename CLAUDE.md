@@ -1,5 +1,5 @@
 # Flexxo Sales OS — Project Memory
-Last updated: 10 June 2026 (session 2)
+Last updated: 15 June 2026 (session 6)
 
 ## What this project is
 Internal B2B Sales CRM + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
@@ -235,16 +235,27 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - WABA order status alerts (Shipped/Delivered) via lib/wabaMessages.ts
 
 ### Additional CRM Features ✅ COMPLETE
-- **Smart Order** (`/quotations/[id]` → ✨ Smart Add tab): paste a text list or upload a photo → AI matches items → bulk-add to quotation. Uses Claude Vision for photos, token-Jaccard matching for text.
+- **Smart Order** (`/quotations/[id]` → ✨ Smart Add tab): paste text, upload photo, OR upload PDF → AI extracts items → fuzzy-matches to catalogue → bulk-add to quotation. Uses Claude Vision for photos, Claude PDF document block for PDFs, token-Jaccard for text.
 - **Market Price Scout** (`/market-scout`): AI searches for cheapest supplier for any product. Uses Claude + web search.
 - **Reports** (`/reports`): Team Portfolio Intelligence — client count, outstanding balance, top items per salesperson. Admin/Manager only.
 - **QNE Price Sync**: Admin triggers sync at /admin → "↻ Sync Prices" (requires Radmin VPN). Pulls last invoiced price from QNE per item, stores in `products.qneLastSalePrice`. Display price = last sale price × 1.20.
+- **QNE Stock Sync**: Admin triggers sync at /admin → "↻ Sync Stock" (requires Radmin VPN). Pulls available qty from QNE per item, stores in `products.qneAvailableQty` + `products.qneStockSyncedAt`. Shop hides items with synced qty = 0 (null = never synced = visible).
 - **Google Drive Photo Matching**: Scan Drive folder → match product photos by stock code / name → 5-tier matching (exact code, fuzzy code, exact name, fuzzy name, brand+name).
 - **Warehouse Portal** (`/warehouse`): Picking task board for warehouse workers.
 - **Order Fulfillment Pipeline**: Confirmed → Approved → Picking → Packed → Delivering → Delivered. Invoice, WarehouseTask, DeliveryBooking models.
-- **Lalamove Integration**: `lib/lalamoveClient.ts` — delivery booking, driver polling, webhooks.
+- **Lalamove Integration** ✅ LIVE (session 6, 15 Jun 2026): Full end-to-end delivery booking. Quote preview (price + pickup time + surge warning) before confirming. Smart time window avoids 12–2 PM lunch and after 5 PM. Surge detection flags >40% above baseline. Webhook auto-marks order Delivered. See Lalamove section below.
 - **Notification System**: Notification bell (top of CRM sidebar) + browser push notifications. Covers: overdue follow-ups, pending quotation approvals, pending account requests.
 - **Daily Digest**: Cron job emails Admin/Manager a daily summary of overdue follow-ups.
+- **Admin Stock Gaps page** (`/admin/stock-gaps`): Lists sub-categories with products that all show 0 stock after a sync — admin decides what to keep stocking.
+
+### Session 5 fixes (14–15 Jun 2026)
+- All 7,533 products now visible in shop (isVisibleToCustomers = true bulk update + Redis cache busted)
+- HSTS header (`Strict-Transport-Security`) now production-only in `next.config.ts` — was breaking `http://localhost` in Chrome dev
+- Smart Order: Aplus-first boost (×1.3) for APLUS brand in Office Stationery parent category
+- Smart Order: drops synced-zero-stock options, shows `· stock N` counts in alternatives
+- Smart Order: new PDF tab (`app/api/smart-order/scan-pdf/route.ts`) using Claude PDF document block
+- `QneSandboxClient.tsx`: fixed missing React `key` on Fragment in row list (was console error)
+- `useMounted()` hook: required pattern for any client component reading `sessionStorage`/`window`
 
 ### Performance & Security Upgrades ✅ COMPLETE (Session 2 — 10 June 2026)
 - **B2B Client Dashboard** (`/shop/dashboard`): post-login landing page with time-aware greeting, spend metrics, partner tier loyalty bar, QNE aging breakdown + credit limit bar, account manager card, smart reorder predictions, category spend, quick actions. QNE data cached 4h via `unstable_cache`.
@@ -255,6 +266,58 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - **SSR product catalogue + Upstash Redis 24h cache**: products fetched server-side and embedded in HTML — "Loading catalogue…" spinner eliminated permanently. Two-layer cache: Redis (24h, persists across restarts) → `unstable_cache` fallback. Cache invalidated automatically after QNE price sync. Live TTFB: **128ms**.
 - **Browser cache headers**: `Cache-Control: private, max-age=86400` (B2B) / `public, max-age=86400` (guest) on product API routes.
 - **Hydration fix** (`ProductsClientPage.tsx`): eliminated React hydration warning caused by `animate-fade-in-up` class mismatch between SSR and client. Root cause: `sessionStorage` read during render + animation guard not gated on `mounted`. Fixed with `useMounted()` hook; `sessionStorage` reads/writes moved to `useEffect`.
+
+---
+
+## Lalamove Integration — CONFIRMED DETAILS (session 6, 15 Jun 2026)
+
+- API: Lalamove v3 REST API, production keys live
+- Pickup: Lot 2772F, Jalan Industri 12, Kampung Baru Sungai Buloh, 47000 Shah Alam, Selangor
+- Pickup contact: Flexxo Warehouse (Pack2 Go Sdn Bhd), +601111954266
+- Webhook URL (set in Lalamove partner portal): `https://flexxo-os.vercel.app/api/webhooks/lalamove`
+- Webhook secret: in `.env.local` as `LALAMOVE_WEBHOOK_SECRET`
+
+### Key files
+- `lib/lalamoveClient.ts` — HMAC auth, quotation (with scheduleAt), place order, cancel, status poll
+- `lib/lalamoveBooking.ts` — `getSmartBookingTime()` (avoids lunch 12–2 PM + after 5 PM + weekends), `checkSurge()` (flags >40% above baseline)
+- `lib/fulfillment.ts` — `bookLalamoveDelivery(orderId, preQuote?)` — uses pre-fetched quoteId or fetches fresh with smart time
+- `app/api/orders/[id]/delivery-quote/route.ts` — GET: returns quote + time label + surge flag (preview before commit)
+- `app/api/orders/[id]/book-delivery/route.ts` — POST: accepts `{ quoteId, serviceType, priceMyr }` from UI
+- `app/api/webhooks/lalamove/route.ts` — POST: verifies HMAC signature, maps COMPLETED→Delivered, REJECTED→resets to Packed
+
+### Smart booking time rules (KL = UTC+8, no DST)
+- 11:45–14:00 KL → schedule for today 14:15
+- ≥ 17:00 KL Mon–Thu → schedule tomorrow 09:00
+- ≥ 17:00 KL Fri → schedule Monday 09:00
+- Weekend → schedule Monday 09:00
+- Otherwise → immediate (now + 15 min)
+
+### Surge baselines (MYR, flag if >40% above)
+- MOTORCYCLE: RM 15
+- MPV: RM 45
+- VAN: RM 65
+
+### Webhook status map
+- ASSIGNING_DRIVER → booked
+- ON_GOING → driver_assigned
+- PICKED_UP → in_transit
+- COMPLETED → completed (Order → Delivered, fires Google Review request)
+- REJECTED / EXPIRED / CANCELED → failed (Order reset to Packed for retry)
+
+### IMPORTANT: Vercel env vars needed for production
+Add these in Vercel dashboard → Settings → Environment Variables:
+```
+LALAMOVE_API_KEY=pk_prod_dab1736500369a294e02aef40be81439
+LALAMOVE_API_SECRET=sk_prod_Lj/JIFho/b9fwCgXEPZE8Y4m6LHDE24QnEepGjWRQGaU+tbNNgVy2oCSVcBx3B6u
+LALAMOVE_BASE_URL=https://rest.lalamove.com
+LALAMOVE_PICKUP_LAT=3.1871631880914224
+LALAMOVE_PICKUP_LNG=101.57014340141357
+LALAMOVE_PICKUP_ADDRESS=Lot 2772F, Jalan Industri 12, Kampung Baru Sungai Buloh, 47000 Shah Alam, Selangor
+LALAMOVE_PICKUP_CONTACT_NAME=Flexxo Warehouse (Pack2 Go Sdn Bhd)
+LALAMOVE_PICKUP_CONTACT_PHONE=+601111954266
+LALAMOVE_WEBHOOK_SECRET=flexxo-lalamove-wh-2026
+```
+Note: Webhook only fires on production (Lalamove can't reach localhost). Test locally by checking order status manually.
 
 ---
 
@@ -269,21 +332,45 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 | fixAgentAssignment.ts | Create users from QNE agents + backfill assignments | ✅ Done — 9 users, 333 assignments |
 | syncAgentEmails.ts | Pull agent email + mobileNo from QNE → update CRM users | ✅ Run — 2 emails updated |
 | syncQneProducts.ts | Sync QNE stock items → products table | ✅ Working |
+| syncQneStock.ts | Sync QNE available qty → products.qneAvailableQty (VPN required) | ✅ Working |
 | setupDemoAccount.ts | Create demo B2B client account for testing | ✅ Working |
 | uploadLog.ts | Upload improvement log to Google Drive | ✅ Working |
 | matchAplusPhotos.ts | Match APLUS Excel stock codes → Drive photos | ✅ Working |
 | testSmartOrder.ts | Test Smart Order text parsing + matching | ✅ Working |
+| _catSummary.ts | Print full category tree with product counts per sub-category | ✅ Working |
+| _verify2.ts | Verify all products are in sub-categories (0 in parents) | ✅ Working |
 
 ---
 
 ## Roles and what each sees
 | Role | Access level |
 |------|-------------|
-| Admin (Bandy/owner) | Full system — all data, all approvals, system settings |
-| Manager | All salespeople's pipelines, quotation approval queue, team stats |
+| Director (Timothy, Bandy, Javenn) | Everything: all data, reports, margins, team performance, all approvals + personal salesperson todos (own follow-ups, stale drafts, quiet accounts). Goes out and does sales. |
+| Admin | Operations: all data, all approvals, orders, products, users. No Reports/Activities/market-scout (those are strategic) |
+| Manager | Same page access as Director (legacy role, currently unused) |
 | Salesperson | Own accounts only, own pipeline, own activities, quote builder |
 | Warehouse | Warehouse picking tasks only (/warehouse) |
 | B2B Client | Own cart, orders, quotations, invoices, delivery tracking |
+
+### 10-category shop tree: what was done (session 4, 14 Jun 2026)
+- `scripts/buildCategoryTree.ts` — keyword-based classifier that creates 10 parent + 65 sub-categories matching flexxo.com.my/products, reassigns all 7,533 products, deactivates old flat categories
+- `scripts/_fixCategories.ts` was run once to reactivate `office-stationery` (incorrectly deactivated by buildCategoryTree step 5) and deactivate 789 empty QNE-generated categories that accumulated from previous syncs
+- **DB state**: 75 active categories (10 parents + 65 subs), all 7,533 products reassigned to leaf sub-categories
+- `components/shop/ProductsClientPage.tsx` — already had 2-level tree UI; updated `CAT_EMOJI` map to use new 10 category names
+- `app/shop/products/page.tsx` — SSRs only categories (75 rows, fast). Products fetched client-side via `/api/portal/products-public`. SSR of products was removed to avoid Supabase PgBouncer pool contention during Turbopack compilation.
+- `components/admin/ProductCatalogTable.tsx` — already had `<optgroup>` grouping by parent
+- `components/admin/PriceFileStagingTable.tsx` — already had `<optgroup>` grouping by parent
+- **Category naming**: parent names match flexxo.com.my exactly (Office Stationery, Office Furniture, Printer Supplies, Computer Hardware & Software, Office Security, Office Machine, Office Equipment, Breakroom, Janitorial, Safety Kits)
+- **Sub-category slugs**: prefix pattern (`os--`, `of--`, `ps--`, `ch--`, `sec--`, `om--`, `oe--`, `br--`, `jan--`, `sk--`) to avoid collisions with QNE-generated category slugs
+
+### Director-as-salesperson: what was added (session 3, 13 Jun 2026)
+- `lib/access.ts` — Director has all CRM routes including `/activities`, `/reports`, `/market-scout`
+- `lib/authorization.ts` — Director in `PRIVILEGED_ROLES` (sees all companies, no scope filter)
+- `login/actions.ts` — `ROLE_PRIORITY` array ensures Director session wins over legacy Salesperson role
+- `TodoSection.tsx` — Director gets BOTH executive block (approvals) AND personal block (own follow-ups, stale drafts, quiet accounts)
+- `companies/new` assignee dropdown — includes `['Salesperson', 'Director', 'Admin']`
+- `api/reports/team` — includes Directors in team portfolio query
+- Shop WhatsApp button — uses assigned user's `mobileNo` regardless of role (Director's number shows for their clients)
 
 ---
 
@@ -322,11 +409,15 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - Notification system: computed from DB on each bell poll — no separate notifications table
 - constants/zIndex.ts (Z export) — single source of truth for all z-index values
 - Prisma v7: datasource URL in prisma.config.ts only (not schema.prisma)
-- Product catalogue caching: `lib/products-api.ts` — Redis-first (24h), `unstable_cache` fallback; shared by page server component + both API routes
+- Product catalogue caching: `lib/products-api.ts` — Redis-first (24h), `unstable_cache` fallback; shared by both API routes (NOT the page server component — page SSRs categories only, products are client-fetched)
 - `lib/redis.ts` — Upstash Redis singleton; returns `null` gracefully when env vars not set (safe for local dev without Redis)
 - `lib/qneFinancial.ts` — QNE financial data (aging, outstanding, credit limit) cached 4h via `unstable_cache` per customer code; cache tag `qne-financial-{code}`
 - Session durations: `sessionDurationMs(role)` in `lib/session.ts` — B2B Client 7d, others 24h; sliding window renewal in `middleware.ts` at < 33% remaining
 - `useMounted()` hook pattern: any client component that reads browser-only APIs (sessionStorage, window, etc.) must gate on `mounted` to avoid SSR hydration mismatches
+- HSTS header only sent in production (`NODE_ENV === 'production'`) — never in dev to avoid Chrome pinning localhost to HTTPS
+- Stock gate in `lib/products-api.ts`: `OR: [{ qneAvailableQty: null }, { qneAvailableQty: { gt: 0 } }]` — null = never synced = visible; 0 = confirmed out of stock = hidden
+- Lalamove booking: always quote-preview first (`GET /api/orders/[id]/delivery-quote`), then confirm (`POST /api/orders/[id]/book-delivery` with quoteId). Smart time + surge in `lib/lalamoveBooking.ts`.
+- `lib/lalamoveClient.ts`: `scheduleAt?: string` (ISO 8601 UTC) in quotation params — used by smart booking time
 
 ## What NOT to automate (v1 rules)
 - Do not auto-promote QNE staging records
@@ -341,7 +432,9 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 
 ## .env.local variables
 ```
-DATABASE_URL="postgresql://postgres:Flexxo%408820@localhost:5432/flexxo_sales_os"
+DATABASE_URL="postgresql://postgres.ibkyigjvbvilekdlduho:Flexxo%408820@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+# NOTE: DATABASE_URL points to Supabase (production DB), NOT local PostgreSQL.
+# All scripts and dev server use Supabase by default.
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="XFLs9hTCO3GGvs6pMR9oWQtsXGS6sxcz9O6CjRoAmYQ="
 GMAIL_USER="bandy.flexxo@gmail.com"
@@ -392,14 +485,16 @@ UPSTASH_REDIS_REST_TOKEN=""
 | 3+ | Market Price Scout (AI cheapest source finder) | ✅ Complete |
 | 3+ | Reports + Team Portfolio Intelligence | ✅ Complete |
 | 3+ | B2B Client Dashboard + Performance & Security upgrades | ✅ Complete |
-| 4 | Order fulfillment pipeline (Approve → Pick → Pack → Deliver via Lalamove) | 🟡 Built, needs Lalamove credentials + warehouse workers |
+| 4 | Order fulfillment pipeline (Approve → Pick → Pack → Deliver via Lalamove) | ✅ Complete — Lalamove live, webhook wired, smart time + surge guard |
 | 5 | AI sales intelligence (health scores, forecasting, cross-sell, P&L dashboard) | 🔴 Not started |
 
 ## Next priorities
-- **Phase 4 activation**: Get Lalamove API key + secret → fill in env vars → add warehouse worker accounts → test end-to-end fulfillment flow
+- **Vercel env vars**: Add all 9 LALAMOVE_* vars to Vercel dashboard → Settings → Environment Variables (see Lalamove section above)
+- **QNE stock sync**: Run with Radmin VPN active at /admin → "↻ Sync Stock" to populate qneAvailableQty for all products. Only then will the shop hide out-of-stock items.
 - **QNE price sync**: Run with Radmin VPN active at /admin → "↻ Sync Prices" to populate display prices for all 3,700+ products
 - **Salesperson onboarding**: Set passwords + update emails for BANDY, JUSTINE, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN
 - **WABA templates**: Submit `quotation_ready` + `order_update` templates to Meta for approval
+- **Anthropic API credits**: Monitor balance at console.anthropic.com — PDF scan + photo scan + supplier price extraction all require credits
 
 ## Future features discussed
 - Phone number + PIN login for salespeople (easier than email for field team)

@@ -1,12 +1,13 @@
 /**
  * lib/qnePriceSync.ts
- * Syncs "last sale price" per product from QNE invoice history.
+ * Syncs QNE purchase (cost) prices into the product catalogue.
  *
- * Reads:  GET /api/SalesInvoices (top N invoices, most recent first)
- *         GET /api/SalesInvoices/{id} for line items
- * Writes: products.qne_last_sale_price + qne_last_sale_price_at
+ * Reads:  GET /api/Stocks (paginated, all active stock items)
+ * Writes: products.qneLastSalePrice  ← stores purchase price from QNE
+ *         products.qneLastSalePriceAt
  *
- * Display formula: qneLastSalePrice × 1.20  (shown to ALL users, logged in or not)
+ * Display formula: purchasePrice × 1.20, rounded UP to nearest RM 0.10
+ * (shown to ALL visitors — logged-in B2B and guest browsing)
  *
  * QNE READ-ONLY: this function only calls GET endpoints — never writes to QNE.
  */
@@ -16,195 +17,99 @@ import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type QneInvoice = {
-  id:          string
-  docNo?:      string
-  docDate?:    string
-  // other fields we don't need
-}
-
-type QneInvoiceListResponse = {
-  data?:  QneInvoice[]
-  items?: QneInvoice[]
-} | QneInvoice[]
-
-type QneInvoiceDetail = {
-  id:               string
-  docDate?:         string
-  // line items may be in different shapes depending on QNE version
-  items?:           QneInvoiceItem[]
-  salesInvoiceItems?: QneInvoiceItem[]
-  details?:         QneInvoiceItem[]
-  invoiceDetails?:  QneInvoiceItem[]
-  lines?:           QneInvoiceItem[]
-}
-
-type QneInvoiceItem = {
-  itemCode?:    string
-  stockCode?:   string
-  code?:        string
-  unitPrice?:   number
-  price?:       number
-  amount?:      number
-  qty?:         number
-  quantity?:    number
-  docDate?:     string
-  // other fields
-}
-
 export type PriceSyncResult = {
   ok:              boolean
-  invoicesFetched: number
+  invoicesFetched: number   // repurposed: stock items fetched from QNE
   productsUpdated: number
-  skipped:         number   // items with no matching CRM product
+  skipped:         number   // products with no matching QNE stock code
   errors:          string[]
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Extract line items from any QNE invoice detail response shape */
-function extractItems(detail: QneInvoiceDetail): QneInvoiceItem[] {
-  return (
-    detail.items              ??
-    detail.salesInvoiceItems  ??
-    detail.details            ??
-    detail.invoiceDetails     ??
-    detail.lines              ??
-    []
-  )
-}
-
-/** Extract invoice list from any QNE list response shape */
-function extractInvoiceList(resp: QneInvoiceListResponse): QneInvoice[] {
-  if (Array.isArray(resp)) return resp
-  if ('data'  in resp && Array.isArray(resp.data))  return resp.data
-  if ('items' in resp && Array.isArray(resp.items)) return resp.items
-  return []
-}
-
-/** Concurrency limiter — runs up to `limit` promises in parallel */
-async function pLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-): Promise<T[]> {
-  const results: T[] = []
-  let i = 0
-  async function worker() {
-    while (i < tasks.length) {
-      const idx = i++
-      results[idx] = await tasks[idx]()
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker)
-  await Promise.all(workers)
-  return results
 }
 
 // ── Main sync function ────────────────────────────────────────────────────────
 
 /**
- * Fetches the last `maxInvoices` sales invoices from QNE, extracts item unit
- * prices, and updates products.qne_last_sale_price for matching items.
+ * Fetches purchase prices for all stock items from QNE Stocks endpoint
+ * and updates products.qneLastSalePrice (stores the purchase/cost price).
  *
- * Matching: invoice item.itemCode / stockCode / code → product.qneItemCode (exact, case-insensitive)
- * Price used: the most recent unit price found across all fetched invoices.
+ * Source:  GET /api/Stocks  →  stock.purchasePrice
+ * Matching: stock.stockCode → product.qneItemCode (case-insensitive)
+ *
+ * Display formula (in calcDisplayPrice): purchasePrice × 1.20
+ * rounded UP to nearest RM 0.10.
  *
  * If VPN is inactive, throws QneUnavailableError.
  */
-export async function syncQnePrices(maxInvoices = 200): Promise<PriceSyncResult> {
+export async function syncQnePrices(): Promise<PriceSyncResult> {
   const errors: string[] = []
 
   // ── 1. Authenticate ────────────────────────────────────────────────────────
   const token = await qneLogin()
 
-  // ── 2. Fetch invoice list (most recent first) ──────────────────────────────
-  let invoices: QneInvoice[] = []
-  try {
-    const raw = await qneGet<QneInvoiceListResponse>('/SalesInvoices', token)
-    const all  = extractInvoiceList(raw)
-    invoices   = all.slice(0, maxInvoices)
-  } catch (err) {
-    if (err instanceof QneUnavailableError) throw err
-    const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`Failed to fetch invoice list: ${msg}`)
-  }
-
-  // ── 3. Fetch invoice details in parallel (15 concurrent) ──────────────────
-  const detailTasks = invoices.map(inv => async (): Promise<{ docDate: string; items: QneInvoiceItem[] }> => {
-    try {
-      const detail = await qneGet<QneInvoiceDetail>(`/SalesInvoices/${inv.id}`, token)
-      return {
-        docDate: detail.docDate ?? inv.docDate ?? '',
-        items:   extractItems(detail),
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      errors.push(`Invoice ${inv.id}: ${msg}`)
-      return { docDate: '', items: [] }
-    }
-  })
-
-  const details = await pLimit(detailTasks, 15)
-
-  // ── 4. Build map: itemCode → { price, date } (most recent wins) ───────────
+  // ── 2. Fetch all stock items from QNE (paginated by 200) ──────────────────
   //
-  // Invoices are returned most-recent first from QNE.
-  // We iterate in order — first occurrence of an itemCode wins (most recent).
-  const priceMap = new Map<string, { price: number; date: string }>()
+  // Each stock item has:  stockCode, purchasePrice (cost from supplier)
+  // We build a map: STOCK_CODE → purchasePrice for fast lookup.
 
-  for (const { docDate, items } of details) {
-    for (const item of items) {
-      const code = (
-        item.itemCode ?? item.stockCode ?? item.code ?? ''
-      ).trim().toUpperCase()
-      if (!code) continue
+  const priceMap = new Map<string, number>()  // stockCode.toUpperCase() → purchasePrice
+  let skip       = 0
+  const top      = 200
 
-      const price = item.unitPrice ?? item.price ?? (
-        item.qty && item.amount ? item.amount / item.qty : 0
-      )
-      if (!price || price <= 0) continue
+  while (true) {
+    try {
+      const raw  = await qneGet<unknown>(`/Stocks?$top=${top}&$skip=${skip}`, token)
+      const page = (
+        Array.isArray(raw)                                        ? raw
+        : Array.isArray((raw as Record<string, unknown>).value)  ? (raw as Record<string, unknown>).value
+        : Array.isArray((raw as Record<string, unknown>).data)   ? (raw as Record<string, unknown>).data
+        : []
+      ) as Record<string, unknown>[]
 
-      // Only set if not already seen (first = most recent)
-      if (!priceMap.has(code)) {
-        priceMap.set(code, { price, date: docDate })
+      if (page.length === 0) break
+
+      for (const item of page) {
+        const code  = String(item.stockCode ?? item.code ?? '').trim().toUpperCase()
+        // Try multiple possible field names for purchase/cost price
+        const price = Number(item.purchasePrice ?? item.unitCost ?? item.costPrice ?? 0)
+        if (code && price > 0 && !priceMap.has(code)) {
+          priceMap.set(code, price)
+        }
       }
+
+      if (page.length < top) break
+      skip += top
+    } catch (err) {
+      if (err instanceof QneUnavailableError) throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      errors.push(`Stocks page (skip=${skip}): ${msg}`)
+      break  // partial data is still useful — continue with what we have
     }
   }
 
   if (priceMap.size === 0) {
-    return {
-      ok:              true,
-      invoicesFetched: invoices.length,
-      productsUpdated: 0,
-      skipped:         0,
-      errors,
-    }
+    return { ok: true, invoicesFetched: 0, productsUpdated: 0, skipped: 0, errors }
   }
 
-  // ── 5. Load products that have a qneItemCode ───────────────────────────────
+  // ── 3. Load products that have a qneItemCode ───────────────────────────────
   const products = await prisma.product.findMany({
     where:  { isActive: true, qneItemCode: { not: null } },
     select: { id: true, qneItemCode: true },
   })
 
-  // ── 6. Update matching products ────────────────────────────────────────────
+  // ── 4. Update matching products ────────────────────────────────────────────
   let productsUpdated = 0
   let skipped         = 0
 
   for (const product of products) {
-    const code = (product.qneItemCode ?? '').trim().toUpperCase()
-    const entry = priceMap.get(code)
+    const code  = (product.qneItemCode ?? '').trim().toUpperCase()
+    const price = priceMap.get(code)
 
-    if (!entry) {
-      skipped++
-      continue
-    }
+    if (!price) { skipped++; continue }
 
     await prisma.product.update({
       where: { id: product.id },
       data: {
-        qneLastSalePrice:   entry.price,
-        qneLastSalePriceAt: entry.date ? new Date(entry.date) : new Date(),
+        qneLastSalePrice:   price,          // stores purchase price (base for ×1.20)
+        qneLastSalePriceAt: new Date(),
       },
     })
     productsUpdated++
@@ -212,15 +117,22 @@ export async function syncQnePrices(maxInvoices = 200): Promise<PriceSyncResult>
 
   return {
     ok:              true,
-    invoicesFetched: invoices.length,
+    invoicesFetched: priceMap.size,         // stock items fetched from QNE
     productsUpdated,
     skipped:         products.length - productsUpdated,
     errors,
   }
 }
 
-/** The display price shown to all users = QNE last sale price × 1.20 */
-export function calcDisplayPrice(qneLastSalePrice: number | null): number | null {
-  if (!qneLastSalePrice || qneLastSalePrice <= 0) return null
-  return Math.round(qneLastSalePrice * 1.20 * 100) / 100
+/**
+ * Display price = purchasePrice × 1.20, rounded UP to nearest RM 0.10.
+ * e.g. 8.93 × 1.20 = 10.716 → RM 10.80
+ *
+ * Uses integer arithmetic (cents) to avoid floating-point drift.
+ */
+export function calcDisplayPrice(purchasePrice: number | null): number | null {
+  if (!purchasePrice || purchasePrice <= 0) return null
+  const withMargin = purchasePrice * 1.20
+  // multiply by 10 to get "dimes", ceil, divide back — ceiling to nearest RM 0.10
+  return Math.ceil(withMargin * 10) / 10
 }

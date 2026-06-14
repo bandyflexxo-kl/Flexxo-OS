@@ -6,7 +6,7 @@ import QneReviewTable from '@/components/admin/QneReviewTable'
 
 export default async function QneReviewPage() {
   const session = await verifySession()
-  if (session.role !== 'Admin') {
+  if (!['Admin','Director'].includes(session.role)) {
     return (
       <div>
         <Topbar title="QNE Review" />

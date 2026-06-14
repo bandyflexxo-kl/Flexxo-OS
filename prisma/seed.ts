@@ -19,7 +19,8 @@ async function main() {
   console.log('Seeding Flexxo Sales OS...')
 
   // --- Roles ---
-  const roles = ['Admin', 'Manager', 'Salesperson', 'Viewer', 'B2B Client', 'Warehouse']
+  // Director = top management (highest access — sees everything incl. Reports)
+  const roles = ['Director', 'Admin', 'Manager', 'Salesperson', 'Viewer', 'B2B Client', 'Warehouse']
   for (const name of roles) {
     await prisma.role.upsert({
       where: { name },
@@ -56,6 +57,10 @@ async function main() {
   console.log('✓ Pipeline stages seeded')
 
   // --- Product Categories ---
+  // These 12 flat categories are the legacy fallback set (used for non-QNE
+  // products). The live two-level tree mirrored from QNE (category > group)
+  // is created/maintained by scripts/buildCategoryTree.ts — upsert with empty
+  // update keeps re-seeding from touching it.
   const categories = [
     { name: 'Battery',              slug: 'battery' },
     { name: 'Corporate Gift',       slug: 'corporate-gift' },
