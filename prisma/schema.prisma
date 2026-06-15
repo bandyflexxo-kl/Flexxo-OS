@@ -407,6 +407,8 @@ model SupplierPriceFile {
   totalRowsDetected Int?      @map("total_rows_detected")
   rowsExtracted     Int?      @map("rows_extracted")
   rowsFailed        Int?      @map("rows_failed")
+  fileHash          String?   @map("file_hash")
+  driveModifiedTime DateTime? @map("drive_modified_time")
   uploadedById      String    @map("uploaded_by")
   uploadedAt        DateTime  @default(now()) @map("uploaded_at")
   processedAt       DateTime? @map("processed_at")

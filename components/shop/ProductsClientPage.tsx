@@ -53,6 +53,10 @@ type CategoryNode = Category & { children: Category[] }
 const GUEST_API_URL = '/api/portal/products-public?limit=all'
 const B2B_API_URL   = '/api/portal/products?limit=all'
 
+// Cards rendered per "page" of infinite scroll.
+// Keeps DOM small so category switching (~60 reconciles) is instant.
+const PAGE_SIZE = 30
+
 type CacheEntry = { data: ApiProduct[]; fetchedAt: number }
 const productCache    = new Map<string, CacheEntry>()
 // keyed by cacheKey so B2B and guest inflight requests don't collide
@@ -63,7 +67,10 @@ async function loadAllProducts(cacheKey: string, apiUrl: string): Promise<ApiPro
   if (cached && Date.now() - cached.fetchedAt < 5 * 60_000) return cached.data
   const existing = inflightByKey.get(cacheKey)
   if (existing) return existing
-  const promise = fetch(apiUrl, { cache: 'no-store' })
+  // No { cache: 'no-store' } — let browser respect the response Cache-Control header.
+  // products-public returns Cache-Control: public, max-age=86400 so the browser
+  // will serve subsequent fetches from disk cache instantly (no network).
+  const promise = fetch(apiUrl)
     .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ApiProduct[]> })
     .then(data => { productCache.set(cacheKey, { data, fetchedAt: Date.now() }); inflightByKey.delete(cacheKey); return data })
     .catch(err => { inflightByKey.delete(cacheKey); throw err })
@@ -219,7 +226,16 @@ export default function ProductsClientPage({
   })
   const [searchInput,    setSearchInput]    = useState(initialQ ?? '')
   const [searchQuery,    setSearchQuery]    = useState(initialQ ?? '')
+
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // ── Infinite scroll ───────────────────────────────────────────────
+  // Only PAGE_SIZE cards are in the DOM at a time. An IntersectionObserver
+  // watches a sentinel div below the grid; when it nears the viewport
+  // (rootMargin: 300px) more cards are appended. Works identically on
+  // desktop wheel-scroll and mobile touch-scroll.
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // ── Search dropdown ───────────────────────────────────────────────
   const [dropdownOpen,   setDropdownOpen]   = useState(false)
@@ -331,6 +347,7 @@ export default function ProductsClientPage({
     setSearchQuery(q)
     setDropdownOpen(false)
     setHighlightIdx(-1)
+    setDisplayCount(PAGE_SIZE)
     saveRecentSearch(q)
     setRecentSearches(getRecentSearches())
     pushUrl(activeCategory, q)
@@ -341,6 +358,7 @@ export default function ProductsClientPage({
     setSearchQuery(q)
     setDropdownOpen(false)
     setHighlightIdx(-1)
+    setDisplayCount(PAGE_SIZE)
     if (q) { saveRecentSearch(q); setRecentSearches(getRecentSearches()) }
     pushUrl(activeCategory, q)
   }
@@ -351,16 +369,21 @@ export default function ProductsClientPage({
   }
 
   // ── URL sync ─────────────────────────────────────────────────────
+  // Use the native history API instead of router.replace() so the URL updates
+  // for bookmarking/sharing WITHOUT triggering a Next.js server navigation
+  // (which would re-run the server component + Prisma query, adding 1-2 s delay).
+  // Products are already in memory — filtering is instant on the client.
   function pushUrl(catId: string, q: string) {
     const params = new URLSearchParams()
     if (catId) params.set('categoryId', catId)
     if (q) params.set('q', q)
     const qs = params.toString()
-    router.replace(`/shop/products${qs ? `?${qs}` : ''}`, { scroll: false })
+    window.history.replaceState(null, '', `/shop/products${qs ? `?${qs}` : ''}`)
   }
 
   function selectCategory(id: string) {
     setActiveCategory(id)
+    setDisplayCount(PAGE_SIZE)  // reset scroll position on every category switch
     // Keep the relevant parent expanded: selecting a parent expands it,
     // selecting a child keeps its parent open, clearing collapses nothing.
     if (id) {
@@ -381,7 +404,8 @@ export default function ProductsClientPage({
 
   function clearAll() {
     setSearchInput(''); setSearchQuery(''); setActiveCategory(''); setDropdownOpen(false)
-    router.replace('/shop/products', { scroll: false })
+    setDisplayCount(PAGE_SIZE)
+    window.history.replaceState(null, '', '/shop/products')
   }
 
   // ── Filtered product grid ─────────────────────────────────────────
@@ -413,6 +437,22 @@ export default function ProductsClientPage({
     }
     return m
   }, [allProducts, categoryTree])
+
+  // ── Infinite scroll observer ──────────────────────────────────────
+  // Placed after `filtered` and `countByCategory` so both are in scope.
+  // Re-wires whenever displayCount or filtered.length changes so the
+  // observer always targets the current sentinel position.
+  useEffect(() => {
+    if (displayCount >= filtered.length) return   // nothing left to load
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setDisplayCount(c => c + PAGE_SIZE) },
+      { rootMargin: '300px' },  // pre-load 300 px before user hits the bottom
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [displayCount, filtered.length])
 
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
@@ -877,36 +917,48 @@ export default function ProductsClientPage({
             </button>
           </div>
         ) : (
-          /* id used by HeroSection CTA scroll anchor */
-          <div id="products-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filtered.map((p, i) => {
-              // Stagger first 4 cards on initial load (Condition 18)
-              // Use inline animationDelay so dynamic values are never tree-shaken
-              const entryStyle = isFirstLoad && i < 4
-                ? { animationDelay: `${i * 75}ms` }
-                : {}
-              return (
-                <div
-                  key={p.id}
-                  className={isFirstLoad && i < 4 ? 'animate-fade-in-up' : ''}
-                  style={entryStyle}
-                >
-                  <ProductCard
-                    id={p.id}
-                    name={p.name}
-                    brand={p.brand}
-                    unit={p.unit}
-                    categoryName={p.category.name}
-                    sellingPrice={p.sellingPrice}
-                    currency={p.currency}
-                    hasPhoto={p.hasPhoto}
-                    availableQty={p.availableQty}
-                    isB2B={isB2B}
-                  />
-                </div>
-              )
-            })}
-          </div>
+          <>
+            {/* id used by HeroSection CTA scroll anchor */}
+            <div id="products-grid" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filtered.slice(0, displayCount).map((p, i) => {
+                // Stagger first 4 cards on initial load
+                const entryStyle = isFirstLoad && i < 4
+                  ? { animationDelay: `${i * 75}ms` }
+                  : {}
+                return (
+                  <div
+                    key={p.id}
+                    className={isFirstLoad && i < 4 ? 'animate-fade-in-up' : ''}
+                    style={entryStyle}
+                  >
+                    <ProductCard
+                      id={p.id}
+                      name={p.name}
+                      brand={p.brand}
+                      unit={p.unit}
+                      categoryName={p.category.name}
+                      sellingPrice={p.sellingPrice}
+                      currency={p.currency}
+                      hasPhoto={p.hasPhoto}
+                      availableQty={p.availableQty}
+                      isB2B={isB2B}
+                      priority={i < 4}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Sentinel — IntersectionObserver target. Sits just below the last
+                rendered card. When it enters the viewport (rootMargin 300 px
+                pre-trigger) the observer appends the next PAGE_SIZE cards.
+                The spinner only shows while more items remain. */}
+            <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden>
+              {displayCount < filtered.length && (
+                <FlexxoSpinner size="sm" color="green" />
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

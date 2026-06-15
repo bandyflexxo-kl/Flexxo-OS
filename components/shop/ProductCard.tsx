@@ -21,10 +21,11 @@ type Props = {
   hasPhoto:     boolean
   availableQty?: number | null   // QNE stock; null/undefined = not yet synced
   isB2B?:       boolean   // optional — card works without it (guest add-to-cart)
+  priority?:    boolean   // true for first visible cards — emits <link rel="preload">
 }
 
 export default function ProductCard({
-  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, availableQty = null, isB2B = false,
+  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, availableQty = null, isB2B = false, priority = false,
 }: Props) {
   const router = useRouter()
   const [cartState, setCartState] = useState<'idle' | 'loading' | 'added'>('idle')
@@ -80,7 +81,7 @@ export default function ProductCard({
               src={`/api/portal/photo/${id}`}
               alt={name}
               fill
-              unoptimized          /* API route — skip optimization pipeline */
+              priority={priority}
               sizes="(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw"
               className="object-contain p-4 group-hover:scale-105 transition-transform duration-300"
             />

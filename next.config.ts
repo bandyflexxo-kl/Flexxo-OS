@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep pdf-parse out of the webpack/turbopack bundle so Node.js loads its
+  // CJS entry natively — prevents pdfjs-dist from crashing on missing browser
+  // globals (DOMMatrix, ImageData, Path2D) that only exist in a browser context.
+  serverExternalPackages: ['pdf-parse'],
+
   // ── Security headers ──────────────────────────────────────────────────────
   // Applied to every response. CSP intentionally omitted — the shop page uses
   // inline event handlers and Google Fonts; a strict CSP needs careful tuning

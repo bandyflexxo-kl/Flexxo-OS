@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { buildAndSendDigest } from '@/lib/dailyDigest'
+import { renewDriveWatchIfNeeded } from '@/lib/driveWatch'
 
 export async function GET(request: Request) {
   // Authenticate: Vercel sends Authorization header, or use CRON_SECRET for manual testing
@@ -7,6 +8,19 @@ export async function GET(request: Request) {
   const expected = `Bearer ${process.env.CRON_SECRET ?? ''}`
   if (!process.env.CRON_SECRET || auth !== expected) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Renew Drive push-notification channel if it expires within 24h
+  const adminWithDrive = await prisma.user.findFirst({
+    where: {
+      isActive:           true,
+      googleRefreshToken: { not: null },
+      userRoles: { some: { revokedAt: null, role: { name: { in: ['Admin', 'Director'] } } } },
+    },
+    select: { googleRefreshToken: true },
+  })
+  if (adminWithDrive?.googleRefreshToken) {
+    await renewDriveWatchIfNeeded(adminWithDrive.googleRefreshToken).catch(() => null)
   }
 
   // Fetch all active internal users with real emails
