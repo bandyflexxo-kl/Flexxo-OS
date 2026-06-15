@@ -6,7 +6,7 @@
  *  - Fetches all active, non-bundled stock items from QNE
  *  - Creates/updates Product records (upserted by qneItemCode)
  *  - Creates SupplierPriceVersion records (using purchasePrice as costPrice)
- *  - Maps QNE category strings to the 12 CRM product categories
+ *  - Classifies each product into the 10-category tree via lib/productClassifier
  *
  * Run: npx tsx scripts/syncQneProducts.ts
  * Requires: Radmin VPN connected to Flexxokl
@@ -17,78 +17,60 @@ import { resolve } from 'path'
 config({ path: resolve(process.cwd(), '.env.local') })
 
 import fetch from 'node-fetch'
-import { qneParentSlug, qneChildSlug } from '../lib/categorySlug'
+import { classify } from '../lib/productClassifier'
 
 const BASE_URL = process.env.QNE_API_BASE_URL ?? 'http://26.255.19.220:82'
 const DB_CODE  = process.env.QNE_DB_CODE       ?? 'FKLSB'
 const USERNAME = process.env.QNE_API_USERNAME  ?? 'SALES 6'
 const PASSWORD = process.env.QNE_API_PASSWORD  ?? '12345'
 
-// ── Category mapping: QNE category string → CRM slug ──────────────────────
+// ── QNE category string → legacy parent-hint slug ────────────────────────
+// These old slugs are recognised by classify() via the TREE[].oldSlugs arrays,
+// which map them to the correct new parent (e.g. 'printer-consumables' →
+// Printer Supplies, 'hygiene-cleaning' → Janitorial).
 
 const CATEGORY_MAP: Record<string, string> = {
-  // Printer consumables
   'PRT CATRIDGE/TONER': 'printer-consumables',
   'PRT CATRIDGE':       'printer-consumables',
   'INK CARTRIDGE':      'printer-consumables',
   'TONER':              'printer-consumables',
   'PRINTER':            'printer-consumables',
   'PRINTING':           'printer-consumables',
-
-  // Stationery
   'STATIONERY':         'office-stationery',
   'OFFICE STATIONERY':  'office-stationery',
   'FILING':             'office-stationery',
   'WRITING':            'office-stationery',
-
-  // Paper
-  'PAPER':              'paper',
-  'A4 PAPER':           'paper',
-  'COPY PAPER':         'paper',
-
-  // Battery
-  'BATTERY':            'battery',
-  'BATTERIES':          'battery',
-
-  // Pantry & Food
+  'PAPER':              'office-stationery',
+  'A4 PAPER':           'office-stationery',
+  'COPY PAPER':         'office-stationery',
+  'BATTERY':            'office-stationery',
+  'BATTERIES':          'office-stationery',
   'PANTRY':             'office-food-pantry',
   'PANTRY/BEVERAGE':    'office-food-pantry',
   'FOOD':               'office-food-pantry',
   'BEVERAGE':           'office-food-pantry',
   'COFFEE':             'office-food-pantry',
   'DRINKING':           'office-food-pantry',
-
-  // Hygiene
   'HYGIENE':            'hygiene-cleaning',
   'CLEANING':           'hygiene-cleaning',
   'SANITARY':           'hygiene-cleaning',
   'TISSUE':             'hygiene-cleaning',
-
-  // Furniture
   'FURNITURE':          'furniture',
   'CHAIR':              'furniture',
   'TABLE':              'furniture',
   'SOFA':               'furniture',
   'CABINET':            'furniture',
   'PARTITION':          'furniture',
-
-  // Thermal roll
   'THERMAL ROLL':       'thermal-roll',
   'THERMAL':            'thermal-roll',
   'THERMAL PAPER':      'thermal-roll',
-
-  // Safety & PPE
   'SAFETY':             'safety-ppe',
   'PPE':                'safety-ppe',
   'SAFETY & PPE':       'safety-ppe',
-
-  // Corporate gift
-  'CORPORATE GIFT':     'corporate-gift',
-  'GIFT':               'corporate-gift',
-  'GIFTS':              'corporate-gift',
-  'PREMIUM':            'corporate-gift',
-
-  // Office machine
+  'CORPORATE GIFT':     'office-stationery',
+  'GIFT':               'office-stationery',
+  'GIFTS':              'office-stationery',
+  'PREMIUM':            'office-stationery',
   'OFFICE MACHINE':     'office-machine',
   'MACHINE':            'office-machine',
   'MACHINES':           'office-machine',
@@ -98,9 +80,7 @@ const CATEGORY_MAP: Record<string, string> = {
 function mapCategory(qneCat: string | null): string {
   if (!qneCat) return 'other'
   const upper = qneCat.trim().toUpperCase()
-  // Exact match first
-  if (CATEGORY_MAP[upper]) return CATEGORY_MAP[upper]
-  // Partial match
+  if (CATEGORY_MAP[upper]) return CATEGORY_MAP[upper]!
   for (const [key, slug] of Object.entries(CATEGORY_MAP)) {
     if (upper.includes(key) || key.includes(upper)) return slug
   }
@@ -232,16 +212,12 @@ async function main() {
 
   for (const stock of valid) {
     try {
-      // Category assignment — prefer the QNE-mirrored tree (created by
-      // scripts/buildCategoryTree.ts): child slug `category--group`, then
-      // parent slug `category`. Fall back to the legacy keyword map.
-      const rawCat   = stock.category?.trim() || null
-      const rawGroup = stock.group?.trim()    || null
-      const treeSlug =
-        (rawCat && rawGroup && catMap[qneChildSlug(rawCat, rawGroup)] ? qneChildSlug(rawCat, rawGroup) : null) ??
-        (rawCat && catMap[qneParentSlug(rawCat)] ? qneParentSlug(rawCat) : null)
-      const slug     = treeSlug ?? mapCategory(stock.category)
-      const catId    = catMap[slug] ?? catMap['other']
+      // Classify by product name using the 10-category keyword tree.
+      // mapCategory() maps the QNE category string to a legacy slug that
+      // classify() recognises via TREE[].oldSlugs as a parent-category hint.
+      const legacyParent = mapCategory(stock.category)
+      const { subSlug }  = classify(stock.stockName, legacyParent)
+      const catId        = catMap[subSlug] ?? catMap['os--general'] ?? catMap['other']
       const brand    = stock.class?.trim() || null
       const unit     = stock.baseUOM?.trim() || null
 
