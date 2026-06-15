@@ -1,5 +1,5 @@
 # Flexxo Sales OS — Project Memory
-Last updated: 15 June 2026 (session 6)
+Last updated: 15 June 2026 (session 7)
 
 ## What this project is
 Internal B2B Sales CRM + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
@@ -248,6 +248,19 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - **Daily Digest**: Cron job emails Admin/Manager a daily summary of overdue follow-ups.
 - **Admin Stock Gaps page** (`/admin/stock-gaps`): Lists sub-categories with products that all show 0 stock after a sync — admin decides what to keep stocking.
 
+### Session 7 fixes (15 Jun 2026)
+- **Photo loading** (`components/shop/ProductCard.tsx`): removed `unoptimized={true}` — Next.js Image Optimization now active. Browser caches optimized WebP at display width (256-384px) for 1 year (`/_next/image`). `priority={i < 4}` on first 4 cards emits `<link rel="preload">`.
+- **Photo proxy cache** (`app/api/portal/photo/[productId]/route.ts`): module-level admin token cache (1h TTL, eliminates 1 DB query per photo request) + photo buffer LRU cache (150 entries, 1h TTL, ~15MB — hot photos from memory, no Drive API call). `X-Cache: HIT/MISS` header.
+- **Shop infinite scroll** (`components/shop/ProductsClientPage.tsx`): IntersectionObserver-based infinite scroll, PAGE_SIZE=30, `rootMargin: 300px` pre-trigger. All filter/search/category changes reset `displayCount`. Replaces the old approach of rendering all 7,533 cards at once.
+- **Category switch fix**: `window.history.replaceState` replaces `router.replace` — eliminates 1-2s server navigation delay when clicking category in sidebar.
+- **SSR products re-enabled** (`app/shop/products/page.tsx`): `fetchProductsCached()` called server-side alongside categories. Products embedded in RSC payload — no "Loading catalogue..." spinner, no separate client API call. Redis hits Upstash (not Supabase) so no pool contention.
+- **Price scanner** (`/admin/price-scanner`): new page scans entire Google Drive price-list folder. Shows all PDFs + images (New / Already processed status), auto-matches sub-folder name to supplier. Extract one file or "Extract All New" batch. Links to staging review after extraction.
+- **DriveBrowser images**: JPEG/PNG/WebP files now show clickable (not greyed out) in the Drive browser. `mimeType` passed to extract endpoint.
+- **Image extraction** (`lib/pdfExtract.ts`): new `extractPricesFromImage(buffer, mimeType)` via Claude Vision — same JSON prompt as PDF extraction. Supplier price list photos now fully supported.
+- **Auto-match extracted rows** (`app/api/suppliers/[id]/extract-from-drive/route.ts`): after extraction, rows auto-matched to products via token-Jaccard (≥0.65 = matched, 0.40-0.64 = possible, <0.40 = no match) + exact QNE item code match. Staging review shows pre-populated match status.
+- **Schema**: `SupplierPriceFile` — added `fileHash` and `driveModifiedTime` for deduplication detection in price scanner.
+- **pdf-parse v2 fix** (`lib/pdfExtract.ts`): global stubs for `DOMMatrix`, `ImageData`, `Path2D` prevent browser-globals crash in serverless.
+
 ### Session 5 fixes (14–15 Jun 2026)
 - All 7,533 products now visible in shop (isVisibleToCustomers = true bulk update + Redis cache busted)
 - HSTS header (`Strict-Transport-Security`) now production-only in `next.config.ts` — was breaking `http://localhost` in Chrome dev
@@ -418,6 +431,9 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - Stock gate in `lib/products-api.ts`: `OR: [{ qneAvailableQty: null }, { qneAvailableQty: { gt: 0 } }]` — null = never synced = visible; 0 = confirmed out of stock = hidden
 - Lalamove booking: always quote-preview first (`GET /api/orders/[id]/delivery-quote`), then confirm (`POST /api/orders/[id]/book-delivery` with quoteId). Smart time + surge in `lib/lalamoveBooking.ts`.
 - `lib/lalamoveClient.ts`: `scheduleAt?: string` (ISO 8601 UTC) in quotation params — used by smart booking time
+- **Shop photo serving**: `app/api/portal/photo/[productId]/route.ts` — Google Drive proxy with module-level token cache (1h) + photo buffer LRU cache (150 entries, 1h); Next.js Image Optimization (`/_next/image`) active — WebP, resize to display width, 1-year browser cache; `unoptimized` prop MUST NOT be used on ProductCard
+- **Shop infinite scroll**: `components/shop/ProductsClientPage.tsx` — `PAGE_SIZE=30`, `IntersectionObserver` with `rootMargin: 300px`; `displayCount` resets on every filter/category/search change; sentinel `<div ref={sentinelRef}>` below product grid
+- **Category switch (no server nav)**: `window.history.replaceState({}, '', url)` instead of `router.replace()` — URL updates instantly without triggering Next.js server navigation
 
 ## What NOT to automate (v1 rules)
 - Do not auto-promote QNE staging records
