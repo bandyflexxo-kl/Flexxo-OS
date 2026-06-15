@@ -145,7 +145,7 @@ export const TREE: ParentCat[] = [
       {
         name: 'Printers & Copiers',
         slug: 'ps--printers',
-        keywords: ['laser printer', 'inkjet printer', 'multifunction printer', 'mfc printer', 'all-in-one printer', 'dot matrix printer', 'portable printer', 'photo printer', 'copier'],
+        keywords: ['laser printer', 'inkjet printer', 'multifunction printer', 'mfc printer', 'all-in-one printer', 'colour printer', 'color printer', 'laser 3 in 1', 'inkjet 3 in 1', 'mfp', 'dot matrix printer', 'portable printer', 'photo printer', 'copier'],
       },
       {
         name: 'Thermal Rolls',
@@ -307,15 +307,32 @@ export const TREE: ParentCat[] = [
     slug: 'breakroom',
     oldSlugs: ['office-food-pantry'],
     subCats: [
-      {
-        name: 'Beverages',
-        slug: 'br--beverages',
-        keywords: ['coffee', 'nescafe', 'nescafé', 'milo', 'tea ', 'green tea', 'mineral water', 'drinking water', 'juice', '3-in-1', '3 in 1', 'cappuccino', 'white coffee', 'ovaltine', 'horlicks', 'ribena', 'isotonic'],
-      },
+      // Snacks checked BEFORE Beverages so 'oat rich tea biscuit' beats 'tea ' keyword
       {
         name: 'Snacks & Food',
         slug: 'br--snacks-food',
-        keywords: ['biscuit', 'cracker', 'cookie', 'cup noodle', 'instant noodle', 'snack', 'chocolate', 'candy', 'sweet', 'wafer', 'nuts', 'muesli'],
+        keywords: [
+          'biscuit', 'cracker', 'cookie', 'cup noodle', 'instant noodle', 'snack',
+          'candy', 'wafer', 'nuts', 'muesli', 'peanut', 'salted peanut',
+          // chocolate-specific (avoid plain 'chocolate' which matches colour names)
+          'chocolate biscuit', 'chocolate sandwich', 'chocolate wafer', 'chocolate coated',
+          'chocolate cream', 'chocolate hazelnut', 'chocolate oat', 'chocolate stick',
+          // brand/product name specifics
+          'love letter', 'oat rich tea', 'rich tea biscuit', 'coffee waffle',
+        ],
+      },
+      {
+        name: 'Beverages',
+        slug: 'br--beverages',
+        keywords: [
+          'coffee', 'nescafe', 'nescafé', 'milo', 'tea ', 'green tea',
+          'mineral water', 'drinking water', 'juice', 'cappuccino', 'white coffee',
+          'ovaltine', 'horlicks', 'ribena', 'isotonic',
+          // removed '3 in 1' / '3-in-1' — too generic (matches printers, cutlery sets)
+          // added specific beverage types
+          'vico ', 'nestum', 'uht milk', 'oat milk', 'malt drink', 'chocolate malt',
+          'creamer ', 'dairy creamer', 'condensed milk', 'barista', 'coffeemix', 'coffee mix',
+        ],
       },
       { name: 'General Breakroom', slug: 'br--general', keywords: [] },
     ],
@@ -398,7 +415,27 @@ export const TREE: ParentCat[] = [
 // the wrong parent (e.g. ladders under office-machine).
 
 export const OVERRIDES: Override[] = [
-  // Ladders
+  // ── False-positive fixes ─────────────────────────────────────────────────────
+  // These fire BEFORE any sub-cat keyword matching to prevent generic words like
+  // '3 in 1', 'coffee', 'chocolate', 'juice', 'sweet' from pulling non-food items
+  // into Breakroom categories.
+
+  // Multifunction printers say "3 IN 1" or "COLOUR PRINTER" — must not match beverages
+  { keywords: ['colour printer', 'color printer', 'laser 3 in 1', 'inkjet 3 in 1', '3 in 1 colour printer', '3-in-1 printer'], parentSlug: 'printer-supplies', subSlug: 'ps--printers' },
+
+  // Mounting/art boards have colours in name ('CHOCOLATE', 'CREAM') — must not match snacks
+  { keywords: ['mounting board', 'art board', 'foam board'], parentSlug: 'office-stationery', subSlug: 'os--general' },
+
+  // Outdoor/plastic chairs have colour 'COFFEE' in name — must not match beverages
+  { keywords: ['outdoor chair', 'garden chair', 'monobloc chair', 'plastic chair antirust'], parentSlug: 'office-furniture', subSlug: 'of--office-chairs' },
+
+  // Aroma diffuser has 'SWEET' in name — must not match snacks
+  { keywords: ['aroma diffuser', 'essential oil diffuser', 'reed diffuser', 'ultrasonic diffuser'], parentSlug: 'janitorial', subSlug: 'jan--air-fresheners' },
+
+  // Breakroom appliances: juicer has 'juice' as substring, cutlery has '3 in 1'
+  { keywords: ['juicer', 'juice maker', 'juice extractor', 'coffee machine', 'coffee maker', 'coffee grinder', 'water dispenser', 'water boiler', 'cutlery set', 'microwave oven'], parentSlug: 'breakroom', subSlug: 'br--general' },
+
+  // ── Ladders ──────────────────────────────────────────────────────────────────
   { keywords: ['ladder', 'step ladder', 'extension ladder', 'foldable ladder'], parentSlug: 'office-equipment', subSlug: 'oe--ladders' },
 
   // Power accessories
@@ -434,7 +471,7 @@ export const OVERRIDES: Override[] = [
   // Janitorial
   { keywords: ['floor cleaner', 'toilet cleaner', 'ajax fabuloso', 'ajax multi purpose', 'magiclean', 'domestos', 'harpic', 'mr muscle', 'ajax cleaner'], parentSlug: 'janitorial', subSlug: 'jan--cleaning' },
   { keywords: ['air freshener', 'ambi pur', 'febreze', 'glade ', 'instantmatic'], parentSlug: 'janitorial', subSlug: 'jan--air-fresheners' },
-  { keywords: ['hand sanitizer', 'hand sanitiser', 'septisol', 'septi-sol', 'alcohol handrub'], parentSlug: 'janitorial', subSlug: 'jan--sanitary' },
+  { keywords: ['hand sanitizer', 'hand sanitiser', 'hand wash', 'handwash', 'hand soap', 'septisol', 'septi-sol', 'alcohol handrub'], parentSlug: 'janitorial', subSlug: 'jan--sanitary' },
   { keywords: ['dustbin', 'rubbish bin', 'waste bin', 'garbage bin', 'pedal bin', 'pail with cover', 'gallon pail', 'garbage bag', 'bin liner'], parentSlug: 'janitorial', subSlug: 'jan--waste' },
   { keywords: ['fogger', 'fogging machine', 'disinfection machine', 'misting machine', 'anion humidifier', 'spray anion'], parentSlug: 'janitorial', subSlug: 'jan--fogging' },
   { keywords: ['toilet roll', 'toilet paper', 'tissue roll', 'hand towel paper', 'sanitary bin', 'hand dryer auto'], parentSlug: 'janitorial', subSlug: 'jan--restroom' },
