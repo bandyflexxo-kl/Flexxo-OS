@@ -1,11 +1,9 @@
 import { prisma } from '@/lib/prisma'
 import { downloadDriveFile } from '@/lib/googleDrive'
 
-// Tell Vercel's edge CDN to cache each photo response for 24 hours.
-// Keyed by full URL path — each product ID is cached independently.
-// First request fetches from Google Drive; all subsequent hits within
-// 24 h are served from the edge with zero DB calls and zero Drive API calls.
-export const revalidate = 86400
+// Force dynamic so Vercel never ISR-caches a failed response.
+// CDN caching is handled by Cache-Control: s-maxage=86400 on successful responses.
+export const dynamic = 'force-dynamic'
 
 // ── Module-level caches (survive across requests within a Node.js process) ──
 //
@@ -91,7 +89,13 @@ export async function GET(
 
   const refreshToken = await getAdminToken()
   if (!refreshToken) {
+    console.error('[photo] No admin with googleRefreshToken found in DB. Has an admin connected Google Drive?')
     return new Response('Photo service unavailable', { status: 503 })
+  }
+
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    console.error('[photo] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET env var is missing — cannot refresh Drive token')
+    return new Response('Photo service misconfigured', { status: 503 })
   }
 
   try {
@@ -101,15 +105,12 @@ export async function GET(
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type':  'image/jpeg',
-        // max-age=86400     → browser caches for 24 h
-        // s-maxage=86400    → Vercel edge CDN caches for 24 h
-        // stale-while-revalidate=3600 → serve stale for up to 1 h while
-        //   the edge revalidates in background (no visible delay on expiry)
         'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600',
         'X-Cache':       'MISS',
       },
     })
-  } catch {
+  } catch (err) {
+    console.error('[photo] Drive download failed for fileId', driveFileId, err)
     return new Response('Photo not found', { status: 404 })
   }
 }
