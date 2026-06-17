@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { companyOwnerFilter } from '@/lib/authorization'
 import Topbar from '@/components/layout/Topbar'
+import NewQuotationButton from '@/components/quotations/NewQuotationButton'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:          'bg-gray-100 text-gray-600',
@@ -39,7 +40,7 @@ export default async function QuotationsPage() {
 
   return (
     <div>
-      <Topbar title="Quotations" />
+      <Topbar title="Quotations" actions={<NewQuotationButton />} />
       <div className="p-6 space-y-5">
 
         {/* Stats row */}

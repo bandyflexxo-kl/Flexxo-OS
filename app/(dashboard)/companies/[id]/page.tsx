@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { isPrivilegedRole } from '@/lib/authorization'
 import QneFinancialTab from '@/components/companies/QneFinancialTab'
+import NewQuotationButton from '@/components/quotations/NewQuotationButton'
 
 export default async function CompanyDetailPage({
   params,
@@ -234,6 +235,10 @@ export default async function CompanyDetailPage({
 
         {tab === 'quotations' && (
           <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Quotations</h3>
+              <NewQuotationButton companyId={company.id} />
+            </div>
             {company.quotations.length === 0 ? (
               <p className="text-sm text-gray-400">No quotations yet.</p>
             ) : (
