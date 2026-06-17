@@ -10,6 +10,28 @@ export function createOAuth2Client() {
   )
 }
 
+// Service Account client — uses GOOGLE_SERVICE_ACCOUNT_KEY (JSON string) from env.
+// Never expires; preferred over OAuth for all Drive reads.
+function getServiceAccountDriveClient() {
+  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not set')
+  const credentials = JSON.parse(keyJson) as Record<string, string>
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+  })
+  return google.drive({ version: 'v3', auth })
+}
+
+// SA takes priority; falls back to OAuth when refreshToken is supplied.
+function resolveDriveClient(refreshToken?: string | null) {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) return getServiceAccountDriveClient()
+  if (refreshToken) return getDriveClient(refreshToken)
+  throw new Error(
+    'No Drive credentials. Set GOOGLE_SERVICE_ACCOUNT_KEY or connect Google Drive at /admin/settings.',
+  )
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 export function getGoogleAuthUrl(state: string): string {
@@ -53,10 +75,10 @@ export type DriveItem = {
 }
 
 export async function listDriveFolder(
-  refreshToken: string,
+  refreshToken: string | null | undefined,
   folderId:     string,
 ): Promise<DriveItem[]> {
-  const drive     = getDriveClient(refreshToken)
+  const drive     = resolveDriveClient(refreshToken)
   const allItems: DriveItem[] = []
   let pageToken: string | undefined = undefined
 
@@ -90,7 +112,7 @@ export async function listDriveFolder(
 
 // Recursively list ALL files in a folder and its subfolders (up to maxDepth levels)
 export async function listDriveFolderRecursive(
-  refreshToken: string,
+  refreshToken: string | null | undefined,
   folderId:     string,
   maxDepth      = 3,
 ): Promise<DriveItem[]> {
@@ -115,10 +137,10 @@ export function normaliseStem(s: string): string {
 }
 
 export async function downloadDriveFile(
-  refreshToken: string,
+  refreshToken: string | null | undefined,
   fileId:       string,
 ): Promise<Buffer> {
-  const drive = getDriveClient(refreshToken)
+  const drive = resolveDriveClient(refreshToken)
 
   const res = await drive.files.get(
     { fileId, alt: 'media' },

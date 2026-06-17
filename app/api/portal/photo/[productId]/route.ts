@@ -5,26 +5,22 @@ import { downloadDriveFile } from '@/lib/googleDrive'
 // CDN caching is handled by Cache-Control: s-maxage=86400 on successful responses.
 export const dynamic = 'force-dynamic'
 
-// ── Module-level caches (survive across requests within a Node.js process) ──
-//
-// _adminToken: avoids 1 DB round-trip per photo request by caching the admin
-//   Google refresh token for 1 hour. On Vercel, this is per-instance; on
-//   localhost, it's shared across all requests in the same dev server process.
-//
-// _photoCache: caches downloaded Drive buffers for 1 hour with a 150-entry
-//   LRU-lite cap (~15 MB max). Hot photos (top of category) are served from
-//   memory — no Drive API call, no auth overhead.
-
-let _adminToken: string | null = null
-let _adminTokenAt = 0
+// ── Photo buffer cache (LRU-lite, 150 entries × ~100 KB ≈ 15 MB) ──────────
+// Hot photos served from memory — no Drive API call per request.
+// When GOOGLE_SERVICE_ACCOUNT_KEY is set, there is no per-request DB query
+// either: the SA client is stateless and reused via googleapis internals.
 
 const _photoCache = new Map<string, { buf: Buffer; at: number }>()
-const CACHE_TTL = 3_600_000   // 1 hour in ms
-const CACHE_MAX = 150         // max entries (~100 KB avg × 150 ≈ 15 MB)
+const CACHE_TTL = 3_600_000
+const CACHE_MAX = 150
 
-async function getAdminToken(): Promise<string | null> {
-  if (_adminToken && Date.now() - _adminTokenAt < CACHE_TTL) return _adminToken
+// OAuth fallback: cache admin refresh token to avoid 1 DB query per photo
+// when SA is not configured. Unused when GOOGLE_SERVICE_ACCOUNT_KEY is set.
+let _oauthToken: string | null = null
+let _oauthTokenAt = 0
 
+async function getOAuthFallbackToken(): Promise<string | null> {
+  if (_oauthToken && Date.now() - _oauthTokenAt < CACHE_TTL) return _oauthToken
   const adminUser = await prisma.user.findFirst({
     where: {
       isActive:           true,
@@ -33,10 +29,9 @@ async function getAdminToken(): Promise<string | null> {
     },
     select: { googleRefreshToken: true },
   })
-
-  _adminToken    = adminUser?.googleRefreshToken ?? null
-  _adminTokenAt  = Date.now()
-  return _adminToken
+  _oauthToken   = adminUser?.googleRefreshToken ?? null
+  _oauthTokenAt = Date.now()
+  return _oauthToken
 }
 
 function getCached(driveFileId: string): Buffer | null {
@@ -87,19 +82,19 @@ export async function GET(
     })
   }
 
-  const refreshToken = await getAdminToken()
-  if (!refreshToken) {
-    console.error('[photo] No admin with googleRefreshToken found in DB. Has an admin connected Google Drive?')
-    return new Response('Photo service unavailable', { status: 503 })
-  }
-
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    console.error('[photo] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET env var is missing — cannot refresh Drive token')
-    return new Response('Photo service misconfigured', { status: 503 })
+  // SA-first: when GOOGLE_SERVICE_ACCOUNT_KEY is set, pass null — resolveDriveClient
+  // uses the SA and never needs a DB token. Fall back to admin OAuth token when no SA.
+  let driveToken: string | null = null
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    driveToken = await getOAuthFallbackToken()
+    if (!driveToken) {
+      console.error('[photo] No GOOGLE_SERVICE_ACCOUNT_KEY and no admin OAuth token in DB. Set up a Service Account or reconnect Google Drive at /admin/settings.')
+      return new Response('Photo service unavailable', { status: 503 })
+    }
   }
 
   try {
-    const buffer = await downloadDriveFile(refreshToken, driveFileId)
+    const buffer = await downloadDriveFile(driveToken, driveFileId)
     setCache(driveFileId, buffer)
 
     return new Response(new Uint8Array(buffer), {

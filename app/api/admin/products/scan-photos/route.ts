@@ -19,17 +19,19 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Product photos folder ID not configured. Set it at /admin/settings.' }, { status: 500 })
   }
 
-  // Get admin user's Google refresh token
-  const adminUser = await prisma.user.findUnique({
+  const hasSA     = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  const adminUser = hasSA ? null : await prisma.user.findUnique({
     where:  { id: session.userId },
     select: { googleRefreshToken: true },
   })
-  if (!adminUser?.googleRefreshToken) {
+  if (!hasSA && !adminUser?.googleRefreshToken) {
     return Response.json({ error: 'Google Drive not connected. Connect at /admin/settings first.' }, { status: 403 })
   }
 
+  const driveToken = hasSA ? null : adminUser!.googleRefreshToken!
+
   // Recursively list ALL files in the product photos folder (and subfolders)
-  const items = await listDriveFolderRecursive(adminUser.googleRefreshToken, folderId)
+  const items = await listDriveFolderRecursive(driveToken, folderId)
 
   // Build two maps for matching:
   //   exactMap: exact stem (uppercase) → Drive file ID

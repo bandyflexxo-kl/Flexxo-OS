@@ -14,18 +14,19 @@ export async function GET(request: Request) {
     return Response.json({ error: 'No folder ID provided and GOOGLE_DRIVE_FOLDER_ID is not set.' }, { status: 400 })
   }
 
-  // Get the admin user's Google refresh token
-  const user = await prisma.user.findUnique({
+  const hasSA = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  const user  = hasSA ? null : await prisma.user.findUnique({
     where:  { id: session.userId },
     select: { googleRefreshToken: true },
   })
-
-  if (!user?.googleRefreshToken) {
+  if (!hasSA && !user?.googleRefreshToken) {
     return Response.json({ error: 'Google Drive not connected. Please connect your Google account first.' }, { status: 403 })
   }
 
+  const driveToken = hasSA ? null : user!.googleRefreshToken!
+
   try {
-    const items = await listDriveFolder(user.googleRefreshToken, folderId)
+    const items = await listDriveFolder(driveToken, folderId)
     return Response.json({ items, folderId })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to list Drive folder'

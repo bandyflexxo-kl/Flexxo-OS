@@ -35,7 +35,7 @@ type FileWithHint = {
 // Single recursive walk — builds file list + folder hints in one pass
 // Parallel recursive walk — sibling folders are fetched concurrently
 async function listFilesWithHints(
-  refreshToken: string,
+  refreshToken: string | null,
   folderId:     string,
   parentName:   string | null,
   depth:        number,
@@ -87,18 +87,21 @@ export async function GET() {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   if (!['Admin', 'Director'].includes(session.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
-  const user = await prisma.user.findUnique({
+  const hasSA = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  const user  = hasSA ? null : await prisma.user.findUnique({
     where:  { id: session.userId },
     select: { googleRefreshToken: true },
   })
-  if (!user?.googleRefreshToken) {
+  if (!hasSA && !user?.googleRefreshToken) {
     return Response.json({ error: 'Connect Google Drive first.' }, { status: 403 })
   }
+
+  const driveToken = hasSA ? null : user!.googleRefreshToken!
 
   // Single-pass Drive tree walk (max 4 levels deep)
   let driveFiles: FileWithHint[]
   try {
-    driveFiles = await listFilesWithHints(user.googleRefreshToken, PRICE_FOLDER_ID, null, 0, 4)
+    driveFiles = await listFilesWithHints(driveToken, PRICE_FOLDER_ID, null, 0, 4)
   } catch (err) {
     return Response.json({ error: `Drive scan failed: ${err instanceof Error ? err.message : err}` }, { status: 502 })
   }

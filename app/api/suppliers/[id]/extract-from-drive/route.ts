@@ -68,13 +68,16 @@ export async function POST(
   const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } })
   if (!supplier) return Response.json({ error: 'Supplier not found' }, { status: 404 })
 
-  const user = await prisma.user.findUnique({
+  const hasSA = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  const user  = hasSA ? null : await prisma.user.findUnique({
     where:  { id: session.userId },
     select: { googleRefreshToken: true },
   })
-  if (!user?.googleRefreshToken) {
+  if (!hasSA && !user?.googleRefreshToken) {
     return Response.json({ error: 'Google Drive not connected.' }, { status: 403 })
   }
+
+  const driveToken = hasSA ? null : user!.googleRefreshToken!
 
   const body   = await request.json() as unknown
   const parsed = Schema.safeParse(body)
@@ -87,7 +90,7 @@ export async function POST(
   // 1. Download file
   let fileBuffer: Buffer
   try {
-    fileBuffer = await downloadDriveFile(user.googleRefreshToken, fileId)
+    fileBuffer = await downloadDriveFile(driveToken, fileId)
   } catch (err) {
     return Response.json({ error: `Drive download failed: ${err instanceof Error ? err.message : err}` }, { status: 502 })
   }
