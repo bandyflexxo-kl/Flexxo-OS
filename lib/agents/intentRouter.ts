@@ -41,10 +41,10 @@ Intent options:
 4. approval — user approving or rejecting something (quotation, account request)
    {"type":"approval","action":"approve"|"reject","ref":"<QT-YYYY-NNNN or short ID>","reason":"<if rejecting, optional reason>"}
 
-5. admin_query — user asking about pending items, overdue, account requests, order status, admin reports
+5. admin_query — ONLY: pending quotation approvals, pending B2B account requests, or "what needs attention today" summaries
    {"type":"admin_query"}
 
-6. general — product questions, client history, recommendations, price, stock — falls to Sales Agent
+6. general — everything else: my companies/clients, client history, product search, prices, stock, recommendations, follow-ups, sales info — falls to Sales Agent
    {"type":"general"}
 
 Rules:
@@ -52,7 +52,8 @@ Rules:
 - If the message references an order number (ORD-...) and delivery/book/send, use "delivery_booking"
 - If the message asks about what needs to be delivered or is ready for delivery, use "delivery_list"
 - "approve" / "reject" + a reference = "approval"
-- Questions about pending approvals, account requests, overdue invoices = "admin_query"
+- ONLY use "admin_query" for: pending approvals list, pending account requests list, "what needs attention today"
+- "my companies", "assigned to me", "my clients", "my accounts", client history = "general" (Sales Agent)
 - Product search, prices, client history, recommendations = "general"
 - When uncertain, use "general"`
 
