@@ -1,7 +1,7 @@
 import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
-import ReorderButton from '@/components/shop/ReorderButton'
+import ReorderModal from '@/components/shop/ReorderModal'
 
 const STATUS_COLORS: Record<string, string> = {
   Confirmed:       'bg-yellow-100 text-yellow-700',
@@ -97,7 +97,7 @@ export default async function ShopOrdersPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       {/* Condition 24: Reorder button for authenticated users */}
-                      <ReorderButton orderId={o.id} />
+                      <ReorderModal orderId={o.id} />
                       <Link
                         href={`/shop/orders/${o.id}`}
                         className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"

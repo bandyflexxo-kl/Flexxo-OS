@@ -48,3 +48,11 @@ dev.log
 next-env.d.ts
 
 /app/generated/prisma
+
+.vercel
+
+# sensitive / data files
+flexxo-os-*.json
+kch-cats.json
+photo-gap-report.csv
+group

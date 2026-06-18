@@ -605,42 +605,48 @@ export default function ProductsClientPage({
       {/* ── Main content ──────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
 
-        {/* ── Horizontal scroll category pills — mobile only ─────── */}
-        <div className="lg:hidden -mx-4 px-4">
-          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar snap-x snap-mandatory">
-            <button
-              onClick={() => selectCategory('')}
-              className={`shrink-0 snap-start flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-all border touch-manipulation ${
-                !activeCategory
-                  ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
-              }`}
-            >
-              🏪 All
-              {allProducts && (
-                <span className={`tabular-nums text-[10px] ${!activeCategory ? 'text-green-100' : 'text-gray-400'}`}>
-                  {allProducts.length.toLocaleString()}
-                </span>
-              )}
-            </button>
+        {/* ── Category grid — mobile only (all visible, no horizontal scroll) ── */}
+        <div className="lg:hidden">
+          {/* "All Products" spans full width */}
+          <button
+            onClick={() => selectCategory('')}
+            className={`w-full flex items-center justify-between px-3.5 py-2 mb-2 rounded-xl text-xs font-semibold transition-all border touch-manipulation ${
+              !activeCategory
+                ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">🏪 All Products</span>
+            {allProducts && (
+              <span className={`tabular-nums text-[10px] ${!activeCategory ? 'text-green-100' : 'text-gray-400'}`}>
+                {allProducts.length.toLocaleString()}
+              </span>
+            )}
+          </button>
+
+          {/* 2-column grid — all 10 parent categories visible at once */}
+          <div className="grid grid-cols-2 gap-2">
             {categoryTree.map(cat => {
               const count  = countByCategory.get(cat.id) ?? 0
-              // Parent pill highlights when it OR one of its children is active
               const active = activeCategory === cat.id || parentOfChild.get(activeCategory) === cat.id
               const emoji  = CAT_EMOJI[cat.name] ?? '📋'
               return (
                 <button
                   key={cat.id}
                   onClick={() => selectCategory(cat.id)}
-                  className={`shrink-0 snap-start flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-all border touch-manipulation ${
+                  title={cat.name}
+                  className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border touch-manipulation text-left ${
                     active
                       ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300 hover:bg-green-50'
                   }`}
                 >
-                  {emoji} {cat.name}
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="shrink-0">{emoji}</span>
+                    <span className="truncate leading-snug">{cat.name}</span>
+                  </span>
                   {allProducts && count > 0 && (
-                    <span className={`tabular-nums text-[10px] ${active ? 'text-green-100' : 'text-gray-400'}`}>
+                    <span className={`tabular-nums text-[10px] shrink-0 ml-auto pl-1 ${active ? 'text-green-100' : 'text-gray-400'}`}>
                       {count}
                     </span>
                   )}
@@ -649,14 +655,13 @@ export default function ProductsClientPage({
             })}
           </div>
 
-          {/* Subcategory pill row — shown when the active category (or its
-              parent) has subcategories */}
+          {/* Subcategory pill row — scrollable strip, shown when a parent is active */}
           {(() => {
             const activeParentId = parentOfChild.get(activeCategory) ?? activeCategory
             const parentNode     = categoryTree.find(c => c.id === activeParentId)
             if (!parentNode || parentNode.children.length === 0) return null
             return (
-              <div className="flex gap-2 overflow-x-auto pb-1 pt-2 no-scrollbar snap-x snap-mandatory">
+              <div className="flex gap-2 overflow-x-auto pb-1 pt-3 no-scrollbar snap-x snap-mandatory">
                 <button
                   onClick={() => selectCategory(parentNode.id)}
                   className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border touch-manipulation ${

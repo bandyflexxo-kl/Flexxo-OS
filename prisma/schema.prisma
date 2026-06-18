@@ -28,6 +28,7 @@ model User {
   mustChangePassword  Boolean   @default(false) @map("must_change_password")
   mobileNo            String?   @map("mobile_no")
   googleRefreshToken  String?   @map("google_refresh_token")
+  telegramChatId      String?   @unique @map("telegram_chat_id")
   customerCompanyId   String?   @map("customer_company_id")
   lastLoginAt         DateTime? @map("last_login_at")
   createdAt           DateTime  @default(now()) @map("created_at")
@@ -59,6 +60,7 @@ model User {
   invoicesIssued            Invoice[]                 @relation("InvoiceIssuedBy")
   warehouseTasksCompleted   WarehouseTask[]           @relation("WarehouseTaskCompleted")
   qnePendingActionsApproved QnePendingAction[]        @relation("QnePendingActionApprovedBy")
+  telegramAccountRequests   TelegramAccountRequest[]  @relation("TelegramAccountRequests")
 
   @@map("users")
 }
@@ -95,6 +97,7 @@ model Company {
   name               String
   nameNormalized     String    @map("name_normalized")
   regNumber          String?   @map("reg_number")
+  tinNumber          String?   @map("tin_number")
   industry           String?
   companySize        String?   @map("company_size")
   generalEmail       String?   @map("general_email")
@@ -130,8 +133,9 @@ model Company {
   duplicateCandidateB DuplicateDetectionQueue[] @relation("DuplicateCandidateB")
   qneStagingMatches   QneCustomerStaging[]
   portalUsers         User[]                    @relation("CustomerPortalUser")
-  invoices            Invoice[]
-  topItems            QneTopItem[]              // recurring items from QNE invoice history
+  invoices                 Invoice[]
+  topItems                 QneTopItem[]              // recurring items from QNE invoice history
+  telegramAccountRequests  TelegramAccountRequest[]  @relation("CompanyFromTelegramRequest")
 
   @@map("companies")
 }
@@ -930,4 +934,33 @@ model AccountRequest {
 
   @@index([status, createdAt])
   @@map("account_requests")
+}
+
+// ============================================================
+// DOMAIN 11 — TELEGRAM ACCOUNT OPENING
+// Salesperson scans a name card via Telegram bot.
+// Admin approves → Company + Contact created in CRM.
+// ============================================================
+
+model TelegramAccountRequest {
+  id                String    @id @default(uuid())
+  requestedById     String    @map("requested_by_id")
+  salespersonChatId String    @map("salesperson_chat_id")
+  status            String    @default("pending")   // pending | approved | rejected
+  companyName       String    @map("company_name")
+  address           String?
+  ssmNumber         String?   @map("ssm_number")
+  tinNumber         String?   @map("tin_number")
+  picName           String    @map("pic_name")
+  picPhone          String    @map("pic_phone")
+  picEmail          String?   @map("pic_email")
+  createdCompanyId  String?   @map("created_company_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  requestedBy    User     @relation("TelegramAccountRequests", fields: [requestedById], references: [id])
+  createdCompany Company? @relation("CompanyFromTelegramRequest", fields: [createdCompanyId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("telegram_account_requests")
 }

@@ -3,11 +3,12 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 const Schema = z.object({
-  isActive: z.boolean().optional(),
-  roleId:   z.string().uuid().optional(),
-  name:     z.string().min(1).optional(),
-  email:    z.string().email().optional(),
-  mobileNo: z.string().optional(),
+  isActive:       z.boolean().optional(),
+  roleId:         z.string().uuid().optional(),
+  name:           z.string().min(1).optional(),
+  email:          z.string().email().optional(),
+  mobileNo:       z.string().optional(),
+  telegramChatId: z.string().optional(),
 })
 
 export async function PATCH(
@@ -28,20 +29,25 @@ export async function PATCH(
   const user = await prisma.user.findUnique({ where: { id } })
   if (!user) return Response.json({ error: 'User not found' }, { status: 404 })
 
-  const { isActive, roleId, name, email, mobileNo } = parsed.data
+  const { isActive, roleId, name, email, mobileNo, telegramChatId } = parsed.data
 
-  // Update name, email and/or mobileNo
-  if (name || email || mobileNo !== undefined) {
+  // Update profile fields
+  if (name || email || mobileNo !== undefined || telegramChatId !== undefined) {
     if (email && email !== user.email) {
       const existing = await prisma.user.findUnique({ where: { email } })
       if (existing) return Response.json({ error: 'That email is already used by another account.' }, { status: 409 })
     }
+    if (telegramChatId && telegramChatId.trim()) {
+      const existing = await prisma.user.findFirst({ where: { telegramChatId: telegramChatId.trim(), NOT: { id } } })
+      if (existing) return Response.json({ error: 'That Telegram Chat ID is already linked to another account.' }, { status: 409 })
+    }
     await prisma.user.update({
       where: { id },
       data: {
-        ...(name              ? { name }     : {}),
-        ...(email             ? { email }    : {}),
-        ...(mobileNo !== undefined ? { mobileNo: mobileNo || null } : {}),
+        ...(name                       ? { name }                                        : {}),
+        ...(email                      ? { email }                                       : {}),
+        ...(mobileNo !== undefined     ? { mobileNo:       mobileNo || null }            : {}),
+        ...(telegramChatId !== undefined ? { telegramChatId: telegramChatId.trim() || null } : {}),
       },
     })
   }

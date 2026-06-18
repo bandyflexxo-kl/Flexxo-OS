@@ -8,6 +8,7 @@ type UserRow = {
   name:               string
   email:              string
   mobileNo:           string | null
+  telegramChatId:     string | null
   isActive:           boolean
   mustChangePassword: boolean
   lastLoginAt:        string | null
@@ -61,11 +62,12 @@ export default function UsersTable({
   const [roleModal,    setRoleModal]    = useState<UserRow | null>(null)
   const [selectedRole, setSelectedRole] = useState('')
 
-  // Edit user (name + email + mobile) modal state
+  // Edit user (name + email + mobile + telegram) modal state
   const [editModal,      setEditModal]      = useState<UserRow | null>(null)
   const [editName,       setEditName]       = useState('')
   const [editEmail,      setEditEmail]      = useState('')
   const [editMobile,     setEditMobile]     = useState('')
+  const [editTelegram,   setEditTelegram]   = useState('')
   const [editError,      setEditError]      = useState<string | null>(null)
 
   function flash(msg: string) {
@@ -134,12 +136,12 @@ export default function UsersTable({
       const res = await fetch(`/api/admin/users/${editModal.id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: editName.trim(), email: editEmail.trim(), mobileNo: editMobile.trim() || null }),
+        body:    JSON.stringify({ name: editName.trim(), email: editEmail.trim(), mobileNo: editMobile.trim() || null, telegramChatId: editTelegram.trim() || null }),
       })
       const data = await res.json() as { error?: string }
       if (!res.ok) { setEditError(data.error ?? 'Failed to save'); return }
       setUsers(prev => prev.map(u =>
-        u.id === editModal.id ? { ...u, name: editName.trim(), email: editEmail.trim(), mobileNo: editMobile.trim() || null } : u
+        u.id === editModal.id ? { ...u, name: editName.trim(), email: editEmail.trim(), mobileNo: editMobile.trim() || null, telegramChatId: editTelegram.trim() || null } : u
       ))
       flash(`Updated ${editName.trim()}`)
       setEditModal(null)
@@ -301,6 +303,7 @@ export default function UsersTable({
                           setEditName(user.name)
                           setEditEmail(user.email)
                           setEditMobile(user.mobileNo ?? '')
+                          setEditTelegram(user.telegramChatId ?? '')
                           setEditError(null)
                         }}
                         disabled={isBusy}
@@ -466,8 +469,20 @@ export default function UsersTable({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
                 placeholder="e.g. 0123456789"
               />
+              <p className="text-xs text-gray-400 mt-1">Used for WhatsApp integration.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Telegram Chat ID</label>
+              <input
+                type="text"
+                value={editTelegram}
+                onChange={e => setEditTelegram(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
+                placeholder="e.g. 123456789"
+              />
               <p className="text-xs text-gray-400 mt-1">
-                Used for WhatsApp integration (Phase 2).
+                Ask the salesperson to message <strong>@FlexxoSalesBot</strong> with <code>/myid</code> to get this number.
               </p>
             </div>
             {editError && <p className="text-xs text-red-600">{editError}</p>}

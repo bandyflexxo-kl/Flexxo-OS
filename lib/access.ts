@@ -26,13 +26,13 @@ export type CrmRole = (typeof CRM_ROLES)[number]
  */
 const ACCESS: Record<string, string[]> = {
   Director: ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/admin'],
+             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/admin'],
   Manager:  ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/admin'],
+             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/admin'],
   Admin:    ['/', '/companies', '/contacts', '/pipeline', '/quotations',
-             '/orders', '/warehouse', '/market-scout', '/admin'],
+             '/orders', '/warehouse', '/market-scout', '/agents', '/admin'],
   Salesperson: ['/', '/companies', '/contacts', '/pipeline', '/quotations',
-                '/orders', '/warehouse', '/market-scout'],
+                '/orders', '/warehouse', '/market-scout', '/agents'],
   Warehouse: ['/warehouse'],
   Viewer:    ['/', '/companies', '/contacts'],
 }
