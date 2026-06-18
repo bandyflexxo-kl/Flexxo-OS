@@ -421,7 +421,7 @@ async function handleMessage(message: TelegramMessage): Promise<Response> {
     }
 
     // General → Sales Agent (fallback for everything)
-    const reply = await runSalesAgent([], text)
+    const reply = await runSalesAgent([], text, undefined, crmUser.id)
     await sendHtml(chatId, markdownToTelegramHtml(reply))
   } catch (err) {
     console.error('[telegram-webhook] agent error:', err)

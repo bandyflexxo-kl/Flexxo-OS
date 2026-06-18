@@ -59,6 +59,7 @@ export async function POST(request: Request) {
           (name, description) => {
             send({ type: 'thinking', tool: name, description: TOOL_DESCRIPTIONS[name] ?? description })
           },
+          session.userId,
         )
         send({ type: 'text', text })
         send({ type: 'done' })

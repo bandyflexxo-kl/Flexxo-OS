@@ -10,6 +10,7 @@ import {
   getTopSellingProducts,
   getCustomerHistory,
   getIndustryBuyingPatterns,
+  listMyCompanies,
   listCategories,
   type ToolResult,
 } from './salesAgentTools'
@@ -113,6 +114,11 @@ export const SALES_TOOL_DEFS: Anthropic.Tool[] = [
     },
   },
   {
+    name:        'list_my_companies',
+    description: 'List all companies currently assigned to the logged-in salesperson.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name:        'list_categories',
     description: 'List all product categories and sub-categories with slugs.',
     input_schema: { type: 'object', properties: {} },
@@ -125,12 +131,13 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_top_selling_products:     'Checking top sellers',
   get_customer_history:         'Looking up client history',
   get_industry_buying_patterns: 'Analysing industry patterns',
+  list_my_companies:            'Loading your accounts',
   list_categories:              'Loading categories',
 }
 
 // ── Tool executor ─────────────────────────────────────────────────────────────
 
-export async function executeSalesTool(name: string, input: Record<string, unknown>): Promise<ToolResult> {
+export async function executeSalesTool(name: string, input: Record<string, unknown>, userId?: string): Promise<ToolResult> {
   switch (name) {
     case 'search_products':
       return searchProducts(
@@ -154,6 +161,10 @@ export async function executeSalesTool(name: string, input: Record<string, unkno
         String(input.industry ?? ''),
         typeof input.limit === 'number' ? input.limit : 10,
       )
+    case 'list_my_companies':
+      return userId
+        ? listMyCompanies(userId)
+        : { error: 'User identity not available — please use the web chat instead.' }
     case 'list_categories':
       return listCategories()
     default:
@@ -173,6 +184,7 @@ export async function runSalesAgent(
   history:      ChatMessage[],
   newMessage:   string,
   onToolCall?:  (name: string, description: string) => void,
+  userId?:      string,
 ): Promise<string> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY not configured')
@@ -205,7 +217,7 @@ export async function runSalesAgent(
       for (const block of response.content) {
         if (block.type !== 'tool_use') continue
         onToolCall?.(block.name, TOOL_DESCRIPTIONS[block.name] ?? block.name)
-        const result = await executeSalesTool(block.name, block.input as Record<string, unknown>)
+        const result = await executeSalesTool(block.name, block.input as Record<string, unknown>, userId)
         toolResults.push({
           type:        'tool_result',
           tool_use_id: block.id,

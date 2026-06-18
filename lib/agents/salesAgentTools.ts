@@ -308,6 +308,57 @@ export async function getIndustryBuyingPatterns(industry: string, limit = 10): P
   }
 }
 
+// ── list_my_companies ────────────────────────────────────────────────────────
+
+export async function listMyCompanies(userId: string, limit = 50): Promise<ToolResult> {
+  const assignments = await prisma.companyAssignment.findMany({
+    where:   { userId, unassignedAt: null },
+    select:  { companyId: true },
+    orderBy: { assignedAt: 'desc' },
+    take:    limit,
+  })
+
+  if (assignments.length === 0) {
+    return { found: false, message: 'No companies are currently assigned to you.' }
+  }
+
+  const companyIds = assignments.map(a => a.companyId)
+  const companies = await prisma.company.findMany({
+    where:  { id: { in: companyIds } },
+    select: {
+      id:                 true,
+      name:               true,
+      status:             true,
+      industry:           true,
+      outstandingBalance: true,
+      qneCustomerCode:    true,
+    },
+  })
+
+  // Preserve assignment order
+  const companyMap = new Map(companies.map(c => [c.id, c]))
+
+  return {
+    found: true,
+    count: companies.length,
+    companies: companyIds
+      .map(id => {
+        const c = companyMap.get(id)
+        if (!c) return null
+        return {
+          name:               c.name,
+          status:             c.status,
+          industry:           c.industry ?? null,
+          outstandingBalance: c.outstandingBalance
+            ? Number(c.outstandingBalance).toFixed(2)
+            : null,
+          qneCode: c.qneCustomerCode ?? null,
+        }
+      })
+      .filter(Boolean),
+  }
+}
+
 // ── list_categories ─────────────────────────────────────────────────────────
 
 export async function listCategories(): Promise<ToolResult> {
