@@ -20,12 +20,15 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
       {/* Green gradient background */}
       <div className="bg-gradient-to-br from-green-900 via-green-800 to-green-700 py-10 sm:py-16 px-4 sm:px-6 relative">
 
-        {/* Decorative circles — purely visual */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-10 -right-10 w-52 h-52 rounded-full bg-white/5" />
-          <div className="absolute top-8 -right-20 w-72 h-72 rounded-full bg-white/3" />
-          <div className="absolute -bottom-16 -left-10 w-56 h-56 rounded-full bg-green-600/30" />
-        </div>
+        {/* Dot-grid pattern overlay — purely visual */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
 
         <div className="max-w-6xl mx-auto text-center relative" style={{ zIndex: Z.heroContent }}>
 
@@ -43,7 +46,7 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
 
           {/* Tagline */}
           <h1
-            className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-tight tracking-tight animate-fade-in-up"
+            className="text-3xl sm:text-4xl lg:text-5xl font-black text-white leading-tight tracking-tight animate-fade-in-up"
             style={{ animationDelay: '80ms' }}
           >
             Your 1stop Office Partner
@@ -90,9 +93,9 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
             )}
           </div>
 
-          {/* Trust stats strip */}
+          {/* Trust stats strip — frosted glass cards */}
           <div
-            className="mt-8 flex flex-wrap items-center justify-center gap-5 sm:gap-8 animate-fade-in-up"
+            className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4 animate-fade-in-up"
             style={{ animationDelay: '320ms' }}
           >
             {[
@@ -101,7 +104,11 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
               { num: 'KL',     label: 'Based & Delivered' },
               { num: 'B2B',    label: 'Corporate Specialists' },
             ].map(({ num, label }) => (
-              <div key={label} className="text-center">
+              <div
+                key={label}
+                className="text-center px-5 py-3 rounded-2xl"
+                style={{ background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}
+              >
                 <p className="text-lg sm:text-xl font-bold text-white">{num}</p>
                 <p className="text-[11px] text-green-200 font-medium">{label}</p>
               </div>

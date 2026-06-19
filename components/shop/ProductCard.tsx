@@ -67,7 +67,7 @@ export default function ProductCard({
   }
 
   return (
-    <div className="group relative bg-white rounded-xl border border-gray-200 hover:border-green-300 hover:shadow-lg transition-all duration-200 overflow-hidden flex flex-col">
+    <div className="group relative bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-green-300 hover:shadow-xl hover:-translate-y-1.5 transition-all duration-200 ease-out overflow-hidden flex flex-col">
 
       {/* Photo + info — this whole block is the navigation link */}
       <Link href={`/shop/products/${id}`} className="flex flex-col flex-1" tabIndex={0}>
@@ -86,8 +86,10 @@ export default function ProductCard({
               className="object-contain p-4 group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl text-gray-200">
-              📦
+            <div className="w-full h-full flex items-center justify-center">
+              <svg className="w-14 h-14 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+              </svg>
             </div>
           )}
 
@@ -111,7 +113,10 @@ export default function ProductCard({
 
         {/* Text info */}
         <div className="p-3 flex flex-col gap-1 flex-1">
-          <p className="text-xs text-green-600 font-medium leading-none">{categoryName}</p>
+          <p className="text-xs text-green-600 font-medium leading-none flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 inline-block" />
+            {categoryName}
+          </p>
           <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-green-700 transition-colors duration-200">
             {name}
           </p>
@@ -119,14 +124,17 @@ export default function ProductCard({
           <div className="mt-auto pt-1.5">
             {sellingPrice ? (
               <div className="flex items-baseline gap-1">
-                <p className="text-sm font-bold text-gray-900">{currency} {Number(sellingPrice).toFixed(2)}</p>
+                <p className="text-base font-extrabold text-gray-900">{currency} {Number(sellingPrice).toFixed(2)}</p>
                 {unit && <span className="text-xs text-gray-400">/ {unit}</span>}
               </div>
             ) : (
               <p className="text-xs text-gray-400 italic">Price on request</p>
             )}
             {typeof availableQty === 'number' && availableQty > 0 && availableQty <= 10 && (
-              <p className="text-[10px] text-amber-600 font-medium mt-0.5">Only {availableQty} left</p>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 mt-0.5">
+                <span className="w-1 h-1 rounded-full bg-amber-500 inline-block" />
+                Only {availableQty} left
+              </span>
             )}
           </div>
         </div>
@@ -139,7 +147,7 @@ export default function ProductCard({
             onClick={handleAddToCart}
             disabled={cartState === 'loading'}
             aria-label={cartState === 'added' ? 'Added to cart' : `Add ${name} to cart`}
-            className={`w-full py-2 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-[0.97] touch-manipulation flex items-center justify-center gap-1.5 ${
+            className={`w-full py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 active:scale-[0.97] touch-manipulation flex items-center justify-center gap-1.5 ${
               cartState === 'added'
                 ? 'bg-green-500 text-white'
                 : cartState === 'loading'
@@ -150,9 +158,19 @@ export default function ProductCard({
             {cartState === 'loading' ? (
               <><FlexxoSpinner size="xs" color="white" /> Adding…</>
             ) : cartState === 'added' ? (
-              '✓ Added to cart'
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+                Added to cart
+              </>
             ) : (
-              '🛒 Add to Cart'
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                Add to Cart
+              </>
             )}
           </button>
         ) : (

@@ -98,3 +98,15 @@ body {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ── Shimmer skeleton loader ───────────────────────────────────── */
+@keyframes shimmer {
+  from { background-position: -600px 0 }
+  to   { background-position:  600px 0 }
+}
+
+@utility animate-shimmer {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e9ecef 50%, #f3f4f6 75%);
+  background-size: 1200px 100%;
+  animation: shimmer 1.5s infinite linear;
+}

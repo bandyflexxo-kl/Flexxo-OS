@@ -48,7 +48,7 @@ export default function ShopNav({
   const cartHref  = isLoggedIn ? '/shop/cart' : '/shop/login?returnUrl=/shop/cart'
 
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0" style={{ zIndex: Z.stickyNav }}>
+    <header className="bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm sticky top-0" style={{ zIndex: Z.stickyNav }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
 
         {/* Brand — always visible */}
@@ -78,7 +78,7 @@ export default function ShopNav({
           <Link
             href="/shop/products"
             className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              pathname.startsWith('/shop/products') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+              pathname.startsWith('/shop/products') ? 'bg-green-600 text-white font-medium shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >
             Products
@@ -87,7 +87,7 @@ export default function ShopNav({
             <Link
               href="/shop/quotations"
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                pathname.startsWith('/shop/quotations') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                pathname.startsWith('/shop/quotations') ? 'bg-green-600 text-white font-medium shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               My Quotations
@@ -97,7 +97,7 @@ export default function ShopNav({
             <Link
               href="/shop/orders"
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                pathname.startsWith('/shop/orders') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                pathname.startsWith('/shop/orders') ? 'bg-green-600 text-white font-medium shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               My Orders
@@ -107,7 +107,7 @@ export default function ShopNav({
             <Link
               href="/shop/dashboard"
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                pathname.startsWith('/shop/dashboard') ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                pathname.startsWith('/shop/dashboard') ? 'bg-green-600 text-white font-medium shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               Account

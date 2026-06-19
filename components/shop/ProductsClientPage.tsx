@@ -130,13 +130,13 @@ function SkeletonGrid() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4" aria-busy="true">
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
-          <div className="aspect-square bg-gray-100" />
+        <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="aspect-square animate-shimmer" />
           <div className="p-4 space-y-2.5">
-            <div className="h-2.5 bg-gray-100 rounded-full w-1/3" />
-            <div className="h-3.5 bg-gray-100 rounded-full w-full" />
-            <div className="h-3.5 bg-gray-100 rounded-full w-3/4" />
-            <div className="h-5 bg-gray-100 rounded-full w-2/5 mt-2" />
+            <div className="h-2.5 animate-shimmer rounded-full w-1/3" />
+            <div className="h-3.5 animate-shimmer rounded-full w-full" />
+            <div className="h-3.5 animate-shimmer rounded-full w-3/4" />
+            <div className="h-5 animate-shimmer rounded-full w-2/5 mt-2" />
           </div>
         </div>
       ))}
