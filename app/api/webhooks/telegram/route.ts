@@ -282,9 +282,40 @@ async function handleMessage(message: TelegramMessage): Promise<Response> {
 
   await sendTyping(chatId)
 
-  // ── 📸 Photo → name card account opening ─────────────────────────────────
+  // ── 📸 Photo handling ─────────────────────────────────────────────────────
   if (message.photo && message.photo.length > 0) {
     const largest = message.photo[message.photo.length - 1]
+    const caption = (message.caption ?? '').trim()
+
+    // Photo WITH caption + no active name card session → route by caption intent
+    if (caption && !(await hasActiveSession(chatId))) {
+      let intent
+      try {
+        intent = await classifyIntent(caption)
+      } catch {
+        intent = { type: 'general' } as const
+      }
+
+      try {
+        if (intent.type === 'quotation') {
+          const result = await buildQuotationFromTelegram(
+            `${intent.companyName}\n${intent.itemsText}`,
+            crmUser.id,
+          )
+          await sendHtml(chatId, result.html)
+        } else {
+          const reply = await runSalesAgent([], caption, undefined, crmUser.id)
+          await sendHtml(chatId, markdownToTelegramHtml(reply))
+        }
+      } catch (err) {
+        console.error('[telegram-webhook] photo+caption error:', err)
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        await sendHtml(chatId, `⚠️ ${esc(msg)}`)
+      }
+      return Response.json({ ok: true })
+    }
+
+    // No caption (or active name card session) → name card account opening
     try {
       const { buffer, mimeType } = await downloadPhoto(largest.file_id)
       const reply = await handlePhotoMessage(chatId, buffer, mimeType, crmUser.id, crmUser.name)
