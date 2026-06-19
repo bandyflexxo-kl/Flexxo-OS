@@ -287,8 +287,8 @@ async function handleMessage(message: TelegramMessage): Promise<Response> {
     const largest = message.photo[message.photo.length - 1]
     const caption = (message.caption ?? '').trim()
 
-    // Photo WITH caption + no active name card session → route by caption intent
-    if (caption && !(await hasActiveSession(chatId))) {
+    // Photo WITH caption → caption intent always wins (overrides any active session)
+    if (caption) {
       let intent
       try {
         intent = await classifyIntent(caption)
