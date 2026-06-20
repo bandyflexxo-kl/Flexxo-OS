@@ -40,7 +40,7 @@ export default function HeroSection({ isB2B }: { isB2B: boolean }) {
               width={160}
               height={48}
               priority
-              className="h-10 sm:h-12 w-auto mx-auto mb-4 object-contain brightness-0 invert"
+              className="h-10 sm:h-12 w-auto mx-auto mb-4 object-contain"
             />
           </div>
 
