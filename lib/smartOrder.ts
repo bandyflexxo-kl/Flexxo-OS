@@ -76,6 +76,20 @@ function normaliseUnit(u: string): string {
 // ── Line parser ───────────────────────────────────────────────────────────────
 
 /**
+ * Returns true for header/intro sentences that should be skipped — not product lines.
+ * e.g. "I would like to request a quotation for Stationeries as per items below listed:"
+ */
+function isHeaderOrIntroLine(text: string): boolean {
+  // Ends with colon → section header
+  if (text.trimEnd().endsWith(':')) return true
+  // Starts with common intro phrases
+  if (/^(i would like|please|dear|hello|hi |thank|to:|from:|subject:|re:|attention:|regards|note:|as per|kindly|we would like|we are|the following|please find|herewith|below (is|are)|attached)/i.test(text)) return true
+  // Long sentence (>80 chars) with no digits — unlikely to be a product line
+  if (text.length > 80 && !/\d/.test(text)) return true
+  return false
+}
+
+/**
  * parseItemList
  * Splits a multi-line text blob into structured ParsedLine objects.
  *
@@ -85,12 +99,16 @@ function normaliseUnit(u: string): string {
  *   "A4 Paper 80gsm 1rim"
  *   "• Calculator x 1"
  *   "5 boxes A4 Paper"
+ *   "Whiteboard Marker – Black – 2pcs"   (dash-suffix qty)
+ *   "A3 Paper 70gsm – 5reams"            (dash-suffix qty+unit)
+ *   "Glue Stick -3pcs"                   (hyphen-suffix qty)
  */
 export function parseItemList(rawText: string): ParsedLine[] {
   const lines = rawText
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0)
+    .filter(l => !isHeaderOrIntroLine(l))
 
   return lines.map(line => parseSingleLine(line)).filter((l): l is ParsedLine => l !== null)
 }
@@ -101,6 +119,30 @@ function parseSingleLine(raw: string): ParsedLine | null {
   // Strip leading bullets / numbering  "1." "1)" "•" "-" "*"
   text = text.replace(/^[\d]+[.)]\s*/, '').replace(/^[•\-\*]\s*/, '').trim()
   if (!text) return null
+
+  // Pattern 0: dash/em-dash separated qty suffix at end
+  //   e.g. "Whiteboard Marker – Black – 2pcs"  → name="Whiteboard Marker – Black", qty=2, unit=pc
+  //   e.g. "A3 Paper 70gsm – 5reams"           → name="A3 Paper 70gsm", qty=5, unit=ream
+  //   e.g. "Glue Stick -3pcs"                  → name="Glue Stick", qty=3, unit=pc
+  //   e.g. "Whiteboard 4ft x 8ft – 1 unit"     → name="Whiteboard 4ft x 8ft", qty=1, unit=unit
+  // Dimension units (ft, cm, mm, m, kg…) are excluded so size specs aren't treated as qty.
+  const DIMENSION_UNITS = new Set(['ft', 'cm', 'mm', 'm', 'inch', 'in', 'kg', 'g', 'l', 'ml', 'ltr'])
+  const dashParts = text.split(/\s*[–—]\s*|\s+-\s*(?=\d)/)
+  if (dashParts.length >= 2) {
+    const lastPart  = dashParts[dashParts.length - 1].trim()
+    const dashQty   = lastPart.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?$/)
+    if (dashQty) {
+      const rawUnit = dashQty[2] ? dashQty[2].toLowerCase() : null
+      if (!rawUnit || !DIMENSION_UNITS.has(rawUnit)) {
+        return {
+          rawText:    raw,
+          parsedName: dashParts.slice(0, -1).join(' – ').trim(),
+          qty:        parseFloat(dashQty[1]),
+          unit:       rawUnit ? normaliseUnit(rawUnit) : null,
+        }
+      }
+    }
+  }
 
   // Pattern 1: "... x N unit" or "... × N unit" or "... X N unit" at end
   //   e.g. "Artline 90 x 2 box"  →  name="Artline 90", qty=2, unit=box
