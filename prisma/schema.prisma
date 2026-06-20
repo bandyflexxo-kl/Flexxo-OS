@@ -345,6 +345,9 @@ model Product {
   // Raw QNE classification — category (top level) > group (subcategory) > class (brand)
   qneCategory          String?   @map("qne_category")
   qneGroup             String?   @map("qne_group")
+  // Times this item appeared in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts).
+  // Used as popularity signal in Smart Order matching. More reliable than quotation count.
+  qneInvoiceFreq       Int       @default(0) @map("qne_invoice_freq")
   createdAt            DateTime  @default(now()) @map("created_at")
   createdById          String    @map("created_by")
 

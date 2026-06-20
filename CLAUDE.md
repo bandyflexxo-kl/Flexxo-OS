@@ -350,6 +350,8 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 | uploadLog.ts | Upload improvement log to Google Drive | ✅ Working |
 | matchAplusPhotos.ts | Match APLUS Excel stock codes → Drive photos | ✅ Working |
 | testSmartOrder.ts | Test Smart Order text parsing + matching | ✅ Working |
+| syncQneInvoiceFreq.ts | Sync QNE Sales Invoice item counts → products.qne_invoice_freq (VPN required) | ✅ Ready |
+| analyzeQneInvoiceBrands.ts | Pull all QNE invoice lines, aggregate by brand/item, export Excel (VPN required) | ✅ Ready |
 | _catSummary.ts | Print full category tree with product counts per sub-category | ✅ Working |
 | _verify2.ts | Verify all products are in sub-categories (0 in parents) | ✅ Working |
 

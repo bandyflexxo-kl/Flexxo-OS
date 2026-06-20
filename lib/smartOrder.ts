@@ -42,7 +42,7 @@ export type ProductMatch = {
   supplierPriceVersionId: string | null
   score:                  number
   isVisible:              boolean   // true = stocked (isVisibleToCustomers)
-  orderFreq:              number    // # of times quoted across all quotations
+  orderFreq:              number    // # of confirmed QNE Sales Invoices containing this item
   availableQty:           number | null  // QNE stock; null = not yet synced
 }
 
@@ -303,7 +303,7 @@ type CatalogueProduct = {
   unit:             string | null
   qneItemCode:      string | null
   isVisible:        boolean          // isVisibleToCustomers — our proxy for "in stock"
-  orderFreq:        number           // historical quotation count (most-ordered signal)
+  orderFreq:        number           // times in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts)
   availableQty:     number | null    // QNE stock; null = not yet synced
   parentCategoryName: string | null  // top-level category (e.g. "Office Stationery")
   category:         { name: string; defaultMarginPct: Prisma.Decimal | null }
@@ -329,7 +329,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
     return _cache
   }
 
-  const [products, globalSetting, freqRows] = await Promise.all([
+  const [products, globalSetting] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
       select: {
@@ -340,6 +340,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
         qneItemCode:          true,
         isVisibleToCustomers: true,
         qneAvailableQty:      true,
+        qneInvoiceFreq:       true,
         defaultMarginPct:     true,
         category: { select: { name: true, defaultMarginPct: true, parentCategory: { select: { name: true } } } },
         priceVersions: {
@@ -352,20 +353,12 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
       orderBy: { name: 'asc' },
     }),
     prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
-    // Aggregate historical quotation frequency per product (most-ordered signal)
-    prisma.quotationItem.groupBy({
-      by:    ['productId'],
-      where: { productId: { not: null } },
-      _count: { productId: true },
-    }),
   ])
-
-  const freqMap = new Map(freqRows.map(r => [r.productId!, r._count.productId]))
 
   const enriched = products.map(p => ({
     ...p,
     isVisible:          p.isVisibleToCustomers,
-    orderFreq:          freqMap.get(p.id) ?? 0,
+    orderFreq:          p.qneInvoiceFreq,          // confirmed invoice count from QNE
     availableQty:       p.qneAvailableQty ?? null,
     parentCategoryName: p.category.parentCategory?.name ?? null,
   }))
