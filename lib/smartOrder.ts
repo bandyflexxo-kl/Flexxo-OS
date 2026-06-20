@@ -226,12 +226,24 @@ const STOP_WORDS = new Set([
   'premium', 'deluxe', 'super', 'ultra', 'extra', 'plus',
 ])
 
+/**
+ * Lightweight plural stemmer for stationery terms.
+ * batteries→battery, boxes→box, pencils→pencil, erasers→eraser
+ */
+function stem(token: string): string {
+  if (token.length > 4 && token.endsWith('ies')) return token.slice(0, -3) + 'y'
+  if (token.length > 4 && token.endsWith('es') && !token.endsWith('sses')) return token.slice(0, -2)
+  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1)
+  return token
+}
+
 function tokenise(s: string): Set<string> {
   return new Set(
     s.toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter(t => t.length > 1 && !STOP_WORDS.has(t)),
+      .filter(t => t.length > 1 && !STOP_WORDS.has(t))
+      .map(stem),
   )
 }
 
@@ -251,9 +263,9 @@ function scoreMatch(
 
   const intersection = [...queryTokens].filter(t => nameTokens.has(t)).length
 
-  // Require at least 2 meaningful token hits for queries with 3+ tokens,
-  // to prevent single-word coincidences (e.g. "light" in "STROBE LIGHT")
-  if (queryTokens.size >= 3 && intersection < 2) return 0
+  // Require at least 2 meaningful token hits for queries with 2+ tokens,
+  // to prevent single-word coincidences (e.g. "soft" in "G'SOFT" matching "Soft Eraser")
+  if (queryTokens.size >= 2 && intersection < 2) return 0
 
   const union = new Set([...queryTokens, ...nameTokens]).size
   let score = union === 0 ? 0 : intersection / union
