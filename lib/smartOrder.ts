@@ -238,13 +238,25 @@ function stem(token: string): string {
 }
 
 function tokenise(s: string): Set<string> {
-  return new Set(
-    s.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length > 1 && !STOP_WORDS.has(t))
-      .map(stem),
-  )
+  const raw = s.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1 && !STOP_WORDS.has(t))
+    .map(stem)
+
+  const result = new Set<string>()
+  for (const t of raw) {
+    result.add(t)
+    // Expand "30cm" → also add "30" + "cm" so it matches "30 cm" in product names,
+    // and vice-versa "30 cm" already splits naturally and still hits "30cm" in queries.
+    // Require both parts to be len≥2 so "2b", "3m" are NOT split (spec codes, not dims).
+    const dim = t.match(/^(\d+(?:\.\d+)?)([a-z]{2,4})$/)
+    if (dim && dim[1]!.length >= 2) {
+      result.add(dim[1]!)   // "30"
+      result.add(dim[2]!)   // "cm"
+    }
+  }
+  return result
 }
 
 /**
