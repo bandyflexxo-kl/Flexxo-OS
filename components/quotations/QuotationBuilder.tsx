@@ -536,19 +536,39 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
                 {(suggestions.length > 0 || searchLoading) && (
                   <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {searchLoading && <div className="px-4 py-3 text-xs text-gray-400">Searching…</div>}
-                    {suggestions.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => selectProduct(p)}
-                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
-                      >
-                        <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                        <p className="text-xs text-gray-400">
-                          {p.categoryName}{p.brand ? ` · ${p.brand}` : ''}{p.qneItemCode ? ` · ${p.qneItemCode}` : ''}
-                          {p.sellingPrice ? <span className="ml-2 text-blue-600 font-medium">{p.currency} {Number(p.sellingPrice).toFixed(2)}</span> : ''}
-                        </p>
-                      </button>
-                    ))}
+                    {suggestions.map(p => {
+                      const cost   = p.costPrice   ? Number(p.costPrice)   : null
+                      const sell   = p.sellingPrice ? Number(p.sellingPrice) : null
+                      const margin = cost && sell && cost > 0
+                        ? Math.round(((sell - cost) / cost) * 100)
+                        : null
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => selectProduct(p)}
+                          className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
+                        >
+                          <p className="text-sm font-medium text-gray-900">{p.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {p.categoryName}{p.brand ? ` · ${p.brand}` : ''}{p.qneItemCode ? ` · ${p.qneItemCode}` : ''}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1">
+                            {cost != null
+                              ? <span className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Cost {p.currency} {cost.toFixed(2)}</span>
+                              : <span className="text-xs text-gray-300">No cost</span>
+                            }
+                            {sell != null && (
+                              <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">Sell {p.currency} {sell.toFixed(2)}</span>
+                            )}
+                            {margin != null && (
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${margin < 15 ? 'text-red-600 bg-red-50' : margin < 25 ? 'text-orange-600 bg-orange-50' : 'text-green-700 bg-green-50'}`}>
+                                {margin}% margin
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>

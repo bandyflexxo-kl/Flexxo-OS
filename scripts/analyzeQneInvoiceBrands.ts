@@ -17,7 +17,7 @@
 
 import { config } from 'dotenv'
 import { resolve } from 'path'
-config({ path: resolve(process.cwd(), '.env.local') })
+config({ path: resolve(process.cwd(), '.env.local'), override: true })
 
 import fetch from 'node-fetch'
 import * as XLSX from 'xlsx'
@@ -72,6 +72,7 @@ type QneInvoiceHeader = {
 }
 
 type QneInvoiceLine = {
+  stock?:      string   // QNE actual field name for item code
   itemCode?:   string
   stockCode?:  string
   description?: string
@@ -94,7 +95,7 @@ function toArray<T>(data: unknown): T[] {
 }
 
 function lineItemCode(l: QneInvoiceLine): string | null {
-  const c = l.itemCode ?? l.stockCode ?? null
+  const c = l.stock ?? l.itemCode ?? l.stockCode ?? null
   return typeof c === 'string' && c.trim() ? c.trim() : null
 }
 

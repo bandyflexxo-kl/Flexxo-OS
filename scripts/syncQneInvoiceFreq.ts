@@ -13,10 +13,9 @@
 
 import { config } from 'dotenv'
 import { resolve } from 'path'
-config({ path: resolve(process.cwd(), '.env.local') })
+config({ path: resolve(process.cwd(), '.env.local'), override: true })
 
 import fetch from 'node-fetch'
-import { prisma } from '../lib/prisma'
 
 const BASE_URL = process.env.QNE_API_BASE_URL ?? 'http://26.255.19.220:82'
 const DB_CODE  = process.env.QNE_DB_CODE       ?? 'FKLSB'
@@ -54,6 +53,7 @@ type QneInvoiceHeader = {
 }
 
 type QneInvoiceLine = {
+  stock?:     string   // QNE actual field name for item code
   itemCode?:  string
   stockCode?: string
   [key: string]: unknown
@@ -66,7 +66,7 @@ function toArray<T>(data: unknown): T[] {
 }
 
 function lineItemCode(line: QneInvoiceLine): string | null {
-  const code = line.itemCode ?? line.stockCode ?? null
+  const code = line.stock ?? line.itemCode ?? line.stockCode ?? null
   return typeof code === 'string' && code.trim() ? code.trim() : null
 }
 
@@ -81,6 +81,7 @@ function invoiceDetailLines(detail: unknown): QneInvoiceLine[] {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  const { prisma } = await import('../lib/prisma')
   console.log('=== Sync QNE Invoice Frequency → products.qne_invoice_freq ===\n')
 
   const token = await getToken()
@@ -190,4 +191,3 @@ async function main() {
 
 main()
   .catch(e => { console.error('\nFatal:', e.message); process.exit(1) })
-  .finally(() => prisma.$disconnect())
