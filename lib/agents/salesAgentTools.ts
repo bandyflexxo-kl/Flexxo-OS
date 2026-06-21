@@ -359,6 +359,384 @@ export async function listMyCompanies(userId: string, limit = 50): Promise<ToolR
   }
 }
 
+// ── get_client_purchase_history (QNE invoices) ──────────────────────────────
+
+export async function getClientPurchaseHistory(companyName: string, months = 12): Promise<ToolResult> {
+  const company = await prisma.company.findFirst({
+    where: { name: { contains: companyName, mode: 'insensitive' } },
+    select: { id: true, name: true, qneCustomerCode: true, outstandingBalance: true, overdueAmount: true },
+  })
+
+  if (!company) {
+    return { found: false, message: `No company found matching "${companyName}".` }
+  }
+
+  const since = new Date()
+  since.setMonth(since.getMonth() - months)
+
+  const invoices = await prisma.qneInvoice.findMany({
+    where: { companyId: company.id, docDate: { gte: since } },
+    include: { items: { include: { product: { select: { name: true, brand: true, unit: true } } } } },
+    orderBy: { docDate: 'desc' },
+    take: 50,
+  })
+
+  if (invoices.length === 0) {
+    return {
+      found: true,
+      company: company.name,
+      message: `No QNE invoices found for ${company.name} in the last ${months} months. Run syncQneInvoices.ts with VPN to populate history.`,
+      outstandingBalance: company.outstandingBalance ? Number(company.outstandingBalance).toFixed(2) : null,
+    }
+  }
+
+  // Aggregate item frequencies across invoices
+  const itemFreq = new Map<string, { description: string; invoiceCount: number; totalQty: number; totalSpend: number; lastDate: Date; unit: string | null }>()
+  let totalSpend = 0
+
+  for (const inv of invoices) {
+    totalSpend += Number(inv.totalAmount)
+    for (const item of inv.items) {
+      const key = item.stockCode ?? item.description
+      const existing = itemFreq.get(key)
+      if (existing) {
+        existing.invoiceCount++
+        existing.totalQty   += Number(item.qty)
+        existing.totalSpend += Number(item.lineTotal)
+        if (inv.docDate > existing.lastDate) existing.lastDate = inv.docDate
+      } else {
+        itemFreq.set(key, {
+          description:  item.product?.name ?? item.description,
+          invoiceCount: 1,
+          totalQty:     Number(item.qty),
+          totalSpend:   Number(item.lineTotal),
+          lastDate:     inv.docDate,
+          unit:         item.product?.unit ?? null,
+        })
+      }
+    }
+  }
+
+  const topItems = [...itemFreq.values()]
+    .sort((a, b) => b.totalSpend - a.totalSpend)
+    .slice(0, 15)
+
+  return {
+    found: true,
+    company: company.name,
+    period: `Last ${months} months`,
+    invoiceCount: invoices.length,
+    totalSpend: `RM ${totalSpend.toFixed(2)}`,
+    lastOrderDate: invoices[0]?.docDate?.toISOString().slice(0, 10),
+    outstandingBalance: company.outstandingBalance ? `RM ${Number(company.outstandingBalance).toFixed(2)}` : null,
+    overdueAmount: company.overdueAmount && Number(company.overdueAmount) > 0
+      ? `RM ${Number(company.overdueAmount).toFixed(2)}`
+      : null,
+    topItems: topItems.map(i => ({
+      description:  i.description,
+      unit:         i.unit,
+      invoiceCount: i.invoiceCount,
+      totalQty:     Math.round(i.totalQty),
+      totalSpend:   `RM ${i.totalSpend.toFixed(2)}`,
+      lastOrderDate: i.lastDate.toISOString().slice(0, 10),
+    })),
+  }
+}
+
+// ── suggest_reorder_items ────────────────────────────────────────────────────
+
+export async function suggestReorderItems(companyName: string): Promise<ToolResult> {
+  const company = await prisma.company.findFirst({
+    where: { name: { contains: companyName, mode: 'insensitive' } },
+    select: { id: true, name: true },
+  })
+
+  if (!company) {
+    return { found: false, message: `No company found matching "${companyName}".` }
+  }
+
+  const threeMonthsAgo = new Date()
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+
+  // Items ordered in past 12 months
+  const yearAgo = new Date()
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+
+  const invoices = await prisma.qneInvoice.findMany({
+    where: { companyId: company.id, docDate: { gte: yearAgo } },
+    include: { items: true },
+    orderBy: { docDate: 'desc' },
+  })
+
+  if (invoices.length === 0) {
+    return {
+      found: true,
+      company: company.name,
+      message: 'No invoice history found. Run syncQneInvoices.ts with VPN first.',
+    }
+  }
+
+  const itemMap = new Map<string, { description: string; totalOrders: number; avgQty: number; lastOrderDate: Date; stockCode: string | null }>()
+
+  for (const inv of invoices) {
+    for (const item of inv.items) {
+      const key = item.stockCode ?? item.description
+      const existing = itemMap.get(key)
+      if (existing) {
+        existing.totalOrders++
+        existing.avgQty = (existing.avgQty * (existing.totalOrders - 1) + Number(item.qty)) / existing.totalOrders
+        if (inv.docDate > existing.lastOrderDate) existing.lastOrderDate = inv.docDate
+      } else {
+        itemMap.set(key, {
+          description:   item.description,
+          totalOrders:   1,
+          avgQty:        Number(item.qty),
+          lastOrderDate: inv.docDate,
+          stockCode:     item.stockCode,
+        })
+      }
+    }
+  }
+
+  // Suggest items not ordered recently (>60 days) but ordered multiple times before = likely recurring
+  const suggestions = [...itemMap.values()]
+    .filter(i => i.totalOrders >= 2 && i.lastOrderDate < threeMonthsAgo)
+    .sort((a, b) => b.totalOrders - a.totalOrders)
+    .slice(0, 10)
+
+  const recentItems = [...itemMap.values()]
+    .filter(i => i.lastOrderDate >= threeMonthsAgo)
+    .sort((a, b) => b.lastOrderDate.getTime() - a.lastOrderDate.getTime())
+    .slice(0, 5)
+
+  return {
+    found: true,
+    company: company.name,
+    invoicesAnalyzed: invoices.length,
+    suggestedReorders: suggestions.map(i => ({
+      description:   i.description,
+      stockCode:     i.stockCode,
+      timesOrdered:  i.totalOrders,
+      avgQty:        Math.round(i.avgQty),
+      lastOrdered:   i.lastOrderDate.toISOString().slice(0, 10),
+      daysSinceLastOrder: Math.round((Date.now() - i.lastOrderDate.getTime()) / 86400000),
+    })),
+    recentlyOrdered: recentItems.map(i => ({
+      description: i.description,
+      lastOrdered: i.lastOrderDate.toISOString().slice(0, 10),
+    })),
+    tip: suggestions.length === 0
+      ? 'All recurring items were ordered recently — good coverage!'
+      : `${suggestions.length} items are overdue for reorder based on past patterns.`,
+  }
+}
+
+// ── get_inactive_clients ─────────────────────────────────────────────────────
+
+export async function getInactiveClients(daysSinceLastOrder = 90, salesPersonName?: string): Promise<ToolResult> {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - daysSinceLastOrder)
+
+  // Find companies with last invoice before cutoff (or no invoices at all but QNE synced)
+  const activeCompanies = await prisma.company.findMany({
+    where: {
+      qneCustomerCode: { not: null },
+      ...(salesPersonName ? {
+        assignments: {
+          some: {
+            unassignedAt: null,
+            user: { name: { contains: salesPersonName, mode: 'insensitive' } },
+          },
+        },
+      } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      industry: true,
+      outstandingBalance: true,
+      qneInvoices: {
+        orderBy: { docDate: 'desc' },
+        take: 1,
+        select: { docDate: true, totalAmount: true },
+      },
+      assignments: {
+        where: { unassignedAt: null },
+        select: { user: { select: { name: true } } },
+        take: 1,
+      },
+    },
+  })
+
+  const inactive = activeCompanies
+    .filter(c => {
+      const lastInvoice = c.qneInvoices[0]
+      return !lastInvoice || lastInvoice.docDate < cutoff
+    })
+    .map(c => ({
+      name:               c.name,
+      industry:           c.industry ?? null,
+      assignedTo:         c.assignments[0]?.user.name ?? 'Unassigned',
+      lastOrderDate:      c.qneInvoices[0]?.docDate?.toISOString().slice(0, 10) ?? 'Never (in sync period)',
+      daysSinceOrder:     c.qneInvoices[0]
+        ? Math.round((Date.now() - c.qneInvoices[0].docDate.getTime()) / 86400000)
+        : null,
+      outstandingBalance: c.outstandingBalance ? `RM ${Number(c.outstandingBalance).toFixed(2)}` : null,
+    }))
+    .sort((a, b) => (b.daysSinceOrder ?? 9999) - (a.daysSinceOrder ?? 9999))
+    .slice(0, 25)
+
+  return {
+    found: true,
+    threshold: `${daysSinceLastOrder} days`,
+    filter: salesPersonName ?? 'All salespeople',
+    count: inactive.length,
+    clients: inactive,
+    tip: inactive.length === 0
+      ? 'All clients ordered recently — great account activity!'
+      : `${inactive.length} clients need a follow-up call.`,
+  }
+}
+
+// ── get_top_products_by_revenue ──────────────────────────────────────────────
+
+export async function getTopProductsByRevenue(months = 6, categoryName?: string): Promise<ToolResult> {
+  const since = new Date()
+  since.setMonth(since.getMonth() - months)
+
+  const invoiceItems = await prisma.qneInvoiceItem.findMany({
+    where: {
+      invoice: { docDate: { gte: since } },
+      ...(categoryName ? {
+        product: {
+          category: {
+            OR: [
+              { name: { contains: categoryName, mode: 'insensitive' } },
+              { parentCategory: { name: { contains: categoryName, mode: 'insensitive' } } },
+            ],
+          },
+        },
+      } : {}),
+    },
+    include: {
+      product: {
+        select: {
+          name: true,
+          brand: true,
+          unit: true,
+          qneItemCode: true,
+          category: { include: { parentCategory: true } },
+        },
+      },
+    },
+  })
+
+  if (invoiceItems.length === 0) {
+    return {
+      found: false,
+      message: `No invoice items found for the last ${months} months${categoryName ? ` in category "${categoryName}"` : ''}. Run syncQneInvoices.ts first.`,
+    }
+  }
+
+  // Aggregate by stock code / description
+  const agg = new Map<string, { description: string; brand: string | null; category: string; totalRevenue: number; totalQty: number; invoiceCount: number }>()
+
+  for (const item of invoiceItems) {
+    const key = item.stockCode ?? item.description
+    const category = item.product?.category.parentCategory?.name ?? item.product?.category.name ?? 'Unknown'
+    const existing = agg.get(key)
+    if (existing) {
+      existing.totalRevenue += Number(item.lineTotal)
+      existing.totalQty    += Number(item.qty)
+      existing.invoiceCount++
+    } else {
+      agg.set(key, {
+        description:  item.product?.name ?? item.description,
+        brand:        item.product?.brand ?? null,
+        category,
+        totalRevenue: Number(item.lineTotal),
+        totalQty:     Number(item.qty),
+        invoiceCount: 1,
+      })
+    }
+  }
+
+  const ranked = [...agg.values()]
+    .sort((a, b) => b.totalRevenue - a.totalRevenue)
+    .slice(0, 15)
+
+  const totalRevenue = ranked.reduce((s, i) => s + i.totalRevenue, 0)
+
+  return {
+    found: true,
+    period: `Last ${months} months`,
+    categoryFilter: categoryName ?? 'All categories',
+    totalRevenue: `RM ${totalRevenue.toFixed(2)}`,
+    topProducts: ranked.map((i, idx) => ({
+      rank:         idx + 1,
+      description:  i.description,
+      brand:        i.brand,
+      category:     i.category,
+      revenue:      `RM ${i.totalRevenue.toFixed(2)}`,
+      qty:          Math.round(i.totalQty),
+      invoiceCount: i.invoiceCount,
+      revenuePct:   `${((i.totalRevenue / totalRevenue) * 100).toFixed(1)}%`,
+    })),
+  }
+}
+
+// ── get_client_financials ────────────────────────────────────────────────────
+
+export async function getClientFinancials(companyName: string): Promise<ToolResult> {
+  const company = await prisma.company.findFirst({
+    where: { name: { contains: companyName, mode: 'insensitive' } },
+    select: {
+      name:                true,
+      outstandingBalance:  true,
+      creditLimit:         true,
+      overdueAmount:       true,
+      outstandingUpdatedAt: true,
+      status:              true,
+      qneCustomerCode:     true,
+    },
+  })
+
+  if (!company) {
+    return { found: false, message: `No company found matching "${companyName}".` }
+  }
+
+  if (!company.outstandingUpdatedAt) {
+    return {
+      found: true,
+      company: company.name,
+      message: 'Financial data not yet synced. Run syncQneAging.ts with VPN to populate balances.',
+    }
+  }
+
+  const outstanding = Number(company.outstandingBalance ?? 0)
+  const credit      = Number(company.creditLimit ?? 0)
+  const overdue     = Number(company.overdueAmount ?? 0)
+  const utilisation = credit > 0 ? (outstanding / credit * 100).toFixed(1) : null
+
+  return {
+    found:              true,
+    company:            company.name,
+    qneCode:            company.qneCustomerCode,
+    outstandingBalance: `RM ${outstanding.toFixed(2)}`,
+    creditLimit:        credit > 0 ? `RM ${credit.toFixed(2)}` : 'Not set',
+    creditUtilisation:  utilisation ? `${utilisation}%` : null,
+    overdueAmount:      overdue > 0 ? `RM ${overdue.toFixed(2)}` : 'None',
+    isOverdue:          overdue > 0,
+    isSafeToQuote:      overdue === 0 && (credit === 0 || outstanding < credit * 0.9),
+    lastSyncedAt:       company.outstandingUpdatedAt.toISOString().slice(0, 10),
+    advice:             overdue > 0
+      ? `⚠️ Client has RM ${overdue.toFixed(2)} overdue — confirm with finance before quoting large orders.`
+      : outstanding > 0 && credit > 0 && outstanding >= credit * 0.9
+        ? `⚠️ Client is at ${utilisation}% credit utilisation — approaching limit.`
+        : `✅ Financials look healthy — safe to quote.`,
+  }
+}
+
 // ── list_categories ─────────────────────────────────────────────────────────
 
 export async function listCategories(): Promise<ToolResult> {

@@ -109,8 +109,10 @@ model Company {
   qneCustomerCode      String?   @unique @map("qne_customer_code")
   qneSynced            Boolean   @default(false) @map("qne_synced")
   qneLastSyncedAt      DateTime? @map("qne_last_synced_at")
-  outstandingBalance   Decimal?  @map("outstanding_balance")   // synced from QNE currentBalance
-  outstandingUpdatedAt DateTime? @map("outstanding_updated_at") // when the balance was last synced
+  outstandingBalance   Decimal?  @map("outstanding_balance")
+  creditLimit          Decimal?  @map("credit_limit")
+  overdueAmount        Decimal?  @map("overdue_amount")
+  outstandingUpdatedAt DateTime? @map("outstanding_updated_at")
   isDuplicateSuspect   Boolean   @default(false) @map("is_duplicate_suspect")
   mergedIntoId         String?   @map("merged_into_id")
   createdAt            DateTime  @default(now()) @map("created_at")
@@ -134,7 +136,8 @@ model Company {
   qneStagingMatches   QneCustomerStaging[]
   portalUsers         User[]                    @relation("CustomerPortalUser")
   invoices                 Invoice[]
-  topItems                 QneTopItem[]              // recurring items from QNE invoice history
+  topItems                 QneTopItem[]
+  qneInvoices              QneInvoice[]
   telegramAccountRequests  TelegramAccountRequest[]  @relation("CompanyFromTelegramRequest")
 
   @@map("companies")
@@ -358,6 +361,7 @@ model Product {
   stagingMatches  SupplierPriceStaging[]
   quotationItems  QuotationItem[]
   orderItems      OrderItem[]
+  qneInvoiceItems QneInvoiceItem[]
 
   // Listing query: WHERE isActive=true AND isVisibleToCustomers=true ORDER BY name
   @@index([isActive, isVisibleToCustomers, name])
@@ -365,6 +369,20 @@ model Product {
   @@index([isActive, isVisibleToCustomers, categoryId])
 
   @@map("products")
+}
+
+// Admin-managed map of product keywords → preferred brands for Smart Order matching.
+// e.g. "eraser" → "Faber Castell" ×1.6 boost
+model ProductBrandPreference {
+  id              String   @id @default(uuid())
+  label           String   // human label e.g. "Eraser → Faber Castell"
+  keywords        String   // comma-separated trigger words e.g. "eraser"
+  brands          String   // comma-separated preferred brands e.g. "Faber Castell,Staedtler"
+  boostMultiplier Decimal  @default(1.6) @db.Decimal(4,2) @map("boost_multiplier")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("product_brand_preferences")
 }
 
 // ============================================================
@@ -736,6 +754,48 @@ model QneTopItem {
 
   @@unique([companyId, itemName])
   @@map("qne_top_items")
+}
+
+// ============================================================
+// DOMAIN 9B — QNE INVOICE HISTORY (read-only mirror)
+// ============================================================
+
+model QneInvoice {
+  id             String   @id @default(uuid())
+  docNo          String   @unique @map("doc_no")
+  docDate        DateTime @map("doc_date")
+  customerCode   String   @map("customer_code")
+  customerName   String   @map("customer_name")
+  companyId      String?  @map("company_id")
+  totalAmount    Decimal  @default(0) @map("total_amount") @db.Decimal(14, 4)
+  status         String?
+  syncedAt       DateTime @default(now()) @map("synced_at")
+
+  company  Company?         @relation(fields: [companyId], references: [id])
+  items    QneInvoiceItem[]
+
+  @@index([customerCode])
+  @@index([docDate])
+  @@index([companyId])
+  @@map("qne_invoices")
+}
+
+model QneInvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String  @map("invoice_id")
+  stockCode   String? @map("stock_code")
+  description String
+  qty         Decimal @default(0) @db.Decimal(14, 4)
+  unitPrice   Decimal @default(0) @map("unit_price") @db.Decimal(14, 4)
+  lineTotal   Decimal @default(0) @map("line_total") @db.Decimal(14, 4)
+  productId   String? @map("product_id")
+
+  invoice QneInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product?   @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([stockCode])
+  @@map("qne_invoice_items")
 }
 
 // ============================================================

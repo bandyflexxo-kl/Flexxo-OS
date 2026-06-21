@@ -12,6 +12,11 @@ import {
   getIndustryBuyingPatterns,
   listMyCompanies,
   listCategories,
+  getClientPurchaseHistory,
+  suggestReorderItems,
+  getInactiveClients,
+  getTopProductsByRevenue,
+  getClientFinancials,
   type ToolResult,
 } from './salesAgentTools'
 
@@ -25,13 +30,20 @@ Help Flexxo salespeople:
 2. Recommend the right products for specific types of clients
 3. Understand what clients in a given industry typically buy
 4. Look up specific products by name, brand, or item code
-5. Research a client's past purchase history before a sales visit
-6. Answer questions about Flexxo's product range and categories
+5. Research a client's real purchase history from QNE invoices before a sales visit
+6. Identify which clients haven't ordered recently and need follow-up
+7. Check client financials (outstanding balance, credit limit, overdue) before quoting large orders
+8. Find what's actually generating the most revenue across all clients
+9. Suggest reorder items for a client based on their buying patterns
 
 ## IMPORTANT: Tool usage rules
-- When the user asks about "my companies", "my clients", "my accounts", or "assigned to me" → ALWAYS call list_my_companies immediately. Never say you don't have access.
-- When the user asks about a specific company's history → call get_customer_history
-- ALWAYS use tools to fetch real data. Never make up or assume what the data says.
+- When asked about "my companies", "my clients", "my accounts" → call list_my_companies
+- When asked about a client's purchase history, what they buy, what to recommend → call get_client_purchase_history (uses real QNE invoices) FIRST, then get_customer_history as supplement
+- When asked who hasn't ordered recently, inactive clients, who to call → call get_inactive_clients
+- When asked about revenue, best sellers by revenue, what's making money → call get_top_products_by_revenue
+- When asked about client financials, whether safe to quote, outstanding balance → call get_client_financials
+- When asked what to suggest for a client visit, reorder suggestions → call suggest_reorder_items
+- ALWAYS use tools for real data. Never guess prices, history, or financials.
 
 ## What Flexxo sells
 Office Stationery · Office Furniture · Printer Supplies · Computer Hardware & Software · Office Security · Office Machines · Office Equipment · Breakroom (pantry) · Janitorial (hygiene/cleaning) · Safety Kits
@@ -129,6 +141,62 @@ export const SALES_TOOL_DEFS: Anthropic.Tool[] = [
     description: 'List all product categories and sub-categories with slugs.',
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name:        'get_client_purchase_history',
+    description: 'Get real QNE invoice history for a specific client — what they actually bought, how much spent, last order date. Uses synced QNE invoice data.',
+    input_schema: {
+      type:       'object',
+      properties: {
+        company_name: { type: 'string', description: 'Company name or partial name' },
+        months:       { type: 'number', description: 'How many months to look back, default 12' },
+      },
+      required: ['company_name'],
+    },
+  },
+  {
+    name:        'suggest_reorder_items',
+    description: 'Suggest items a client should reorder based on their past buying patterns — highlights items ordered multiple times but not recently.',
+    input_schema: {
+      type:       'object',
+      properties: {
+        company_name: { type: 'string', description: 'Company name or partial name' },
+      },
+      required: ['company_name'],
+    },
+  },
+  {
+    name:        'get_inactive_clients',
+    description: 'Find clients who have not placed an order in the last N days. Useful for identifying who needs a follow-up call.',
+    input_schema: {
+      type:       'object',
+      properties: {
+        days_since_last_order: { type: 'number', description: 'Threshold in days, default 90' },
+        salesperson_name:      { type: 'string', description: 'Filter by salesperson name (optional)' },
+      },
+    },
+  },
+  {
+    name:        'get_top_products_by_revenue',
+    description: 'Rank products by actual invoiced revenue from QNE — shows what is truly generating the most money, not just quote counts.',
+    input_schema: {
+      type:       'object',
+      properties: {
+        months:        { type: 'number', description: 'Look-back period in months, default 6' },
+        category_name: { type: 'string', description: 'Optional category filter (e.g. "Printer Supplies")' },
+      },
+    },
+  },
+  {
+    name:        'get_client_financials',
+    description: 'Check a client\'s outstanding balance, credit limit, and overdue amount from QNE aging data. Use before quoting large orders.',
+    input_schema: {
+      type:       'object',
+      properties: {
+        company_name: { type: 'string', description: 'Company name or partial name' },
+      },
+      required: ['company_name'],
+    },
+  },
 ]
 
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
@@ -139,6 +207,11 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_industry_buying_patterns: 'Analysing industry patterns',
   list_my_companies:            'Loading your accounts',
   list_categories:              'Loading categories',
+  get_client_purchase_history:  'Reading invoice history',
+  suggest_reorder_items:        'Finding reorder suggestions',
+  get_inactive_clients:         'Checking inactive accounts',
+  get_top_products_by_revenue:  'Ranking by revenue',
+  get_client_financials:        'Checking client financials',
 }
 
 // ── Tool executor ─────────────────────────────────────────────────────────────
@@ -173,6 +246,25 @@ export async function executeSalesTool(name: string, input: Record<string, unkno
         : { error: 'User identity not available — please use the web chat instead.' }
     case 'list_categories':
       return listCategories()
+    case 'get_client_purchase_history':
+      return getClientPurchaseHistory(
+        String(input.company_name ?? ''),
+        typeof input.months === 'number' ? input.months : 12,
+      )
+    case 'suggest_reorder_items':
+      return suggestReorderItems(String(input.company_name ?? ''))
+    case 'get_inactive_clients':
+      return getInactiveClients(
+        typeof input.days_since_last_order === 'number' ? input.days_since_last_order : 90,
+        typeof input.salesperson_name === 'string' ? input.salesperson_name : undefined,
+      )
+    case 'get_top_products_by_revenue':
+      return getTopProductsByRevenue(
+        typeof input.months === 'number' ? input.months : 6,
+        typeof input.category_name === 'string' ? input.category_name : undefined,
+      )
+    case 'get_client_financials':
+      return getClientFinancials(String(input.company_name ?? ''))
     default:
       return { error: `Unknown tool: ${name}` }
   }

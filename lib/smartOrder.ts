@@ -210,6 +210,15 @@ function parseSingleLine(raw: string): ParsedLine | null {
   }
 }
 
+// ── Layer 3: Product type fence ───────────────────────────────────────────────
+// If the user's query contains one of these unambiguous product nouns,
+// only products whose name also contains that noun are shown.
+// Prevents e.g. "ruler" matching a cutting mat due to shared "30 cm" tokens.
+const PRODUCT_TYPE_FENCE = new Set([
+  'ruler', 'calculator', 'shredder', 'laminator', 'stapler',
+  'scissors', 'punch', 'dispenser',
+])
+
 // ── Token-based fuzzy scorer ──────────────────────────────────────────────────
 
 /**
@@ -331,9 +340,17 @@ type CatalogueProduct = {
   }>
 }
 
+// Compiled rule from a ProductBrandPreference DB row
+type BrandPrefRule = {
+  keywordTokens: string[]   // tokenised keywords that activate this rule
+  brandTokens:   string[]   // tokenised brand names to match against product.brand
+  boost:         number
+}
+
 type CatalogueCache = {
-  products:     CatalogueProduct[]
-  globalMargin: string
+  products:       CatalogueProduct[]
+  globalMargin:   string
+  brandPrefRules: BrandPrefRule[]
 }
 
 let _cache: CatalogueCache | null = null
@@ -345,7 +362,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
     return _cache
   }
 
-  const [products, globalSetting] = await Promise.all([
+  const [products, globalSetting, brandPrefs] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
       select: {
@@ -369,19 +386,28 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
       orderBy: { name: 'asc' },
     }),
     prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
+    prisma.productBrandPreference.findMany({ where: { isActive: true } }),
   ])
+
+  // Compile brand pref DB rows into fast token-based rules
+  const brandPrefRules: BrandPrefRule[] = brandPrefs.map(p => ({
+    keywordTokens: p.keywords.split(',').flatMap(k => [...tokenise(k)]),
+    brandTokens:   p.brands.split(',').flatMap(b => [...tokenise(b)]),
+    boost:         Number(p.boostMultiplier),
+  }))
 
   const enriched = products.map(p => ({
     ...p,
     isVisible:          p.isVisibleToCustomers,
-    orderFreq:          p.qneInvoiceFreq,          // confirmed invoice count from QNE
+    orderFreq:          p.qneInvoiceFreq,
     availableQty:       p.qneAvailableQty ?? null,
     parentCategoryName: p.category.parentCategory?.name ?? null,
   }))
 
   _cache = {
-    products:     enriched as unknown as CatalogueProduct[],
-    globalMargin: globalSetting?.value ?? '30',
+    products:       enriched as unknown as CatalogueProduct[],
+    globalMargin:   globalSetting?.value ?? '30',
+    brandPrefRules,
   }
   _cacheFetchedAt = Date.now()
   return _cache
@@ -411,43 +437,103 @@ function getProductPrice(
  * matchProductsForLines
  * Takes parsed lines and scores each against the full product catalogue.
  * Returns MatchedLine[] with confidence tiers and top-3 alternatives.
+ *
+ * companyId: optional — when provided, previously-bought products/brands get a boost.
  */
-export async function matchProductsForLines(lines: ParsedLine[]): Promise<MatchedLine[]> {
-  const { products: catalogue, globalMargin } = await fetchCatalogue()
+export async function matchProductsForLines(lines: ParsedLine[], companyId?: string): Promise<MatchedLine[]> {
+  const { products: catalogue, globalMargin, brandPrefRules } = await fetchCatalogue()
+
+  // Layer 2: load customer purchase history (approved/sent/accepted quotes only)
+  const companyProductIds  = new Set<string>()
+  const companyBrandTokens = new Set<string>()
+  if (companyId) {
+    const quotations = await prisma.quotation.findMany({
+      where:  { companyId, status: { in: ['approved', 'sent', 'accepted'] } },
+      select: { id: true },
+    })
+    if (quotations.length > 0) {
+      const qIds  = quotations.map(q => q.id)
+      const items = await prisma.quotationItem.findMany({
+        where:  { quotationId: { in: qIds }, productId: { not: null } },
+        select: { productId: true, product: { select: { brand: true } } },
+      })
+      for (const item of items) {
+        if (item.productId) companyProductIds.add(item.productId)
+        if (item.product?.brand) {
+          for (const t of tokenise(item.product.brand)) companyBrandTokens.add(t)
+        }
+      }
+    }
+  }
 
   return lines.map(line => {
     const queryTokens = tokenise(line.parsedName)
     const rawQuery    = line.parsedName
 
+    // Layer 1: find which brand preference rules apply to this query
+    const activeBrandBoosts = brandPrefRules.filter(rule =>
+      rule.keywordTokens.length > 0 &&
+      rule.keywordTokens.every(k => queryTokens.has(k)),
+    )
+
+    // Layer 3: collect fence nouns present in the query
+    const fenceNouns = [...queryTokens].filter(t => PRODUCT_TYPE_FENCE.has(t))
+
     // Score all products
     const scored = catalogue.map(p => {
       const rawScore = scoreMatch(queryTokens, rawQuery, p)
 
-      // ── Business priority adjustments (Principle: stock first → most ordered → best match) ──
-      // Only adjust candidates that already pass minimum threshold (avoids inflating junk)
       let adjustedScore = rawScore
       if (rawScore >= 0.15) {
-        // 1. Stocked items (isVisibleToCustomers=true) get a 35% boost.
-        //    Effect: a stocked product at 0.59 beats a non-stocked product at 0.79.
+        // Stock boost — stocked items score 35% higher
         if (p.isVisible) adjustedScore = rawScore * 1.35
-        // 2. Aplus-first for stationery — push the house brand to the top so reps
-        //    quote what we stock. Only within Office Stationery.
+
+        // APLUS house-brand boost within Office Stationery (global default)
         if (p.parentCategoryName === 'Office Stationery' && (p.brand ?? '').toUpperCase() === 'APLUS') {
           adjustedScore *= 1.3
         }
-        // 3. Order-frequency bonus — cap contribution at +0.08 (20 orders = +0.08)
+
+        // Layer 1: preferred brand boost (product-type specific)
+        if (activeBrandBoosts.length > 0) {
+          const productBrandTokens = [...tokenise(p.brand ?? '')]
+          for (const rule of activeBrandBoosts) {
+            if (rule.brandTokens.some(bt => productBrandTokens.includes(bt))) {
+              adjustedScore *= rule.boost
+              break  // apply highest-priority rule only
+            }
+          }
+        }
+
+        // QNE invoice frequency bonus
         adjustedScore += Math.min(p.orderFreq, 20) * 0.004
+
+        // Layer 2: customer history boost
+        if (companyId) {
+          if (companyProductIds.has(p.id)) {
+            adjustedScore *= 2.0   // exact item previously bought by this company
+          } else if ([...tokenise(p.brand ?? '')].some(t => companyBrandTokens.has(t))) {
+            adjustedScore *= 1.3   // brand previously bought by this company
+          }
+        }
       }
 
       return { product: p, score: rawScore, adjustedScore }
     })
 
-    // Sort by adjustedScore (stock/freq priority), fall back to rawScore for ties
+    // Sort by adjustedScore, break ties by rawScore
     scored.sort((a, b) => b.adjustedScore - a.adjustedScore || b.score - a.score)
-    // Drop options synced to 0 stock — only offer items the rep can actually quote.
-    // Items never synced (availableQty === null) stay eligible.
+
     const top3 = scored
-      .filter(s => s.adjustedScore >= 0.15 && s.product.availableQty !== 0)
+      .filter(s => {
+        if (s.adjustedScore < 0.15) return false
+        if (s.product.availableQty === 0) return false
+        // Layer 3: fence — product name must contain the primary noun
+        if (fenceNouns.length > 0) {
+          const prodTokens = tokenise(s.product.name)
+          if (!fenceNouns.some(noun => prodTokens.has(noun))) return false
+        }
+        return true
+      })
       .slice(0, 3)
 
     const alternatives: ProductMatch[] = top3.map(({ product: p, score, adjustedScore }) => {

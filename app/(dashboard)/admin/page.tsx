@@ -74,6 +74,14 @@ export default async function AdminPage() {
             </div>
             <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
           </Link>
+          <Link href="/admin/brand-preferences" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
+            <span className="text-2xl">⭐</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Brand Preferences</p>
+              <p className="text-xs text-gray-500 mt-0.5">Smart Order brand boost rules (eraser→Faber Castell etc.)</p>
+            </div>
+            <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
+          </Link>
           <Link href="/admin/products" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
             <span className="text-2xl">🛍️</span>
             <div>

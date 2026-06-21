@@ -51,6 +51,7 @@ function initRows(lines: MatchedLine[]): RowState[] {
 
 type Props = {
   quotationId: string
+  companyId:   string
   currency:    string
   onSuccess:   (addedCount: number) => void
   onCancel:    () => void
@@ -58,7 +59,7 @@ type Props = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SmartOrderModal({ quotationId, currency, onSuccess, onCancel }: Props) {
+export default function SmartOrderModal({ quotationId, companyId, currency, onSuccess, onCancel }: Props) {
   const [tab,           setTab]           = useState<'text' | 'photo' | 'pdf'>('text')
   const [pasteText,     setPasteText]     = useState('')
   const [phase,         setPhase]         = useState<'input' | 'parsing' | 'results' | 'adding'>('input')
@@ -84,7 +85,7 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
       const res  = await fetch('/api/smart-order/parse-text', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ text: pasteText }),
+        body:    JSON.stringify({ text: pasteText, companyId }),
       })
       const data = await res.json() as { lines?: MatchedLine[]; error?: string }
       if (!res.ok || !data.lines) {
@@ -125,7 +126,7 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
       const res  = await fetch('/api/smart-order/scan-image', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ imageBase64, mimeType: imageMime }),
+        body:    JSON.stringify({ imageBase64, mimeType: imageMime, companyId }),
       })
       const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
       if (!res.ok || !data.lines) {
@@ -164,7 +165,7 @@ export default function SmartOrderModal({ quotationId, currency, onSuccess, onCa
       const res  = await fetch('/api/smart-order/scan-pdf', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ pdfBase64 }),
+        body:    JSON.stringify({ pdfBase64, companyId }),
       })
       const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
       if (!res.ok || !data.lines) {

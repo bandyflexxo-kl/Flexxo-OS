@@ -622,6 +622,7 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
           {addMode === 'smartpaste' && (
             <SmartOrderModal
               quotationId={initial.id}
+              companyId={initial.company.id}
               currency={initial.currency}
               onSuccess={(count) => {
                 // Reload items from server after bulk add

@@ -17,6 +17,7 @@ import { parseItemList, matchProductsForLines } from '@/lib/smartOrder'
 
 const BodySchema = z.object({
   pdfBase64: z.string().min(1, 'pdfBase64 required'),
+  companyId: z.string().uuid().optional(),
 })
 
 const PDF_PROMPT = `You are reading a customer purchase order or shopping list PDF.
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
   }
 
   const lines        = parseItemList(extractedText)
-  const matchedLines = await matchProductsForLines(lines)
+  const matchedLines = await matchProductsForLines(lines, parsed.data.companyId)
 
   return Response.json({ lines: matchedLines, extractedText })
 }

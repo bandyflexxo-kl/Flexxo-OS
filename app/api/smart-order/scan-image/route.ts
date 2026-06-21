@@ -24,6 +24,7 @@ const BodySchema = z.object({
   mimeType:    z.enum(ALLOWED_MIME).refine(v => ALLOWED_MIME.includes(v as typeof ALLOWED_MIME[number]), {
     message: 'mimeType must be image/jpeg, image/png, image/gif, or image/webp',
   }),
+  companyId:   z.string().uuid().optional(),
 })
 
 const IMAGE_PROMPT = `You are reading a customer purchase order or shopping list image.
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
   }
 
   const lines        = parseItemList(extractedText)
-  const matchedLines = await matchProductsForLines(lines)
+  const matchedLines = await matchProductsForLines(lines, parsed.data.companyId)
 
   return Response.json({ lines: matchedLines, extractedText })
 }
