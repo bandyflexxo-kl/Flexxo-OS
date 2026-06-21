@@ -246,14 +246,18 @@ function tokenise(s: string): Set<string> {
 
   const result = new Set<string>()
   for (const t of raw) {
-    result.add(t)
-    // Expand "30cm" → also add "30" + "cm" so it matches "30 cm" in product names,
-    // and vice-versa "30 cm" already splits naturally and still hits "30cm" in queries.
-    // Require both parts to be len≥2 so "2b", "3m" are NOT split (spec codes, not dims).
+    // Normalise "30cm" → "30" + "cm" (replace compound, don't keep it).
+    // This makes "30cm" in a query match "30 cm" in a product name and vice-versa,
+    // because both sides tokenise to the same parts.
+    // Guard: numeric part must be len≥2 so "2b" (pencil grade) and "3m" (brand)
+    // are NOT split — their numeric part is single-digit, fails the guard.
     const dim = t.match(/^(\d+(?:\.\d+)?)([a-z]{2,4})$/)
     if (dim && dim[1]!.length >= 2) {
       result.add(dim[1]!)   // "30"
       result.add(dim[2]!)   // "cm"
+      // Compound form "30cm" intentionally omitted — normalises both sides equally
+    } else {
+      result.add(t)
     }
   }
   return result
