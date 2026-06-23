@@ -184,6 +184,27 @@ function computeFrequentItems(
     .slice(0, 50)   // cap at 50 items to keep the drawer manageable
 }
 
+function computeMonthlySpending(
+  orders: Array<{ createdAt: Date; totalAmount: Decimal | null; status: string }>
+): Array<{ month: string; amount: number }> {
+  const completedStatuses = new Set(['Delivered', 'Shipped', 'Processing', 'Confirmed', 'Approved', 'Picking', 'Packed', 'Delivering'])
+  const now    = new Date()
+  const months = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push({ month: d.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' }), amount: 0 })
+  }
+  for (const order of orders) {
+    if (!completedStatuses.has(order.status)) continue
+    const orderDate = new Date(order.createdAt)
+    const monthsAgo = (now.getFullYear() - orderDate.getFullYear()) * 12 + (now.getMonth() - orderDate.getMonth())
+    if (monthsAgo >= 0 && monthsAgo <= 5) {
+      months[5 - monthsAgo].amount += Number(order.totalAmount ?? 0)
+    }
+  }
+  return months
+}
+
 function computeCategoryBreakdown(
   orders: Array<{ items: Array<{ lineTotal: Decimal; product: { category: { name: string } } | null }> }>
 ): CategoryBreakdown[] {
@@ -283,6 +304,7 @@ export default async function DashboardPage() {
   const smartReorders  = computeSmartReorders(orders)
   const frequentItems  = computeFrequentItems(orders)
   const categoryBreak  = computeCategoryBreakdown(orders)
+  const monthlySpend   = computeMonthlySpending(orders)
 
   const recentOrders: RecentOrder[] = orders.slice(0, 3).map(o => ({
     id: o.id, referenceNo: o.referenceNo, status: o.status,
@@ -341,21 +363,21 @@ export default async function DashboardPage() {
       <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
-          {/* Total Spent — fast */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-400 font-medium">Total Spent</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
-              {totalSpent > 0 ? `MYR ${(totalSpent / 1000).toFixed(1)}k` : 'MYR 0'}
-            </p>
-            <p className="text-[10px] text-gray-400 mt-0.5">lifetime</p>
-          </div>
+          {/* Total Spent — prefers QNE invoice total when CRM is zero */}
+          <Suspense fallback={<StatCardSkeleton label="Total Spent" />}>
+            <TotalSpentCard
+              crmTotal={totalSpent}
+              qneCustomerCode={company?.qneCustomerCode}
+            />
+          </Suspense>
 
-          {/* Orders Placed — fast */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-400 font-medium">Orders Placed</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{totalOrders}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">all time</p>
-          </div>
+          {/* Orders / Invoices — prefers QNE invoice count when CRM is zero */}
+          <Suspense fallback={<StatCardSkeleton label="Invoices" />}>
+            <OrdersCard
+              crmCount={totalOrders}
+              qneCustomerCode={company?.qneCustomerCode}
+            />
+          </Suspense>
 
           {/* Outstanding — streams in from QNE (skeleton while loading) */}
           <Suspense fallback={<OutstandingCardSkeleton />}>
@@ -376,6 +398,13 @@ export default async function DashboardPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 mt-6 space-y-5">
+
+        {/* ── Payment alert (streams in, shown only if outstanding > 0) ─ */}
+        {company?.qneCustomerCode && (
+          <Suspense fallback={null}>
+            <PaymentAlertBanner qneCustomerCode={company.qneCustomerCode} />
+          </Suspense>
+        )}
 
         {/* ── Loyalty progress bar (if has spend) ───────────────────── */}
         {totalSpent > 0 && partnerTier.nextTier && partnerTier.nextAt && (
@@ -561,6 +590,62 @@ export default async function DashboardPage() {
           </div>
         )}
 
+        {/* ── QNE Invoice History — streams in, shown when QNE has data ── */}
+        {company?.qneCustomerCode && (
+          <Suspense fallback={<QneInvoiceHistorySkeleton />}>
+            <QneInvoiceHistory qneCustomerCode={company.qneCustomerCode} />
+          </Suspense>
+        )}
+
+        {/* ── Monthly Spending Chart (CRM orders only — hidden when QNE chart covers it) */}
+        {!company?.qneCustomerCode && (() => {
+          const hasSpend = monthlySpend.some(m => m.amount > 0)
+          const max      = Math.max(...monthlySpend.map(m => m.amount), 1)
+          return (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+                <span className="text-sm">📈</span>
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Monthly Spending</p>
+                <span className="ml-auto text-[10px] text-gray-400">last 6 months</span>
+              </div>
+              {hasSpend ? (
+                <div className="px-4 pt-4 pb-3">
+                  <div className="flex items-end gap-1.5 h-20">
+                    {monthlySpend.map(m => {
+                      const heightPct = m.amount > 0 ? Math.max((m.amount / max) * 100, 8) : 2
+                      return (
+                        <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5">
+                          {m.amount > 0 && (
+                            <p className="text-[9px] text-gray-500 font-medium leading-none mb-0.5">
+                              {m.amount >= 1000 ? `${(m.amount / 1000).toFixed(1)}k` : Math.round(m.amount).toString()}
+                            </p>
+                          )}
+                          <div
+                            className="w-full rounded-t bg-green-500"
+                            style={{ height: `${heightPct}%`, opacity: m.amount > 0 ? 1 : 0.15, minHeight: '2px' }}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5">
+                    {monthlySpend.map(m => (
+                      <p key={m.month} className="flex-1 text-center text-[9px] text-gray-400 truncate">{m.month}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-xs text-gray-400">No orders yet — your spending history will appear here after your first order.</p>
+                  <Link href="/shop/products" className="inline-block mt-3 text-xs font-semibold text-green-600 hover:text-green-700 transition-colors">
+                    Browse Products →
+                  </Link>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         {/* ── Category Spending Breakdown ───────────────────────────── */}
         {categoryBreak.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -702,6 +787,233 @@ export default async function DashboardPage() {
 // Both call fetchQneFinancialDataCached with the same key — unstable_cache
 // deduplicates concurrent requests so QNE is only contacted once.
 
+// ── Stat card skeleton (used while QNE loads) ─────────────────────────────────
+function StatCardSkeleton({ label }: { label: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm animate-pulse">
+      <p className="text-xs text-gray-400 font-medium">{label}</p>
+      <div className="h-6 bg-gray-200 rounded-md w-20 mt-1 mb-1" />
+      <div className="h-2.5 bg-gray-100 rounded-md w-14" />
+    </div>
+  )
+}
+
+/** Total Spent card — shows QNE invoice total when CRM is zero */
+async function TotalSpentCard({
+  crmTotal,
+  qneCustomerCode,
+}: {
+  crmTotal:         number
+  qneCustomerCode:  string | null | undefined
+}) {
+  let qneTotal: number | null = null
+  let isQne = false
+
+  if (crmTotal === 0 && qneCustomerCode) {
+    try {
+      const fin  = await fetchQneFinancialDataCached(qneCustomerCode)
+      qneTotal   = fin.invoiceStats.totalAmount
+      isQne      = true
+    } catch { /* fallback to CRM */ }
+  }
+
+  const amount = isQne ? (qneTotal ?? 0) : crmTotal
+
+  // Date range label for the 6-month window
+  const now   = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
+  const rangeLabel = isQne
+    ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
+    : 'lifetime (portal orders)'
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+      <p className="text-xs text-gray-400 font-medium">Total Spent</p>
+      <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
+        {amount > 0 ? `MYR ${(amount / 1000).toFixed(1)}k` : 'MYR 0'}
+      </p>
+      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p>
+    </div>
+  )
+}
+
+/** Orders / Invoices card — shows QNE invoice count when CRM is zero */
+async function OrdersCard({
+  crmCount,
+  qneCustomerCode,
+}: {
+  crmCount:         number
+  qneCustomerCode:  string | null | undefined
+}) {
+  let qneCount: number | null = null
+  let isQne = false
+
+  if (crmCount === 0 && qneCustomerCode) {
+    try {
+      const fin = await fetchQneFinancialDataCached(qneCustomerCode)
+      qneCount  = fin.invoiceStats.count
+      isQne     = true
+    } catch { /* fallback to CRM */ }
+  }
+
+  const count = isQne ? (qneCount ?? 0) : crmCount
+
+  const now   = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
+  const rangeLabel = isQne
+    ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
+    : 'all time (portal orders)'
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+      <p className="text-xs text-gray-400 font-medium">{isQne ? 'Invoices' : 'Orders Placed'}</p>
+      <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{count}</p>
+      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p>
+    </div>
+  )
+}
+
+/** QNE invoice history — monthly chart + stats, streams in via Suspense */
+async function QneInvoiceHistory({ qneCustomerCode }: { qneCustomerCode: string }) {
+  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
+  try {
+    fin = await fetchQneFinancialDataCached(qneCustomerCode)
+  } catch {
+    return null
+  }
+
+  const { monthlySpend, invoiceStats } = fin
+  if (!monthlySpend.some(m => m.amount > 0)) return null
+
+  const max = Math.max(...monthlySpend.map(m => m.amount), 1)
+
+  // Month-on-month delta: compare last full month vs the month before it
+  // monthlySpend[5] = current month (may be partial), [4] = last full month, [3] = month before
+  const currentMonthAmt = monthlySpend[5]?.amount ?? 0
+  const prevMonthAmt    = monthlySpend[4]?.amount ?? 0
+  const prevPrevAmt     = monthlySpend[3]?.amount ?? 0
+  // Use last full month vs month before for a more meaningful delta
+  const deltaBase   = prevPrevAmt
+  const deltaTarget = prevMonthAmt
+  const deltaSign   = deltaTarget >= deltaBase ? 1 : -1
+  const deltaPct    = deltaBase > 0 ? Math.abs(((deltaTarget - deltaBase) / deltaBase) * 100) : null
+  const prevMonthName = monthlySpend[4]?.month ?? ''
+  const prevPrevName  = monthlySpend[3]?.month ?? ''
+
+  // Date range for the 6-month window
+  const now   = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
+  const rangeStr = `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+        <span className="text-sm">📈</span>
+        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Monthly Spending</p>
+        <span className="ml-auto text-[10px] text-green-500 font-medium">● Live from QNE</span>
+      </div>
+
+      {/* Summary stats row */}
+      <div className="px-4 pt-3 pb-0 flex gap-6 text-xs">
+        <div>
+          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">6-Month Total</p>
+          <p className="font-bold text-gray-900 text-sm mt-0.5">
+            MYR {invoiceStats.totalAmount.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Invoices</p>
+          <p className="font-bold text-gray-900 text-sm mt-0.5">{invoiceStats.count}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Avg / Invoice</p>
+          <p className="font-bold text-gray-900 text-sm mt-0.5">
+            MYR {invoiceStats.count > 0
+              ? (invoiceStats.totalAmount / invoiceStats.count).toLocaleString('en-MY', { maximumFractionDigits: 0 })
+              : '0'}
+          </p>
+        </div>
+        {/* Month-on-month delta */}
+        {deltaPct !== null && prevMonthAmt > 0 && (
+          <div className="ml-auto text-right">
+            <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">
+              {prevMonthName} vs {prevPrevName}
+            </p>
+            <p className={`font-bold text-sm mt-0.5 ${deltaSign >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              {deltaSign >= 0 ? '↑' : '↓'} {deltaPct.toFixed(0)}%
+            </p>
+          </div>
+        )}
+        {/* Current month spend (partial) */}
+        {currentMonthAmt > 0 && (
+          <div className="text-right">
+            <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">
+              {monthlySpend[5]?.month} (so far)
+            </p>
+            <p className="font-bold text-gray-900 text-sm mt-0.5">
+              MYR {currentMonthAmt >= 1000 ? `${(currentMonthAmt / 1000).toFixed(1)}k` : currentMonthAmt.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+        )}
+      </div>
+      {/* Date range context */}
+      <p className="px-4 pt-1.5 text-[10px] text-gray-400">{rangeStr}</p>
+
+      {/* Bar chart */}
+      <div className="px-4 pt-3 pb-3">
+        <div className="flex items-end gap-1.5 h-20">
+          {monthlySpend.map(m => {
+            const heightPct = m.amount > 0 ? Math.max((m.amount / max) * 100, 8) : 2
+            return (
+              <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5">
+                {m.amount > 0 && (
+                  <p className="text-[9px] text-gray-500 font-medium leading-none mb-0.5">
+                    {m.amount >= 1000 ? `${(m.amount / 1000).toFixed(1)}k` : Math.round(m.amount).toString()}
+                  </p>
+                )}
+                <div
+                  className="w-full rounded-t bg-green-500"
+                  style={{ height: `${heightPct}%`, opacity: m.amount > 0 ? 1 : 0.15, minHeight: '2px' }}
+                />
+              </div>
+            )
+          })}
+        </div>
+        <div className="flex gap-1.5 mt-1.5">
+          {monthlySpend.map(m => (
+            <p key={m.month} className="flex-1 text-center text-[9px] text-gray-400 truncate">{m.month}</p>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Skeleton for QNE invoice history while loading */
+function QneInvoiceHistorySkeleton() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
+      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
+        <div className="h-3 bg-gray-200 rounded w-32" />
+        <div className="ml-auto h-2.5 bg-gray-100 rounded w-20" />
+      </div>
+      <div className="px-4 py-4">
+        <div className="flex gap-6 mb-4">
+          {[1,2,3].map(i => <div key={i} className="space-y-1"><div className="h-2 bg-gray-100 rounded w-16" /><div className="h-4 bg-gray-200 rounded w-20" /></div>)}
+        </div>
+        <div className="flex items-end gap-1.5 h-20">
+          {[1,2,3,4,5,6].map(i => (
+            <div key={i} className="flex-1 rounded-t bg-gray-100" style={{ height: `${[40,65,30,80,55,70][i-1]}%` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Outstanding metric card — streams in live QNE balance */
 async function OutstandingCard({
   qneCustomerCode,
@@ -735,8 +1047,8 @@ async function OutstandingCard({
           <p className={`text-lg font-bold mt-1 tabular-nums ${outstanding > 0 ? 'text-amber-600' : 'text-green-600'}`}>
             MYR {outstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
           </p>
-          <p className="text-[10px] text-gray-400 mt-0.5">
-            {isCached ? '⚠ cached' : '● live'}
+          <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+            {isCached ? '⚠ cached' : '● live'} · as of {new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
             {paymentTerm && ` · ${paymentTerm}`}
           </p>
         </>
@@ -761,6 +1073,32 @@ function OutstandingCardSkeleton() {
   )
 }
 
+/** Single invoice table row — module-level to avoid defining components inside async functions */
+function InvoiceTableRow({ inv }: {
+  inv: { invoiceNo: string; invoiceDate: string; dueDate: string | null; amount: number }
+}) {
+  const overdue = inv.dueDate && new Date(inv.dueDate) < new Date()
+  return (
+    <tr className="border-b border-gray-50 last:border-0">
+      <td className="px-4 py-2.5 font-mono text-gray-800">{inv.invoiceNo}</td>
+      <td className="px-4 py-2.5 text-gray-500">
+        {inv.invoiceDate
+          ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
+          : '—'}
+      </td>
+      <td className={`px-4 py-2.5 font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
+        {inv.dueDate
+          ? new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
+          : '—'}
+        {overdue && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded">Overdue</span>}
+      </td>
+      <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
+        MYR {inv.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </td>
+    </tr>
+  )
+}
+
 /** QNE invoice table + aging breakdown — streams in after fast content */
 async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }) {
   let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
@@ -770,20 +1108,25 @@ async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }
     return null // QNE unreachable — sections silently omitted
   }
 
-  const recentInvoices = fin.recentInvoices.slice(0, 3)
+  const allInvoices    = fin.recentInvoices
+  const topInvoices    = allInvoices.slice(0, 10)
+  const olderInvoices  = allInvoices.slice(10)
   const aging          = fin.aging
 
-  if (recentInvoices.length === 0 && (!aging || aging.totalOutstanding === 0)) return null
+  if (allInvoices.length === 0 && (!aging || aging.totalOutstanding === 0)) return null
 
   return (
     <>
       {/* ── Recent Invoices ──────────────────────────────────────── */}
-      {recentInvoices.length > 0 && (
+      {allInvoices.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm">🧾</span>
-              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Recent Invoices</p>
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                Recent Invoices
+                <span className="ml-1.5 font-normal text-gray-400">({allInvoices.length} total)</span>
+              </p>
             </div>
             <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
           </div>
@@ -797,30 +1140,26 @@ async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }
               </tr>
             </thead>
             <tbody>
-              {recentInvoices.map(inv => {
-                const overdue = inv.dueDate && new Date(inv.dueDate) < new Date()
-                return (
-                  <tr key={inv.invoiceNo} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 font-mono text-gray-800">{inv.invoiceNo}</td>
-                    <td className="px-4 py-2.5 text-gray-500">
-                      {inv.invoiceDate
-                        ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
-                        : '—'}
-                    </td>
-                    <td className={`px-4 py-2.5 font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
-                      {inv.dueDate
-                        ? new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
-                        : '—'}
-                      {overdue && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded">Overdue</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
-                      MYR {inv.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                )
-              })}
+              {topInvoices.map(inv => <InvoiceTableRow key={inv.invoiceNo} inv={inv} />)}
             </tbody>
           </table>
+
+          {/* Expandable older invoices */}
+          {olderInvoices.length > 0 && (
+            <details className="group">
+              <summary className="px-4 py-2.5 text-xs text-green-600 font-medium cursor-pointer hover:bg-gray-50 border-t border-gray-50 flex items-center gap-1 select-none list-none [&::-webkit-details-marker]:hidden">
+                <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                View all {olderInvoices.length} older invoices
+              </summary>
+              <table className="w-full text-xs">
+                <tbody>
+                  {olderInvoices.map(inv => <InvoiceTableRow key={inv.invoiceNo} inv={inv} />)}
+                </tbody>
+              </table>
+            </details>
+          )}
         </div>
       )}
 
@@ -895,6 +1234,72 @@ async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }
         )
       })()}
     </>
+  )
+}
+
+/**
+ * Payment alert banner — streams in via Suspense, renders only when outstanding > 0.
+ * Shows: total owed, oldest overdue invoice, 90d+ bucket if any.
+ */
+async function PaymentAlertBanner({ qneCustomerCode }: { qneCustomerCode: string }) {
+  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
+  try {
+    fin = await fetchQneFinancialDataCached(qneCustomerCode)
+  } catch {
+    return null
+  }
+
+  const outstanding = fin.customer.currentBalance
+  if (!outstanding || outstanding <= 0) return null
+
+  const aging = fin.aging
+
+  // Find oldest overdue invoice from stored invoices
+  const today = new Date()
+  const overdueInvoices = fin.recentInvoices.filter(
+    inv => inv.dueDate && new Date(inv.dueDate) < today
+  )
+  const oldestOverdue = overdueInvoices.sort(
+    (a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime()
+  )[0]
+
+  const has90d  = aging && aging.overdueAbove90 > 0
+  const hasOver = overdueInvoices.length > 0 || has90d
+
+  return (
+    <div className={`rounded-xl px-4 py-3.5 flex items-start gap-3 border ${
+      has90d         ? 'bg-red-50 border-red-200'
+      : hasOver      ? 'bg-amber-50 border-amber-200'
+      :                'bg-blue-50 border-blue-200'
+    }`}>
+      <span className={`text-base mt-0.5 shrink-0 ${has90d ? 'text-red-500' : hasOver ? 'text-amber-500' : 'text-blue-500'}`}>
+        {has90d ? '🔴' : hasOver ? '⚠️' : 'ℹ️'}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-semibold ${has90d ? 'text-red-900' : hasOver ? 'text-amber-900' : 'text-blue-900'}`}>
+          MYR {outstanding.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} outstanding balance
+        </p>
+        <div className={`text-xs mt-0.5 space-y-0.5 ${has90d ? 'text-red-700' : hasOver ? 'text-amber-700' : 'text-blue-700'}`}>
+          {oldestOverdue && (
+            <p>
+              Oldest overdue: <span className="font-medium">{oldestOverdue.invoiceNo}</span>
+              {' — due '}
+              <span className="font-medium">
+                {new Date(oldestOverdue.dueDate!).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+            </p>
+          )}
+          {has90d && aging && (
+            <p className="font-medium text-red-700">
+              MYR {aging.overdueAbove90.toLocaleString('en-MY', { maximumFractionDigits: 0 })} is 90+ days overdue — please settle urgently
+            </p>
+          )}
+          {!hasOver && (
+            <p>All invoices are current — thank you!</p>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

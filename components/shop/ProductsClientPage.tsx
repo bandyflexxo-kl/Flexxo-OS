@@ -145,6 +145,131 @@ function SkeletonGrid() {
 }
 
 // ---------------------------------------------------------------------------
+// BarcodeScanner — uses native BarcodeDetector API (Chrome / Edge / Android)
+// ---------------------------------------------------------------------------
+
+function BarcodeScanner({ onScan, onClose }: {
+  onScan:  (code: string) => void
+  onClose: () => void
+}) {
+  const videoRef   = useRef<HTMLVideoElement>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
+
+  // Stabilise onScan so the effect dep array stays clean
+  const onScanRef = useRef(onScan)
+  useEffect(() => { onScanRef.current = onScan }, [onScan])
+
+  useEffect(() => {
+    let stream:   MediaStream | null = null
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    async function start() {
+      // Feature-detect
+      if (!('BarcodeDetector' in window)) {
+        setErr('Barcode scanning requires Chrome or Edge on Android/desktop. Try the photo search instead.')
+        return
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        })
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+          setReady(true)
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix'],
+        })
+
+        interval = setInterval(async () => {
+          if (!videoRef.current) return
+          try {
+            const results = await detector.detect(videoRef.current) as Array<{ rawValue: string }>
+            if (results.length > 0) {
+              clearInterval(interval!)
+              onScanRef.current(results[0].rawValue)
+            }
+          } catch { /* ignore per-frame errors */ }
+        }, 500)
+      } catch {
+        setErr('Could not access camera. Please grant camera permission and try again.')
+      }
+    }
+
+    start()
+    return () => {
+      if (interval) clearInterval(interval)
+      stream?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ zIndex: Z.modal }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-xl w-full sm:max-w-sm">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h2M4 10h2M4 14h2M4 18h2M8 6v12M18 6v12M12 6v12M16 6h2M16 10h2M16 14h2M16 18h2"/>
+            </svg>
+            <h3 className="font-semibold text-gray-900 text-sm">Scan Barcode</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        {err ? (
+          <div className="px-6 py-8 text-center space-y-3">
+            <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center mx-auto">
+              <svg className="w-7 h-7 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+            </div>
+            <p className="text-sm text-gray-600">{err}</p>
+          </div>
+        ) : (
+          <div className="relative bg-black aspect-[4/3] overflow-hidden">
+            <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+            {/* Aiming reticle */}
+            {ready && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="relative w-52 h-28">
+                  {/* Corner brackets */}
+                  {(['tl','tr','bl','br'] as const).map(corner => (
+                    <span key={corner} className={`absolute w-6 h-6 border-green-400 border-2 ${
+                      corner === 'tl' ? 'top-0 left-0 border-r-0 border-b-0 rounded-tl' :
+                      corner === 'tr' ? 'top-0 right-0 border-l-0 border-b-0 rounded-tr' :
+                      corner === 'bl' ? 'bottom-0 left-0 border-r-0 border-t-0 rounded-bl' :
+                                        'bottom-0 right-0 border-l-0 border-t-0 rounded-br'
+                    }`} />
+                  ))}
+                  {/* Scan line */}
+                  <div className="absolute left-1 right-1 top-1/2 h-0.5 bg-green-400/70" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="px-4 py-3 text-xs text-gray-400 text-center">
+          {err ? 'Try the 📷 photo search instead' : 'Point camera at barcode or QR code · scanning automatically'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -243,6 +368,12 @@ export default function ProductsClientPage({
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const inputRef   = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // ── Photo / Barcode search ────────────────────────────────────────
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const [photoSearching,     setPhotoSearching]     = useState(false)
+  const [photoDetectedQuery, setPhotoDetectedQuery] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   // ── Load products ─────────────────────────────────────────────────
   // Guests use the CDN-cached public endpoint; B2B clients use the dynamic route.
@@ -406,6 +537,40 @@ export default function ProductsClientPage({
     setSearchInput(''); setSearchQuery(''); setActiveCategory(''); setDropdownOpen(false)
     setDisplayCount(PAGE_SIZE)
     window.history.replaceState(null, '', '/shop/products')
+  }
+
+  // ── Photo search ──────────────────────────────────────────────────
+  async function handlePhotoSearch(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''   // allow re-selecting the same file
+    setPhotoSearching(true)
+    setPhotoDetectedQuery(null)
+    try {
+      const form = new FormData()
+      form.append('image', file)
+      const res  = await fetch('/api/portal/search/photo', { method: 'POST', body: form })
+      const data = await res.json() as { matchId: string | null; query: string }
+      if (data.matchId) {
+        router.push(`/shop/products/${data.matchId}`)
+      } else if (data.query) {
+        applySearch(data.query)
+        setPhotoDetectedQuery(data.query)
+      }
+    } catch { /* ignore */ } finally {
+      setPhotoSearching(false)
+    }
+  }
+
+  // ── Barcode scan result handler ───────────────────────────────────
+  function handleBarcodeScan(code: string) {
+    setShowBarcodeScanner(false)
+    const exact = allProducts?.find(p => p.qneItemCode?.toLowerCase() === code.toLowerCase())
+    if (exact) {
+      router.push(`/shop/products/${exact.id}`)
+    } else {
+      applySearch(code)
+    }
   }
 
   // ── Filtered product grid ─────────────────────────────────────────
@@ -755,6 +920,41 @@ export default function ProductsClientPage({
                   /
                 </kbd>
               )}
+
+              {/* Divider */}
+              <span className="w-px h-4 bg-gray-200 shrink-0" />
+
+              {/* Barcode scanner button */}
+              <button
+                type="button"
+                onClick={() => setShowBarcodeScanner(true)}
+                className="shrink-0 p-1 text-gray-400 hover:text-green-600 transition-colors"
+                aria-label="Scan barcode"
+                title="Scan product barcode"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h2M4 10h2M4 14h2M4 18h2M8 6v12M18 6v12M12 6v12M16 6h2M16 10h2M16 14h2M16 18h2"/>
+                </svg>
+              </button>
+
+              {/* Photo search button */}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoSearching}
+                className="shrink-0 p-1 text-gray-400 hover:text-green-600 transition-colors disabled:opacity-50"
+                aria-label="Search by photo"
+                title="Search by product photo"
+              >
+                {photoSearching ? (
+                  <FlexxoSpinner size="sm" color="green" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                )}
+              </button>
             </div>
           </form>
 
@@ -873,6 +1073,33 @@ export default function ProductsClientPage({
           )}
         </div>
 
+        {/* Hidden file input — triggered by the photo button above */}
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handlePhotoSearch}
+        />
+
+        {/* AI-detected query banner */}
+        {photoDetectedQuery && (
+          <div className="flex items-center gap-2 text-xs bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-lg -mt-2">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+            <span>AI identified: <strong>{photoDetectedQuery}</strong></span>
+            <button
+              type="button"
+              onClick={() => setPhotoDetectedQuery(null)}
+              className="ml-auto text-green-400 hover:text-green-700 transition-colors text-base leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Status row */}
         <div className="flex items-center gap-3 flex-wrap">
           {isB2B && (
@@ -966,6 +1193,14 @@ export default function ProductsClientPage({
           </>
         )}
       </div>
+
+      {/* Barcode scanner modal */}
+      {showBarcodeScanner && (
+        <BarcodeScanner
+          onScan={handleBarcodeScan}
+          onClose={() => setShowBarcodeScanner(false)}
+        />
+      )}
     </div>
   )
 }

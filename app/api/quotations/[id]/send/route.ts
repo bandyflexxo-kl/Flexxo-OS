@@ -54,6 +54,40 @@ export async function POST(
   // Determine recipient email and WhatsApp
   const recipientEmail = quotation.contact?.email ?? quotation.company.generalEmail
 
+  if (!recipientEmail) {
+    return Response.json(
+      { error: 'No email address on file for this contact or company. Add an email before sending.' },
+      { status: 400 },
+    )
+  }
+
+  // ── Attempt email FIRST — if SMTP is broken, fail before touching the DB ──
+  try {
+    await sendQuotationEmail({
+      to:              recipientEmail,
+      contactName:     quotation.contact?.name ?? null,
+      salespersonName: quotation.createdBy.name,
+      companyName:     quotation.company.name,
+      referenceNo:     quotation.referenceNo,
+      currency:        quotation.currency,
+      totalAmount:     quotation.totalAmount?.toString() ?? '0',
+      expiresAt:       quotation.expiresAt?.toISOString() ?? null,
+      quotationId:     id,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const isAuth = msg.includes('535') || msg.includes('EAUTH') || msg.includes('Password not accepted')
+    return Response.json(
+      {
+        error: isAuth
+          ? 'Email failed: Gmail app password rejected. Go to myaccount.google.com/apppasswords, generate a new one, and update GMAIL_APP_PASSWORD in .env.local.'
+          : `Email delivery failed: ${msg.slice(0, 200)}`,
+      },
+      { status: 500 },
+    )
+  }
+
+  // ── Email succeeded — commit status to DB ─────────────────────────────────
   await prisma.$transaction(async tx => {
     await tx.quotation.update({
       where: { id },
@@ -67,42 +101,19 @@ export async function POST(
         changedById: session.userId,
       },
     })
-    // Log as outbound email activity
-    if (recipientEmail) {
-      await tx.activity.create({
-        data: {
-          companyId:    quotation.companyId,
-          activityType: 'email',
-          direction:    'outbound',
-          subject:      `Quotation ${quotation.referenceNo} sent to customer`,
-          body:         `Quotation sent to ${recipientEmail}`,
-          userId:       session.userId,
-        },
-      })
-    }
+    await tx.activity.create({
+      data: {
+        companyId:    quotation.companyId,
+        activityType: 'email',
+        direction:    'outbound',
+        subject:      `Quotation ${quotation.referenceNo} sent to customer`,
+        body:         `Quotation emailed to ${recipientEmail}`,
+        userId:       session.userId,
+      },
+    })
   })
 
-  // Send email (outside transaction — email failure should not roll back status change)
-  if (recipientEmail) {
-    try {
-      await sendQuotationEmail({
-        to:              recipientEmail,
-        contactName:     quotation.contact?.name ?? null,
-        salespersonName: quotation.createdBy.name,
-        companyName:     quotation.company.name,
-        referenceNo:     quotation.referenceNo,
-        currency:        quotation.currency,
-        totalAmount:     quotation.totalAmount?.toString() ?? '0',
-        expiresAt:       quotation.expiresAt?.toISOString() ?? null,
-        quotationId:     id,
-      })
-    } catch (err) {
-      // Email failure is non-fatal — quotation is already marked sent
-      console.error('Failed to send quotation email:', err)
-    }
-  }
-
-  // Send WhatsApp via WABA (fire-and-forget — never blocks or fails the response)
+  // ── WABA WhatsApp (fire-and-forget — never blocks the response) ───────────
   if (quotation.contact?.whatsapp) {
     sendQuotationWhatsApp({
       contactName:  quotation.contact.name,
@@ -115,5 +126,5 @@ export async function POST(
     }).catch(() => undefined)
   }
 
-  return Response.json({ ok: true, status: 'sent', emailSent: !!recipientEmail })
+  return Response.json({ ok: true, status: 'sent', emailSent: true, sentTo: recipientEmail })
 }

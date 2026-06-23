@@ -33,11 +33,13 @@ import {
   answerCallbackQuery,
   editMessageText,
   markdownToTelegramHtml,
+  notifyByRole,
   esc,
   type TelegramUpdate,
   type TelegramCallbackQuery,
   type TelegramMessage,
 }                          from '@/lib/telegramBot'
+import { sendOrderStatusWhatsApp } from '@/lib/wabaMessages'
 import { getRedis }        from '@/lib/redis'
 import { runSalesAgent }   from '@/lib/agents/salesAgentCore'
 import { runAdminAgent }   from '@/lib/agents/adminAgentCore'
@@ -54,6 +56,7 @@ import {
   rejectQuotation,
   approveAccountRequest,
   rejectAccountRequest,
+  approveOrder,
   type ApproverCtx,
 }                          from '@/lib/agents/adminAgentTools'
 import { bookLalamoveDelivery } from '@/lib/fulfillment'
@@ -210,6 +213,51 @@ async function handleCallbackQuery(cbq: TelegramCallbackQuery): Promise<Response
       `📝 Please reply with the reason for rejecting this account request.\n\nOr tap Cancel.`,
       [[{ text: '✕ Cancel', callback_data: 'cncl' }]],
     )
+    return Response.json({ ok: true })
+  }
+
+  // ── Approve order ─────────────────────────────────────────────────────────
+  if (data.startsWith('aord:') && PRIVILEGED_ROLES.includes(role)) {
+    const orderId12 = data.slice(5)
+    const order = await prisma.order.findFirst({
+      where:  { id: { startsWith: orderId12 } },
+      select: { id: true, referenceNo: true, companyId: true },
+    })
+    if (!order) {
+      await sendHtml(chatId, '❌ Order not found.')
+      return Response.json({ ok: true })
+    }
+    if (messageId) {
+      await editMessageText(chatId, messageId, `⏳ Approving <b>${esc(order.referenceNo ?? order.id)}</b>…`).catch(() => undefined)
+    }
+    const result = await approveOrder(order.id, { userId: crmUser.id, name: crmUser.name })
+    const html = result.approved
+      ? `✅ <b>${esc(String(result.orderRef))}</b> approved!\n\nInvoice <b>${esc(String(result.invoiceNo))}</b> issued.\nWarehouse picking task created.`
+      : `❌ ${esc(String(result.error ?? result.message ?? 'Failed'))}`
+    if (messageId) {
+      await editMessageText(chatId, messageId, html).catch(() => sendHtml(chatId, html))
+    } else {
+      await sendHtml(chatId, html)
+    }
+    // Notify warehouse + send WABA to customer (fire-and-forget)
+    if (result.approved) {
+      notifyByRole(
+        ['Warehouse'],
+        `📦 <b>New Picking Task</b>\n\n` +
+        `Order: <b>${esc(String(result.orderRef))}</b>\n` +
+        `Client: <b>${esc(String(result.company))}</b>\n` +
+        `Items: ${String(result.itemCount)}\n` +
+        `Invoice: <b>${esc(String(result.invoiceNo))}</b>\n\n` +
+        `Go to <b>Flexxo Warehouse</b> to start picking.`,
+      ).catch(() => undefined)
+      sendOrderStatusWhatsApp({
+        companyId: String(result.companyId ?? order.companyId),
+        orderId:   order.id,
+        orderRef:  String(result.orderRef),
+        newStatus: 'Approved',
+        userId:    crmUser.id,
+      }).catch(() => undefined)
+    }
     return Response.json({ ok: true })
   }
 

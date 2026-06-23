@@ -9,7 +9,7 @@ import QneStockSyncPanel from '@/components/admin/QneStockSyncPanel'
 export default async function AdminPage() {
   const session = await verifySession()
 
-  const [rawSyncs, pendingCount, pendingRequestCount] = await Promise.all([
+  const [rawSyncs, pendingCount, pendingRequestCount, pendingContactEdits] = await Promise.all([
     prisma.qneSyncLog.findMany({
       where:   { syncType: 'customer' },
       orderBy: { startedAt: 'desc' },
@@ -28,6 +28,7 @@ export default async function AdminPage() {
     }),
     prisma.qneCustomerStaging.count({ where: { stagingStatus: 'pending_review' } }),
     prisma.accountRequest.count({ where: { status: 'pending' } }),
+    prisma.contactEditRequest.count({ where: { status: 'pending' } }),
   ])
 
   const recentSyncs = rawSyncs.map(log => ({
@@ -90,6 +91,14 @@ export default async function AdminPage() {
             </div>
             <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
           </Link>
+          <Link href="/admin/photo-coverage" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
+            <span className="text-2xl">📷</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Photo Coverage</p>
+              <p className="text-xs text-gray-500 mt-0.5">Coverage % by brand and category</p>
+            </div>
+            <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
+          </Link>
           <Link href="/admin/customer-accounts" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
             <span className="text-2xl">🏪</span>
             <div>
@@ -144,6 +153,19 @@ export default async function AdminPage() {
             </div>
             <span className="text-amber-400 group-hover:translate-x-0.5 transition-transform text-lg">→</span>
           </Link>
+        )}
+
+        {pendingContactEdits > 0 && (
+          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl p-5">
+            <div>
+              <p className="text-sm font-semibold text-orange-800">
+                ✏️ {pendingContactEdits} contact edit request{pendingContactEdits !== 1 ? 's' : ''} awaiting approval
+              </p>
+              <p className="text-xs text-orange-700 mt-0.5">
+                Salespeople have submitted changes to contact details — review in each company&apos;s Contacts tab
+              </p>
+            </div>
+          </div>
         )}
 
         {pendingCount > 0 && (

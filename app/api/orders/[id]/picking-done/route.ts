@@ -4,6 +4,7 @@ import { bookLalamoveDelivery }     from '@/lib/fulfillment'
 import { isLalamoveBookingWindow }  from '@/lib/orderStatus'
 import { sendPushToUser }           from '@/lib/webpush'
 import { isPrivilegedRole }         from '@/lib/authorization'
+import { notifyByRole, esc }        from '@/lib/telegramBot'
 
 export async function POST(
   _request: Request,
@@ -54,7 +55,9 @@ export async function POST(
     })
   })
 
-  // Notify Admin/Manager
+  const orderRef = order.referenceNo ?? id
+
+  // Push + Telegram → Admin/Manager/Director: packed, book delivery
   const managers = await prisma.userRole.findMany({
     where:   { role: { name: { in: ['Admin', 'Manager'] } }, revokedAt: null },
     include: { user: { select: { id: true } } },
@@ -62,10 +65,16 @@ export async function POST(
   for (const m of managers) {
     sendPushToUser(m.user.id, {
       title: '📦 Order Packed',
-      body:  `${order.referenceNo ?? id} is packed and waiting for delivery booking`,
+      body:  `${orderRef} is packed and waiting for delivery booking`,
       url:   `/orders/${id}`,
     }).catch(() => undefined)
   }
+  notifyByRole(
+    ['Admin', 'Director', 'Manager'],
+    `📦 <b>${esc(orderRef)} packed — ready for delivery!</b>\n\n` +
+    `Picking done by ${esc(session.name ?? session.email)}.\n\n` +
+    `Reply <code>/book ${esc(orderRef)}</code> to get a Lalamove quote.`,
+  ).catch(() => undefined)
 
   // If we're inside a Lalamove booking window, book immediately
   let bookedNow = false

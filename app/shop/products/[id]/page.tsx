@@ -224,7 +224,7 @@ export default async function ShopProductDetailPage({
             </div>
             {/* StockBadge on image — Condition 14 */}
             <div className="absolute top-4 right-4">
-              <StockBadge status={stockStatus} size="sm" />
+              <StockBadge status={stockStatus} size="sm" qty={product.qneAvailableQty} />
             </div>
           </div>
 
@@ -249,13 +249,13 @@ export default async function ShopProductDetailPage({
                     </p>
                     {unit && <span className="text-sm text-gray-400 font-normal">/ {unit}</span>}
                   </div>
-                  <StockBadge status="in-stock" size="sm" />
+                  <StockBadge status="in-stock" size="sm" qty={product.qneAvailableQty} />
                 </div>
               ) : (
                 <div className="space-y-2">
                   <p className="text-lg text-gray-400 italic">Price on request</p>
                   <div className="flex items-center gap-2">
-                    <StockBadge status="available" size="sm" />
+                    <StockBadge status="available" size="sm" qty={product.qneAvailableQty} />
                     <p className="text-xs text-gray-400">Contact your Flexxo sales rep for pricing.</p>
                   </div>
                 </div>

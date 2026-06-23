@@ -37,6 +37,8 @@ export async function GET(
     currency:        quotation.currency,
     subtotal:        quotation.subtotal?.toString() ?? null,
     totalAmount:     quotation.totalAmount?.toString() ?? null,
+    poNumber:        quotation.poNumber ?? null,
+    costCentre:      quotation.costCentre ?? null,
     termsConditions: quotation.termsConditions,
     sentAt:          quotation.sentAt?.toISOString() ?? null,
     expiresAt:       quotation.expiresAt?.toISOString() ?? null,

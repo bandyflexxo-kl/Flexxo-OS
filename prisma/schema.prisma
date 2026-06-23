@@ -61,6 +61,9 @@ model User {
   warehouseTasksCompleted   WarehouseTask[]           @relation("WarehouseTaskCompleted")
   qnePendingActionsApproved QnePendingAction[]        @relation("QnePendingActionApprovedBy")
   telegramAccountRequests   TelegramAccountRequest[]  @relation("TelegramAccountRequests")
+  aliasesCreated            ProductAlias[]            @relation("AliasCreator")
+  contactEditRequests       ContactEditRequest[]       @relation("ContactEditRequestedBy")
+  contactEditApprovals      ContactEditRequest[]       @relation("ContactEditApprovedBy")
 
   @@map("users")
 }
@@ -163,8 +166,30 @@ model Contact {
   createdBy   User       @relation(fields: [createdById], references: [id])
   activities  Activity[]
   quotations  Quotation[]
+  editRequests ContactEditRequest[]
 
   @@map("contacts")
+}
+
+model ContactEditRequest {
+  id            String    @id @default(uuid())
+  contactId     String    @map("contact_id")
+  requestedById String    @map("requested_by_id")
+  approvedById  String?   @map("approved_by_id")
+
+  changes       Json
+  status        String    @default("pending")
+  rejectionNote String?   @map("rejection_note")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  approvedAt DateTime? @map("approved_at")
+  rejectedAt DateTime? @map("rejected_at")
+
+  contact     Contact @relation(fields: [contactId], references: [id])
+  requestedBy User    @relation("ContactEditRequestedBy", fields: [requestedById], references: [id])
+  approvedBy  User?   @relation("ContactEditApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("contact_edit_requests")
 }
 
 model CompanyAddress {
@@ -362,6 +387,7 @@ model Product {
   quotationItems  QuotationItem[]
   orderItems      OrderItem[]
   qneInvoiceItems QneInvoiceItem[]
+  aliases         ProductAlias[]
 
   // Listing query: WHERE isActive=true AND isVisibleToCustomers=true ORDER BY name
   @@index([isActive, isVisibleToCustomers, name])
@@ -369,6 +395,23 @@ model Product {
   @@index([isActive, isVisibleToCustomers, categoryId])
 
   @@map("products")
+}
+
+// Smart Order alias/synonym table.
+// Maps a normalised search phrase → a specific product so future Smart Order
+// runs skip fuzzy matching and return the product directly at high confidence.
+// Created when a salesperson manually selects a product and ticks "Remember this".
+model ProductAlias {
+  id          String   @id @default(uuid())
+  alias       String   @unique     // normalised: lowercase, trimmed, collapsed spaces
+  productId   String   @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdById String?  @map("created_by_id")
+  createdBy   User?    @relation("AliasCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([alias])
+  @@map("product_aliases")
 }
 
 // Admin-managed map of product keywords → preferred brands for Smart Order matching.
@@ -573,8 +616,14 @@ model Quotation {
   discountAmount    Decimal?  @map("discount_amount") @db.Decimal(14, 4)
   taxAmount         Decimal?  @map("tax_amount") @db.Decimal(14, 4)
   totalAmount       Decimal?  @map("total_amount") @db.Decimal(14, 4)
+  poNumber          String?   @map("po_number") @db.VarChar(100)
+  costCentre        String?   @map("cost_centre") @db.VarChar(100)
   termsConditions   String?   @map("terms_conditions") @db.Text
   internalNotes     String?   @map("internal_notes") @db.Text
+  isArchived        Boolean   @default(false) @map("is_archived")
+  deliveryAddress   String?   @map("delivery_address") @db.Text
+  deliveryRecipient String?   @map("delivery_recipient") @db.VarChar(200)
+  deliveryPhone     String?   @map("delivery_phone") @db.VarChar(50)
   sentAt            DateTime? @map("sent_at")
   expiresAt         DateTime? @map("expires_at")
   createdAt         DateTime  @default(now()) @map("created_at")

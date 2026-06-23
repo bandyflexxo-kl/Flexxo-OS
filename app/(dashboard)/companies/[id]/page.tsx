@@ -7,6 +7,9 @@ import { notFound } from 'next/navigation'
 import { isPrivilegedRole } from '@/lib/authorization'
 import QneFinancialTab from '@/components/companies/QneFinancialTab'
 import NewQuotationButton from '@/components/quotations/NewQuotationButton'
+import CompanyOverviewPanel from '@/components/companies/CompanyOverviewPanel'
+import ContactsPanel from '@/components/companies/ContactsPanel'
+import OpenPortalAccountButton from '@/components/companies/OpenPortalAccountButton'
 
 export default async function CompanyDetailPage({
   params,
@@ -22,7 +25,18 @@ export default async function CompanyDetailPage({
   const company = await prisma.company.findUnique({
     where: { id },
     include: {
-      contacts: { where: { isActive: true }, orderBy: { name: 'asc' } },
+      contacts: {
+        where:   { isActive: true },
+        orderBy: { name: 'asc' },
+        include: {
+          editRequests: {
+            where:   { status: 'pending' },
+            include: { requestedBy: { select: { name: true } } },
+            orderBy: { createdAt: 'desc' },
+            take:    1,
+          },
+        },
+      },
       addresses: { where: { isActive: true } },
       tags: { include: { tag: true } },
       assignments: {
@@ -62,6 +76,21 @@ export default async function CompanyDetailPage({
     if (!hasAccess) notFound()
   }
 
+  // Check if a B2B portal account already exists for this company
+  const portalAccount = await prisma.user.findFirst({
+    where: {
+      customerCompanyId: id,
+      userRoles: { some: { role: { name: 'B2B Client' }, revokedAt: null } },
+    },
+    select: { id: true, email: true },
+  })
+
+  // Primary contact to pre-fill the modal (decision maker with email, else first with email)
+  const primaryContact =
+    company.contacts.find(c => c.isDecisionMaker && c.email) ??
+    company.contacts.find(c => !!c.email) ??
+    null
+
   const tabs = [
     'overview', 'contacts', 'addresses', 'pipeline', 'activities', 'quotations', 'orders',
     ...(company.qneCustomerCode ? ['qne'] : []),
@@ -74,12 +103,20 @@ export default async function CompanyDetailPage({
       <Topbar
         title={company.name}
         actions={
-          <Link
-            href={`/contacts/new?companyId=${company.id}`}
-            className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            + Add Contact
-          </Link>
+          <div className="flex items-center gap-2">
+            <OpenPortalAccountButton
+              companyId={company.id}
+              companyName={company.name}
+              existingAccount={portalAccount}
+              primaryContact={primaryContact ? { name: primaryContact.name, email: primaryContact.email ?? '' } : null}
+            />
+            <Link
+              href={`/contacts/new?companyId=${company.id}`}
+              className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              + Add Contact
+            </Link>
+          </div>
         }
       />
       <div className="p-4 sm:p-6 lg:p-8">
@@ -116,60 +153,64 @@ export default async function CompanyDetailPage({
 
         {/* Tab content */}
         {tab === 'overview' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
-            <Field label="Registration No." value={company.regNumber} />
-            <Field label="Industry" value={company.industry} />
-            <Field label="Company Size" value={company.companySize} />
-            <Field label="General Email" value={company.generalEmail} />
-            <Field label="Main Phone" value={company.mainPhone} />
-            <Field label="Website" value={company.website} link />
-            <Field label="Lead Source" value={company.leadSource} />
-            <Field label="Created" value={new Date(company.createdAt).toLocaleDateString()} />
-            <div className="sm:col-span-2">
-              <p className="text-xs text-gray-400 mb-1">Assigned to</p>
-              <div className="flex flex-wrap gap-2">
-                {company.assignments.length === 0 ? (
-                  <span className="text-sm text-gray-400">Unassigned</span>
-                ) : (
-                  company.assignments.map((a) => (
-                    <span key={a.id} className="text-sm text-gray-700 bg-gray-100 px-2 py-1 rounded">
-                      {a.user.name} {a.isPrimary ? '(Primary)' : ''}
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+          <CompanyOverviewPanel
+            company={{
+              id:             company.id,
+              name:           company.name,
+              regNumber:      company.regNumber,
+              tinNumber:      company.tinNumber,
+              industry:       company.industry,
+              companySize:    company.companySize,
+              generalEmail:   company.generalEmail,
+              mainPhone:      company.mainPhone,
+              website:        company.website,
+              leadSource:     company.leadSource,
+              status:         company.status,
+              leadTemperature: company.leadTemperature,
+              assignments:    company.assignments.map(a => ({
+                id:        a.id,
+                isPrimary: a.isPrimary,
+                user:      { name: a.user.name },
+              })),
+            }}
+            canEdit={isPrivilegedRole(session.role)}
+            createdAt={new Date(company.createdAt).toLocaleDateString()}
+          />
         )}
 
         {tab === 'contacts' && (
           <div>
-            {company.contacts.length === 0 ? (
-              <p className="text-sm text-gray-400">No contacts yet. <Link href={`/contacts/new?companyId=${id}`} className="text-blue-600 hover:underline">Add one</Link></p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Position</th>
-                    <th className="pb-2 font-medium">Email</th>
-                    <th className="pb-2 font-medium">Phone</th>
-                    <th className="pb-2 font-medium">Decision Maker</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {company.contacts.map((c) => (
-                    <tr key={c.id} className="border-b border-gray-50">
-                      <td className="py-2"><Link href={`/contacts/${c.id}`} className="text-blue-600 hover:underline">{c.name}</Link></td>
-                      <td className="py-2 text-gray-500">{c.position ?? '—'}</td>
-                      <td className="py-2 text-gray-500">{c.email ?? '—'}</td>
-                      <td className="py-2 text-gray-500">{c.phone ?? '—'}</td>
-                      <td className="py-2">{c.isDecisionMaker ? <Badge color="green">Yes</Badge> : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Contacts</h3>
+              <Link
+                href={`/contacts/new?companyId=${id}`}
+                className="text-xs text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                + Add Contact
+              </Link>
+            </div>
+            <ContactsPanel
+              companyId={id}
+              canEditDirect={isPrivilegedRole(session.role)}
+              contacts={company.contacts.map(c => ({
+                id:              c.id,
+                name:            c.name,
+                position:        c.position,
+                department:      c.department,
+                email:           c.email,
+                phone:           c.phone,
+                whatsapp:        c.whatsapp,
+                isDecisionMaker: c.isDecisionMaker,
+                pendingRequest:  c.editRequests[0]
+                  ? {
+                      id:          c.editRequests[0].id,
+                      requestedBy: { name: c.editRequests[0].requestedBy.name },
+                      changes:     c.editRequests[0].changes as Record<string, unknown>,
+                      createdAt:   c.editRequests[0].createdAt.toISOString(),
+                    }
+                  : null,
+              }))}
+            />
           </div>
         )}
 
@@ -315,19 +356,3 @@ export default async function CompanyDetailPage({
   )
 }
 
-function Field({ label, value, link }: { label: string; value?: string | null; link?: boolean }) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      {value ? (
-        link ? (
-          <a href={value} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">{value}</a>
-        ) : (
-          <p className="text-sm text-gray-900">{value}</p>
-        )
-      ) : (
-        <p className="text-sm text-gray-400">—</p>
-      )}
-    </div>
-  )
-}

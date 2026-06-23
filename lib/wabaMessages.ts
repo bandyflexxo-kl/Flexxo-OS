@@ -1,11 +1,8 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
-import { sendWabaTemplate, type WabaTemplateComponent } from '@/lib/wabaClient'
+import { sendWabaTemplate, type WabaTemplateComponent, type WabaSendResult } from '@/lib/wabaClient'
 
 // ── WABA message senders ──────────────────────────────────────────────────────
-//
-// All functions are fire-and-forget: they never throw and never block callers.
-// Each function sends the template and logs an Activity record on success.
 //
 // Templates required in Meta Business Manager (under WhatsApp Manager → Templates):
 //
@@ -16,28 +13,29 @@ import { sendWabaTemplate, type WabaTemplateComponent } from '@/lib/wabaClient'
 //     Body: "Hi {{1}}, your Flexxo order {{2}} status has been updated to: {{3}}"
 //
 
-const APP_URL = process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
+// PORTAL_URL: publicly-accessible shop URL used in WhatsApp links (same as email)
+const PORTAL_URL = process.env.PORTAL_URL ?? process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
 
 // ── Quotation sent ────────────────────────────────────────────────────────────
 
 /**
  * Sends "quotation_ready" template to the contact and logs a WhatsApp activity.
- * Call this AFTER the DB transaction that marks the quotation as 'sent'.
+ * Returns the WabaSendResult so callers can report success/failure to the UI.
  */
 export async function sendQuotationWhatsApp(params: {
   contactName:   string | null
-  contactPhone:  string          // from contact.whatsapp field
+  contactPhone:  string
   companyId:     string
   contactId:     string | null
-  userId:        string          // salesperson (for activity log)
+  userId:        string
   referenceNo:   string | null
   quotationId:   string
-}): Promise<void> {
+}): Promise<WabaSendResult> {
   const { contactName, contactPhone, companyId, contactId, userId, referenceNo, quotationId } = params
 
   const name    = contactName ?? 'there'
   const refNo   = referenceNo ?? 'your quotation'
-  const viewUrl = `${APP_URL}/shop/quotations/${quotationId}`
+  const viewUrl = `${PORTAL_URL}/shop/quotations/${quotationId}`
 
   const components: WabaTemplateComponent[] = [
     {
@@ -53,7 +51,6 @@ export async function sendQuotationWhatsApp(params: {
   const result = await sendWabaTemplate(contactPhone, 'quotation_ready', components)
 
   if (result.ok) {
-    // Log as outbound WhatsApp activity (best-effort, don't throw)
     await prisma.activity.create({
       data: {
         companyId,
@@ -67,6 +64,66 @@ export async function sendQuotationWhatsApp(params: {
         linkedEntityId:   quotationId,
       },
     }).catch(err => console.error('[WABA] Failed to log quotation WhatsApp activity:', err))
+  }
+
+  return result
+}
+
+// ── Driver assigned / live tracking ──────────────────────────────────────────
+
+/**
+ * Sends "order_update" template when a Lalamove driver is assigned (ON_GOING).
+ * Includes the live tracking link in the status text.
+ * Called by the Lalamove webhook — fire-and-forget.
+ */
+export async function sendDeliveryTrackingWhatsApp(params: {
+  companyId:   string
+  orderId:     string
+  orderRef:    string
+  trackingUrl: string | null
+  userId:      string
+}): Promise<void> {
+  const { companyId, orderId, orderRef, trackingUrl, userId } = params
+
+  const contact = await prisma.contact.findFirst({
+    where:   { companyId, isActive: true, whatsapp: { not: null } },
+    orderBy: { isDecisionMaker: 'desc' },
+    select:  { id: true, name: true, whatsapp: true },
+  })
+
+  if (!contact?.whatsapp) return
+
+  const statusText = trackingUrl
+    ? `Out for Delivery 🚚 Track your driver: ${trackingUrl}`
+    : 'Out for Delivery 🚚 Your driver is on the way!'
+
+  const components: WabaTemplateComponent[] = [
+    {
+      type:       'body',
+      parameters: [
+        { type: 'text', text: contact.name ?? 'there' },
+        { type: 'text', text: orderRef },
+        { type: 'text', text: statusText },
+      ],
+    },
+  ]
+
+  const result = await sendWabaTemplate(contact.whatsapp, 'order_update', components)
+
+  if (result.ok) {
+    await prisma.activity.create({
+      data: {
+        companyId,
+        contactId:        contact.id,
+        userId,
+        activityType:     'WhatsApp',
+        direction:        'Outbound',
+        subject:          `WhatsApp: Order ${orderRef} — Driver Assigned`,
+        body:             `Tracking link sent to ${contact.whatsapp} (Msg ID: ${result.messageId})`,
+        linkedEntityType: 'Order',
+        linkedEntityId:   orderId,
+      },
+    }).catch(err => console.error('[WABA] Failed to log tracking WhatsApp activity:', err))
   }
 }
 
@@ -85,8 +142,8 @@ export async function sendOrderStatusWhatsApp(params: {
 }): Promise<void> {
   const { companyId, orderId, orderRef, newStatus, userId } = params
 
-  // Only send for Shipped and Delivered — don't spam for every status
-  if (newStatus !== 'Shipped' && newStatus !== 'Delivered') return
+  const NOTIFIABLE = ['Confirmed', 'Approved', 'Shipped', 'Delivered']
+  if (!NOTIFIABLE.includes(newStatus)) return
 
   // Find the primary contact with a whatsapp number for this company
   const contact = await prisma.contact.findFirst({
@@ -97,13 +154,20 @@ export async function sendOrderStatusWhatsApp(params: {
 
   if (!contact?.whatsapp) return  // no WhatsApp number on file — skip silently
 
+  const statusLabel: Record<string, string> = {
+    Confirmed: 'Confirmed — thank you! We will prepare your order shortly.',
+    Approved:  'Approved — your order is being picked and packed.',
+    Shipped:   'Shipped — on the way to you!',
+    Delivered: 'Delivered — enjoy your order! 😊',
+  }
+
   const components: WabaTemplateComponent[] = [
     {
       type:       'body',
       parameters: [
         { type: 'text', text: contact.name ?? 'there' },
         { type: 'text', text: orderRef },
-        { type: 'text', text: newStatus },
+        { type: 'text', text: statusLabel[newStatus] ?? newStatus },
       ],
     },
   ]

@@ -77,11 +77,14 @@ export async function GET(
 }
 
 const UpdateSchema = z.object({
-  status:          z.string().optional(),
-  termsConditions: z.string().optional().nullable(),
-  internalNotes:   z.string().optional().nullable(),
-  expiresAt:       z.string().optional().nullable(),
-  discountPct:     z.number().min(0).max(100).optional().nullable(),
+  status:            z.string().optional(),
+  termsConditions:   z.string().optional().nullable(),
+  internalNotes:     z.string().optional().nullable(),
+  expiresAt:         z.string().optional().nullable(),
+  discountPct:       z.number().min(0).max(100).optional().nullable(),
+  deliveryAddress:   z.string().max(1000).optional().nullable(),
+  deliveryRecipient: z.string().max(200).optional().nullable(),
+  deliveryPhone:     z.string().max(50).optional().nullable(),
 })
 
 export async function PATCH(
@@ -128,7 +131,10 @@ export async function PATCH(
         ...(data.termsConditions !== undefined ? { termsConditions: data.termsConditions ?? null } : {}),
         ...(data.internalNotes   !== undefined ? { internalNotes:   data.internalNotes   ?? null } : {}),
         ...(data.expiresAt       !== undefined ? { expiresAt:       data.expiresAt ? new Date(data.expiresAt) : null } : {}),
-        ...(discountAmount !== null            ? { discountAmount, totalAmount }                   : {}),
+        ...(discountAmount !== null              ? { discountAmount, totalAmount }                     : {}),
+        ...(data.deliveryAddress   !== undefined ? { deliveryAddress:   data.deliveryAddress   ?? null } : {}),
+        ...(data.deliveryRecipient !== undefined ? { deliveryRecipient: data.deliveryRecipient ?? null } : {}),
+        ...(data.deliveryPhone     !== undefined ? { deliveryPhone:     data.deliveryPhone     ?? null } : {}),
       },
     })
     if (data.status && data.status !== prevStatus) {

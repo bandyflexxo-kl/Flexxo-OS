@@ -7,8 +7,9 @@
  * scan-image route to extract text from a photo before calling parseItemList.
  */
 
-import { prisma } from '@/lib/prisma'
-import { Prisma } from '@/app/generated/prisma/client'
+import { prisma }   from '@/lib/prisma'
+import { Prisma }   from '@/app/generated/prisma/client'
+import { getRedis } from '@/lib/redis'
 
 // Inline price helpers — avoids importing lib/pricing which has 'server-only'
 function _calcSellingPrice(
@@ -50,6 +51,64 @@ export type MatchedLine = ParsedLine & {
   confidence:   'high' | 'medium' | 'none'
   topMatch:     ProductMatch | null
   alternatives: ProductMatch[]   // top 3 total (includes topMatch as [0])
+}
+
+// ── Alias normalisation ───────────────────────────────────────────────────────
+
+/** Normalise a search phrase for alias storage/lookup: lowercase, trim, collapse spaces. */
+export function normaliseAlias(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+// ── Delivery info extraction ──────────────────────────────────────────────────
+
+export type DeliveryInfo = {
+  address:   string | null
+  recipient: string | null
+  phone:     string | null
+}
+
+/**
+ * Heuristically extract delivery recipient, phone, and address from raw pasted text.
+ * Used for the text-paste tab; photo/PDF use Claude instead.
+ */
+export function extractDeliveryInfo(text: string): DeliveryInfo {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  let address:   string | null = null
+  let recipient: string | null = null
+  let phone:     string | null = null
+
+  // Malaysian mobile/landline: 01X-XXXXXXX, 03-XXXXXXXX, +601X...
+  const MY_PHONE = /(?:\+?60|0)[1-9][0-9][-\s]?[0-9]{7,8}/
+
+  for (const line of lines) {
+    if (!recipient) {
+      const m = line.match(/^(?:attn|attention|recipient|contact(?:\s+person)?|c\/o|pic|deliver(?:y)?\s+to|to)\s*[:：\-]\s*(.+)/i)
+      if (m?.[1] && m[1].length < 100) { recipient = m[1].trim(); continue }
+    }
+    if (!phone) {
+      const kw = line.match(/^(?:tel|phone|hp|mobile|fax|h\/p|whatsapp|wa|handphone)\s*[:：]?\s*(.+)/i)
+      if (kw) {
+        const num = kw[1].match(MY_PHONE)
+        if (num) { phone = num[0].replace(/\s/g, ''); continue }
+      }
+      // Standalone phone number line (little non-digit chars)
+      const standalone = line.match(MY_PHONE)
+      if (standalone && line.replace(/[\d\s\-()+]/g, '').length < 4) {
+        phone = standalone[0].replace(/\s/g, ''); continue
+      }
+    }
+    if (!address) {
+      const kw = line.match(/^(?:deliver(?:y)?(?:\s*address)?|ship(?:ping)?(?:\s*address)?|address|alamat)\s*[:：]\s*(.+)/i)
+      if (kw?.[1]) { address = kw[1].trim(); continue }
+      // Line containing a Malaysian postcode (40000–99999) is likely an address line
+      if (/\b[4-9][0-9]{4}\b/.test(line) && line.length > 8 && line.length < 300) {
+        address = line
+      }
+    }
+  }
+
+  return { address, recipient, phone }
 }
 
 // ── Unit normalisation ────────────────────────────────────────────────────────
@@ -246,6 +305,17 @@ function stem(token: string): string {
   return token
 }
 
+// Expand metric dimension tokens to imperial equivalents so queries like
+// "Ruler 30cm" also generate the token "12" (12 inches) and match products
+// named "RULER 12"".  Appends the converted value rather than replacing so
+// both forms land in the token set.
+function expandQueryUnits(s: string): string {
+  return s.replace(/\b(\d+(?:\.\d+)?)\s*cm\b/gi, (match, n) => {
+    const inches = Math.round(parseFloat(n) / 2.54)
+    return `${match} ${inches}`   // "30cm" → "30cm 12"
+  })
+}
+
 function tokenise(s: string): Set<string> {
   const raw = s.toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -327,17 +397,15 @@ type CatalogueProduct = {
   brand:            string | null
   unit:             string | null
   qneItemCode:      string | null
-  isVisible:        boolean          // isVisibleToCustomers — our proxy for "in stock"
-  orderFreq:        number           // times in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts)
-  availableQty:     number | null    // QNE stock; null = not yet synced
-  parentCategoryName: string | null  // top-level category (e.g. "Office Stationery")
-  category:         { name: string; defaultMarginPct: Prisma.Decimal | null }
-  defaultMarginPct: Prisma.Decimal | null
-  priceVersions:    Array<{
-    id:        string
-    costPrice: Prisma.Decimal
-    currency:  string
-  }>
+  isVisible:        boolean        // isVisibleToCustomers — our proxy for "in stock"
+  orderFreq:        number         // times in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts)
+  availableQty:     number | null  // QNE stock; null = not yet synced
+  parentCategoryName: string | null
+  category:         { name: string }
+  // Prices pre-computed at cache-fill time (Decimal-free, safe for Redis JSON)
+  sellingPrice:             string | null
+  currency:                 string
+  supplierPriceVersionId:   string | null
 }
 
 // Compiled rule from a ProductBrandPreference DB row
@@ -353,15 +421,39 @@ type CatalogueCache = {
   brandPrefRules: BrandPrefRule[]
 }
 
+// ── Cache config ──────────────────────────────────────────────────────────────
+// L1: in-process (per Vercel worker instance, 5-min TTL, zero network)
+// L2: Upstash Redis (shared across all instances, 5-min TTL)
+// L3: Postgres via Prisma (source of truth)
+
 let _cache: CatalogueCache | null = null
 let _cacheFetchedAt: number = 0
-const CATALOGUE_TTL_MS = 5 * 60_000 // 5 minutes
+const CATALOGUE_TTL_MS = 5 * 60_000      // 5 minutes (in-process TTL check)
+const CATALOGUE_TTL_S  = 5 * 60          // 5 minutes (Redis ex seconds)
+const CATALOGUE_REDIS_KEY = 'flexxo:smart-order:catalogue:v1'
 
 async function fetchCatalogue(): Promise<CatalogueCache> {
+  // L1: in-process cache (fastest — avoids Redis round-trip on warm instances)
   if (_cache && Date.now() - _cacheFetchedAt < CATALOGUE_TTL_MS) {
     return _cache
   }
 
+  // L2: Redis (shared across all Vercel instances — survives cold starts)
+  const redis = getRedis()
+  if (redis) {
+    try {
+      const cached = await redis.get<CatalogueCache>(CATALOGUE_REDIS_KEY)
+      if (cached && Array.isArray(cached.products) && cached.products.length > 0) {
+        _cache          = cached
+        _cacheFetchedAt = Date.now()
+        return cached
+      }
+    } catch {
+      // Redis unavailable — fall through to DB
+    }
+  }
+
+  // L3: DB query (only runs on true cold start or after cache invalidation)
   const [products, globalSetting, brandPrefs] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
@@ -389,6 +481,8 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
     prisma.productBrandPreference.findMany({ where: { isActive: true } }),
   ])
 
+  const globalMargin = globalSetting?.value ?? '30'
+
   // Compile brand pref DB rows into fast token-based rules
   const brandPrefRules: BrandPrefRule[] = brandPrefs.map(p => ({
     keywordTokens: p.keywords.split(',').flatMap(k => [...tokenise(k)]),
@@ -396,41 +490,47 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
     boost:         Number(p.boostMultiplier),
   }))
 
-  const enriched = products.map(p => ({
-    ...p,
-    isVisible:          p.isVisibleToCustomers,
-    orderFreq:          p.qneInvoiceFreq,
-    availableQty:       p.qneAvailableQty ?? null,
-    parentCategoryName: p.category.parentCategory?.name ?? null,
-  }))
+  // Pre-compute selling prices here so CatalogueProduct is Decimal-free
+  // (plain strings/numbers survive Redis JSON serialization round-trips)
+  const enriched: CatalogueProduct[] = products.map(p => {
+    const price = p.priceVersions[0] ?? null
+    let sellingPrice: string | null           = null
+    let currency                              = 'MYR'
+    let supplierPriceVersionId: string | null = null
+    if (price) {
+      sellingPrice           = _calcSellingPrice(price.costPrice, p.defaultMarginPct, p.category.defaultMarginPct, globalMargin).toString()
+      currency               = price.currency
+      supplierPriceVersionId = price.id
+    }
+    return {
+      id:                     p.id,
+      name:                   p.name,
+      brand:                  p.brand,
+      unit:                   p.unit,
+      qneItemCode:            p.qneItemCode,
+      isVisible:              p.isVisibleToCustomers,
+      orderFreq:              p.qneInvoiceFreq,
+      availableQty:           p.qneAvailableQty ?? null,
+      parentCategoryName:     p.category.parentCategory?.name ?? null,
+      category:               { name: p.category.name },
+      sellingPrice,
+      currency,
+      supplierPriceVersionId,
+    }
+  })
 
-  _cache = {
-    products:       enriched as unknown as CatalogueProduct[],
-    globalMargin:   globalSetting?.value ?? '30',
-    brandPrefRules,
-  }
+  const result: CatalogueCache = { products: enriched, globalMargin, brandPrefRules }
+
+  // Populate both caches
+  _cache          = result
   _cacheFetchedAt = Date.now()
-  return _cache
+  redis?.set(CATALOGUE_REDIS_KEY, result, { ex: CATALOGUE_TTL_S }).catch(() => undefined)
+
+  return result
 }
 
-function getProductPrice(
-  p:            CatalogueProduct,
-  globalMargin: string,
-): { selling: string | null; currency: string; versionId: string | null } {
-  const price = p.priceVersions[0] ?? null
-  if (!price) return { selling: null, currency: 'MYR', versionId: null }
-
-  const selling = _calcSellingPrice(
-    price.costPrice,
-    p.defaultMarginPct,
-    p.category.defaultMarginPct,
-    globalMargin,
-  )
-  return {
-    selling:   selling.toString(),
-    currency:  price.currency,
-    versionId: price.id,
-  }
+function getProductPrice(p: CatalogueProduct): { selling: string | null; currency: string; versionId: string | null } {
+  return { selling: p.sellingPrice, currency: p.currency, versionId: p.supplierPriceVersionId }
 }
 
 /**
@@ -441,7 +541,7 @@ function getProductPrice(
  * companyId: optional — when provided, previously-bought products/brands get a boost.
  */
 export async function matchProductsForLines(lines: ParsedLine[], companyId?: string): Promise<MatchedLine[]> {
-  const { products: catalogue, globalMargin, brandPrefRules } = await fetchCatalogue()
+  const { products: catalogue, brandPrefRules } = await fetchCatalogue()
 
   // Layer 2: load customer purchase history (approved/sent/accepted quotes only)
   const companyProductIds  = new Set<string>()
@@ -466,9 +566,44 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
     }
   }
 
+  // Tier 0: alias lookup — exact match wins immediately, skips all fuzzy logic
+  const normalisedQueries = lines.map(l => normaliseAlias(l.parsedName))
+  const aliasRows = await prisma.productAlias.findMany({
+    where:  { alias: { in: normalisedQueries } },
+    select: { alias: true, productId: true },
+  })
+  const aliasMap = new Map(aliasRows.map(r => [r.alias, r.productId]))
+
   return lines.map(line => {
-    const queryTokens = tokenise(line.parsedName)
-    const rawQuery    = line.parsedName
+    // Tier 0: direct alias hit
+    const normQuery      = normaliseAlias(line.parsedName)
+    const aliasProductId = aliasMap.get(normQuery)
+    if (aliasProductId) {
+      const p = catalogue.find(c => c.id === aliasProductId)
+      if (p) {
+        const { selling, currency, versionId } = getProductPrice(p)
+        const match: ProductMatch = {
+          id:                     p.id,
+          name:                   p.name,
+          brand:                  p.brand,
+          unit:                   p.unit,
+          qneItemCode:            p.qneItemCode,
+          categoryName:           p.category.name,
+          sellingPrice:           selling,
+          currency,
+          supplierPriceVersionId: versionId,
+          score:                  1.0,
+          isVisible:              p.isVisible,
+          orderFreq:              p.orderFreq,
+          availableQty:           p.availableQty,
+        }
+        return { ...line, confidence: 'high' as const, topMatch: match, alternatives: [match] }
+      }
+    }
+
+    const expandedName = expandQueryUnits(line.parsedName)
+    const queryTokens  = tokenise(expandedName)
+    const rawQuery     = line.parsedName
 
     // Layer 1: find which brand preference rules apply to this query
     const activeBrandBoosts = brandPrefRules.filter(rule =>
@@ -481,7 +616,25 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
 
     // Score all products
     const scored = catalogue.map(p => {
-      const rawScore = scoreMatch(queryTokens, rawQuery, p)
+      let rawScore = scoreMatch(queryTokens, rawQuery, p)
+
+      // Brand-preference floor: if a brand pref rule is active AND this product's brand
+      // matches that rule, but rawScore is 0 only because the 2-token intersection guard
+      // fired (e.g. query "Soft Eraser" → FC eraser has "eraser" but not "soft"), give it
+      // a floor score so the brand boost can still apply.
+      // Without this fix, 0 × 1.6 = 0 — the boost is useless against a zero.
+      let wasBrandBoosted = false
+      if (rawScore === 0 && activeBrandBoosts.length > 0) {
+        const productBrandTokens = [...tokenise(p.brand ?? '')]
+        const matchingRule = activeBrandBoosts.find(rule =>
+          rule.brandTokens.some(bt => productBrandTokens.includes(bt))
+        )
+        if (matchingRule) {
+          const nameTokens = tokenise(p.name)
+          const singleHit  = [...queryTokens].some(t => nameTokens.has(t))
+          if (singleHit) rawScore = 0.15   // floor: just enough to enable boosts
+        }
+      }
 
       let adjustedScore = rawScore
       if (rawScore >= 0.15) {
@@ -499,6 +652,7 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
           for (const rule of activeBrandBoosts) {
             if (rule.brandTokens.some(bt => productBrandTokens.includes(bt))) {
               adjustedScore *= rule.boost
+              wasBrandBoosted = true
               break  // apply highest-priority rule only
             }
           }
@@ -517,11 +671,18 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
         }
       }
 
-      return { product: p, score: rawScore, adjustedScore }
+      return { product: p, score: rawScore, adjustedScore, wasBrandBoosted }
     })
 
-    // Sort by adjustedScore, break ties by rawScore
-    scored.sort((a, b) => b.adjustedScore - a.adjustedScore || b.score - a.score)
+    // Sort: adjustedScore first. On near-ties (within 0.001), brand-boosted products win
+    // over non-boosted — prevents a shorter-named rival beating the preferred brand on
+    // Jaccard alone when the admin explicitly configured a brand preference rule.
+    scored.sort((a, b) => {
+      const diff = b.adjustedScore - a.adjustedScore
+      if (Math.abs(diff) > 0.001) return diff
+      if (a.wasBrandBoosted !== b.wasBrandBoosted) return a.wasBrandBoosted ? -1 : 1
+      return b.score - a.score
+    })
 
     const top3 = scored
       .filter(s => {
@@ -537,7 +698,7 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
       .slice(0, 3)
 
     const alternatives: ProductMatch[] = top3.map(({ product: p, score, adjustedScore }) => {
-      const { selling, currency, versionId } = getProductPrice(p, globalMargin)
+      const { selling, currency, versionId } = getProductPrice(p)
       return {
         id:                     p.id,
         name:                   p.name,
@@ -572,8 +733,9 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
   })
 }
 
-/** Invalidate the in-memory catalogue cache (call after product updates). */
+/** Invalidate the in-memory and Redis catalogue cache (call after product/brand-pref updates). */
 export function invalidateCatalogueCache(): void {
-  _cache           = null
-  _cacheFetchedAt  = 0
+  _cache          = null
+  _cacheFetchedAt = 0
+  getRedis()?.del(CATALOGUE_REDIS_KEY).catch(() => undefined)
 }

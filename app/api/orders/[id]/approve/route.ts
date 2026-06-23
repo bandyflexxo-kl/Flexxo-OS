@@ -2,6 +2,8 @@ import { verifySession }      from '@/lib/session'
 import { prisma }              from '@/lib/prisma'
 import { isPrivilegedRole }    from '@/lib/authorization'
 import { sendPushToUser }      from '@/lib/webpush'
+import { notifyByRole, notifyUser, esc } from '@/lib/telegramBot'
+import { sendOrderStatusWhatsApp }       from '@/lib/wabaMessages'
 import { z }                   from 'zod'
 
 const Schema = z.object({
@@ -25,8 +27,9 @@ export async function POST(
   const order = await prisma.order.findUnique({
     where:   { id },
     include: {
-      company:  { select: { id: true, name: true } },
-      items:    { include: { product: { select: { name: true } } } },
+      company:   { select: { id: true, name: true } },
+      items:     { include: { product: { select: { name: true } } } },
+      quotation: { select: { createdById: true } },
     },
   })
 
@@ -97,7 +100,12 @@ export async function POST(
     return [inv, task]
   })
 
-  // ── Notify warehouse workers (fire-and-forget) ────────────────────────────
+  const orderRef    = order.referenceNo ?? id
+  const companyName = order.company.name
+  const itemCount   = order.items.length
+  const salespersonId = order.quotation?.createdById ?? null
+
+  // ── Push + Telegram: notify warehouse workers (fire-and-forget) ───────────
   const warehouseUsers = await prisma.userRole.findMany({
     where:   { role: { name: 'Warehouse' }, revokedAt: null },
     include: { user: { select: { id: true } } },
@@ -105,10 +113,38 @@ export async function POST(
   for (const wu of warehouseUsers) {
     sendPushToUser(wu.user.id, {
       title: '📦 New Picking Task',
-      body:  `${order.referenceNo ?? id} — ${order.company.name} · ${order.items.length} item${order.items.length !== 1 ? 's' : ''}`,
+      body:  `${orderRef} — ${companyName} · ${itemCount} item${itemCount !== 1 ? 's' : ''}`,
       url:   '/warehouse',
     }).catch(() => undefined)
   }
+  notifyByRole(
+    ['Warehouse'],
+    `📦 <b>New Picking Task</b>\n\n` +
+    `Order: <b>${esc(orderRef)}</b>\n` +
+    `Client: <b>${esc(companyName)}</b>\n` +
+    `Items: ${itemCount}\n` +
+    `Invoice: <b>${esc(invoiceNo)}</b>\n\n` +
+    `Go to <b>Flexxo Warehouse</b> to start picking.`,
+  ).catch(() => undefined)
+
+  // ── Telegram: notify salesperson (fire-and-forget) ────────────────────────
+  if (salespersonId) {
+    notifyUser(
+      salespersonId,
+      `✅ <b>${esc(orderRef)}</b> approved!\n\n` +
+      `Invoice <b>${esc(invoiceNo)}</b> issued.\n` +
+      `Warehouse picking task created for <b>${esc(companyName)}</b>.`,
+    ).catch(() => undefined)
+  }
+
+  // ── WABA: notify customer (fire-and-forget) ───────────────────────────────
+  sendOrderStatusWhatsApp({
+    companyId: order.companyId,
+    orderId:   id,
+    orderRef,
+    newStatus: 'Approved',
+    userId:    session.userId,
+  }).catch(() => undefined)
 
   return Response.json({ ok: true, invoiceId: invoice.id, invoiceNo, warehouseTaskId: warehouseTask.id })
 }

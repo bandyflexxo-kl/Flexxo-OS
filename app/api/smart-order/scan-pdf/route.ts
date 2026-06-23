@@ -13,7 +13,7 @@
 import { z } from 'zod'
 import Anthropic from '@anthropic-ai/sdk'
 import { verifySession } from '@/lib/session'
-import { parseItemList, matchProductsForLines } from '@/lib/smartOrder'
+import { parseItemList, matchProductsForLines, type DeliveryInfo } from '@/lib/smartOrder'
 
 const BodySchema = z.object({
   pdfBase64: z.string().min(1, 'pdfBase64 required'),
@@ -22,26 +22,31 @@ const BodySchema = z.object({
 
 const PDF_PROMPT = `You are reading a customer purchase order or shopping list PDF.
 
-Extract every product line item and return them as plain text, one item per line.
+First, list every product line item — one per line in the format: [qty] [unit] [product name]
 
-Each line should follow this format:
-[qty] [unit] [product name]
-
-Rules:
+Rules for items:
 - If quantity is not visible, use 1
 - If unit is not visible, omit it
 - Include colour/size variants in the product name (e.g. "Faber Castel Gel Pen Blue")
-- If the same product has multiple colours listed together (e.g. Blue / Red / Black),
-  write each as a separate line
-- Ignore headers, footers, page numbers, totals, terms, and company details
+- If the same product has multiple colours listed together, write each as a separate line
+- Ignore headers, footers, page numbers, totals, payment terms, and supplier/buyer company details
 - Do NOT add any explanation, numbering, or commentary — only the list
 - Do NOT add markdown, asterisks, or bullets
 
-Example output:
+Then, if delivery information is visible (recipient name, phone, delivery address), append it at the very end after a line containing only "---", as a single JSON object:
+{"recipient":"name or empty string","phone":"number or empty string","address":"full delivery address or empty string"}
+
+If no delivery info is visible, omit the --- line entirely.
+
+Example output WITH delivery:
 2 box Faber Castel Gel Pen Blue
 1 ream A4 Paper 80gsm
-3 pcs Artline 90 Marker Black
-1 Calculator`
+---
+{"recipient":"Siti Norzahra","phone":"0112345678","address":"No 12, Jalan Harmoni, 68000 Ampang, Selangor"}
+
+Example output WITHOUT delivery:
+2 box Faber Castel Gel Pen Blue
+1 ream A4 Paper 80gsm`
 
 export async function POST(request: Request) {
   // CRM session required
@@ -94,8 +99,21 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Could not extract any items from the PDF.' }, { status: 422 })
   }
 
-  const lines        = parseItemList(extractedText)
+  let itemsText = extractedText
+  const deliveryInfo: DeliveryInfo = { address: null, recipient: null, phone: null }
+  const sepIdx = extractedText.lastIndexOf('\n---\n')
+  if (sepIdx >= 0) {
+    itemsText = extractedText.slice(0, sepIdx).trim()
+    try {
+      const d = JSON.parse(extractedText.slice(sepIdx + 5).trim()) as Record<string, string>
+      deliveryInfo.recipient = d.recipient?.trim() || null
+      deliveryInfo.phone     = d.phone?.trim()     || null
+      deliveryInfo.address   = d.address?.trim()   || null
+    } catch { /* ignore malformed JSON */ }
+  }
+
+  const lines        = parseItemList(itemsText)
   const matchedLines = await matchProductsForLines(lines, parsed.data.companyId)
 
-  return Response.json({ lines: matchedLines, extractedText })
+  return Response.json({ lines: matchedLines, extractedText: itemsText, deliveryInfo })
 }

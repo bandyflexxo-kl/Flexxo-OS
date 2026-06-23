@@ -2,6 +2,8 @@ import { z }                       from 'zod'
 import { verifySession }            from '@/lib/session'
 import { isPrivilegedRole }          from '@/lib/authorization'
 import { bookLalamoveDelivery }      from '@/lib/fulfillment'
+import { prisma }                    from '@/lib/prisma'
+import { notifyUser, esc }           from '@/lib/telegramBot'
 
 const BodySchema = z.object({
   // Pre-fetched quote from GET /delivery-quote — pass through to skip a second Lalamove API call
@@ -41,6 +43,23 @@ export async function POST(
   const result = await bookLalamoveDelivery(id, preQuote)
 
   if (!result.ok) return Response.json({ error: result.error }, { status: 422 })
+
+  // Telegram → salesperson: delivery booked (fire-and-forget)
+  ;(async () => {
+    const order = await prisma.order.findUnique({ where: { id }, select: { companyId: true, referenceNo: true } })
+    if (!order) return
+    const assignment = await prisma.companyAssignment.findFirst({
+      where:   { companyId: order.companyId, unassignedAt: null, isPrimary: true },
+      select:  { userId: true },
+      orderBy: { assignedAt: 'desc' },
+    })
+    if (!assignment) return
+    await notifyUser(
+      assignment.userId,
+      `🚚 <b>${esc(order.referenceNo ?? id.slice(0, 8))}</b> delivery booked!\n` +
+      (result.shareLink ? `Tracking: ${esc(result.shareLink)}` : ''),
+    )
+  })().catch(() => undefined)
 
   return Response.json({ ok: true, bookingId: result.bookingId, shareLink: result.shareLink })
 }

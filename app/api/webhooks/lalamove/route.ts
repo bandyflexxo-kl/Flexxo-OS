@@ -7,6 +7,8 @@
 import crypto   from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { sendGoogleReviewRequest } from '@/lib/fulfillment'
+import { sendDeliveryTrackingWhatsApp } from '@/lib/wabaMessages'
+import { notifyUser, esc } from '@/lib/telegramBot'
 
 const WEBHOOK_SECRET = process.env.LALAMOVE_WEBHOOK_SECRET ?? ''
 
@@ -92,6 +94,23 @@ export async function POST(request: Request) {
       },
     })
 
+    if (status === 'ON_GOING') {
+      // Fetch order to get companyId + referenceNo for WABA
+      const order = await tx.order.findUnique({
+        where:  { id: booking.orderId },
+        select: { companyId: true, referenceNo: true },
+      })
+      if (order) {
+        sendDeliveryTrackingWhatsApp({
+          companyId:   order.companyId,
+          orderId:     booking.orderId,
+          orderRef:    order.referenceNo ?? booking.orderId.slice(0, 8),
+          trackingUrl: booking.shareLink ?? null,
+          userId:      'system',
+        }).catch(() => undefined)
+      }
+    }
+
     if (status === 'COMPLETED') {
       await tx.order.update({
         where: { id: booking.orderId },
@@ -108,9 +127,28 @@ export async function POST(request: Request) {
     }
   })
 
-  // Fire Google Review request after delivery (fire-and-forget)
+  // Fire Google Review request + Telegram to salesperson after delivery
   if (status === 'COMPLETED') {
     sendGoogleReviewRequest(booking.orderId).catch(() => undefined)
+
+    ;(async () => {
+      const order = await prisma.order.findUnique({
+        where:  { id: booking.orderId },
+        select: { companyId: true, referenceNo: true },
+      })
+      if (!order) return
+      const assignment = await prisma.companyAssignment.findFirst({
+        where:   { companyId: order.companyId, unassignedAt: null, isPrimary: true },
+        select:  { userId: true },
+        orderBy: { assignedAt: 'desc' },
+      })
+      if (!assignment) return
+      await notifyUser(
+        assignment.userId,
+        `✅ <b>${esc(order.referenceNo ?? booking.orderId.slice(0, 8))}</b> delivered!\n\n` +
+        `Google review request sent to customer. Good job! 🎉`,
+      )
+    })().catch(() => undefined)
   }
 
   console.log(`[lalamove-webhook] ${lalamoveRef} → ${status} (booking ${booking.id})`)

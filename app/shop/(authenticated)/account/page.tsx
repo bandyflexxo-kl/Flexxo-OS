@@ -226,6 +226,81 @@ function ChangePasswordForm() {
   )
 }
 
+// ── Spending history chart ────────────────────────────────────────────────────
+
+type SpendingMonth = { month: string; amount: number }
+
+function SpendingHistoryCard() {
+  const [data,    setData]    = useState<SpendingMonth[] | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/portal/account/spending')
+      .then(r => r.json())
+      .then((d: { months: SpendingMonth[] }) => { setData(d.months); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <div className="h-3 w-36 bg-gray-100 rounded animate-pulse mb-4" />
+        <div className="h-16 bg-gray-50 rounded animate-pulse" />
+      </div>
+    )
+  }
+
+  const hasData = data && data.some(m => m.amount > 0)
+  const max     = Math.max(...(data ?? []).map(m => m.amount), 1)
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-6">
+      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <span>📈</span> Spending History
+        <span className="ml-auto text-[10px] font-normal text-gray-400">last 6 months</span>
+      </h3>
+
+      {hasData ? (
+        <>
+          {/* Bar chart */}
+          <div className="flex items-end gap-2 h-20 mb-2">
+            {data!.map(m => {
+              const heightPct = m.amount > 0 ? Math.max((m.amount / max) * 100, 8) : 2
+              return (
+                <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5">
+                  {m.amount > 0 && (
+                    <p className="text-[9px] text-gray-500 font-medium leading-none mb-0.5">
+                      {m.amount >= 1000
+                        ? `${(m.amount / 1000).toFixed(1)}k`
+                        : Math.round(m.amount).toString()}
+                    </p>
+                  )}
+                  <div
+                    className="w-full rounded-t bg-green-500"
+                    style={{ height: `${heightPct}%`, opacity: m.amount > 0 ? 1 : 0.15, minHeight: '2px' }}
+                  />
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex gap-2">
+            {data!.map(m => (
+              <p key={m.month} className="flex-1 text-center text-[9px] text-gray-400 truncate">{m.month}</p>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="py-4 text-center space-y-1">
+          <p className="text-xs text-gray-400">No orders yet — your spending history will appear here.</p>
+          <a href="/shop/products" className="text-xs font-semibold text-green-600 hover:text-green-700 transition-colors">
+            Browse Products →
+          </a>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Sign out ──────────────────────────────────────────────────────────────────
 
 function SignOutCard() {
@@ -283,6 +358,7 @@ export default function AccountPage() {
         <p className="text-sm text-gray-500 text-center py-8">Could not load profile.</p>
       )}
 
+      <SpendingHistoryCard />
       <ChangePasswordForm />
       <SignOutCard />
     </div>

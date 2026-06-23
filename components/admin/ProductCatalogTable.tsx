@@ -35,16 +35,17 @@ export default function ProductCatalogTable({
   const [scanning,       setScanning]       = useState(false)
   const [previewing,     setPreviewing]     = useState(false)
   const [scanResult,     setScanResult]     = useState<{
-    dryRun:          boolean
-    matched:         number
-    alreadySet:      number
-    notFound:        number
-    total:           number
-    driveFiles:      number
-    byTier:           Record<string, number>
-    unmatchedCodes:   string[]
-    matchedProducts:  { code: string; name: string; fileId: string; how: string }[]
-    sampleDriveFiles: string[]
+    dryRun:              boolean
+    matched:             number
+    alreadySet:          number
+    notFound:            number
+    total:               number
+    driveFiles:          number
+    byTier:              Record<string, number>
+    unmatchedCodes:      string[]
+    matchedProducts:     { code: string; name: string; fileId: string; how: string }[]
+    sampleDriveFiles:    string[]
+    unmatchedDriveFiles: { id: string; name: string }[]
   } | null>(null)
   const [search,         setSearch]         = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -154,21 +155,22 @@ export default function ProductCatalogTable({
         dryRun?: boolean; matched?: number; alreadySet?: number; notFound?: number; total?: number
         driveFiles?: number; byTier?: Record<string, number>; unmatchedCodes?: string[]
         matchedProducts?: { code: string; name: string; fileId: string; how: string }[]
-        sampleDriveFiles?: string[]
+        sampleDriveFiles?: string[]; unmatchedDriveFiles?: { id: string; name: string }[]
         error?: string
       }
       if (!res.ok) { setError(data.error ?? 'Preview failed'); return }
       setScanResult({
-        dryRun:           true,
-        matched:          data.matched          ?? 0,
-        alreadySet:       data.alreadySet       ?? 0,
-        notFound:         data.notFound         ?? 0,
-        total:            data.total            ?? 0,
-        driveFiles:       data.driveFiles       ?? 0,
-        byTier:           data.byTier           ?? {},
-        unmatchedCodes:   data.unmatchedCodes   ?? [],
-        matchedProducts:  data.matchedProducts  ?? [],
-        sampleDriveFiles: data.sampleDriveFiles ?? [],
+        dryRun:              true,
+        matched:             data.matched             ?? 0,
+        alreadySet:          data.alreadySet          ?? 0,
+        notFound:            data.notFound            ?? 0,
+        total:               data.total               ?? 0,
+        driveFiles:          data.driveFiles          ?? 0,
+        byTier:              data.byTier              ?? {},
+        unmatchedCodes:      data.unmatchedCodes      ?? [],
+        matchedProducts:     data.matchedProducts     ?? [],
+        sampleDriveFiles:    data.sampleDriveFiles    ?? [],
+        unmatchedDriveFiles: data.unmatchedDriveFiles ?? [],
       })
     } finally {
       setPreviewing(false)
@@ -186,21 +188,22 @@ export default function ProductCatalogTable({
         dryRun?: boolean; matched?: number; alreadySet?: number; notFound?: number; total?: number
         driveFiles?: number; byTier?: Record<string, number>; unmatchedCodes?: string[]
         matchedProducts?: { code: string; name: string; fileId: string; how: string }[]
-        sampleDriveFiles?: string[]
+        sampleDriveFiles?: string[]; unmatchedDriveFiles?: { id: string; name: string }[]
         error?: string
       }
       if (!res.ok) { setError(data.error ?? 'Scan failed'); return }
       setScanResult({
-        dryRun:           false,
-        matched:          data.matched          ?? 0,
-        alreadySet:       data.alreadySet       ?? 0,
-        notFound:         data.notFound         ?? 0,
-        total:            data.total            ?? 0,
-        driveFiles:       data.driveFiles       ?? 0,
-        byTier:           data.byTier           ?? {},
-        unmatchedCodes:   data.unmatchedCodes   ?? [],
-        matchedProducts:  data.matchedProducts  ?? [],
-        sampleDriveFiles: data.sampleDriveFiles ?? [],
+        dryRun:              false,
+        matched:             data.matched             ?? 0,
+        alreadySet:          data.alreadySet          ?? 0,
+        notFound:            data.notFound            ?? 0,
+        total:               data.total               ?? 0,
+        driveFiles:          data.driveFiles          ?? 0,
+        byTier:              data.byTier              ?? {},
+        unmatchedCodes:      data.unmatchedCodes      ?? [],
+        matchedProducts:     data.matchedProducts     ?? [],
+        sampleDriveFiles:    data.sampleDriveFiles    ?? [],
+        unmatchedDriveFiles: data.unmatchedDriveFiles ?? [],
       })
       // Refresh product list to reflect new photo IDs
       const listRes = await fetch('/api/admin/products')
@@ -340,11 +343,12 @@ export default function ProductCatalogTable({
           {scanResult.matched > 0 && Object.keys(scanResult.byTier).some(k => (scanResult.byTier[k] ?? 0) > 0) && (
             <div className="flex flex-wrap gap-1.5">
               {[
-                { key: 'exact',      label: 'Code (exact)',  cls: 'bg-blue-100 border-blue-300 text-blue-800' },
-                { key: 'fuzzy',      label: 'Code (fuzzy)',  cls: 'bg-indigo-100 border-indigo-300 text-indigo-800' },
-                { key: 'name_exact', label: 'Name (exact)',  cls: 'bg-green-100 border-green-300 text-green-800' },
-                { key: 'name_fuzzy', label: 'Name (fuzzy)',  cls: 'bg-teal-100 border-teal-300 text-teal-800' },
-                { key: 'brand_name', label: 'Brand+Name',    cls: 'bg-purple-100 border-purple-300 text-purple-800' },
+                { key: 'exact',         label: 'Code (exact)',   cls: 'bg-blue-100 border-blue-300 text-blue-800' },
+                { key: 'fuzzy',         label: 'Code (fuzzy)',   cls: 'bg-indigo-100 border-indigo-300 text-indigo-800' },
+                { key: 'name_exact',    label: 'Name (exact)',   cls: 'bg-green-100 border-green-300 text-green-800' },
+                { key: 'name_fuzzy',    label: 'Name (fuzzy)',   cls: 'bg-teal-100 border-teal-300 text-teal-800' },
+                { key: 'brand_name',    label: 'Brand+Name',     cls: 'bg-purple-100 border-purple-300 text-purple-800' },
+                { key: 'token_jaccard', label: 'Token Jaccard',  cls: 'bg-orange-100 border-orange-300 text-orange-800' },
               ].filter(t => (scanResult.byTier[t.key] ?? 0) > 0).map(t => (
                 <span key={t.key} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${t.cls}`}>
                   {t.label}: {scanResult.byTier[t.key]}
@@ -406,6 +410,24 @@ export default function ProductCatalogTable({
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+          {/* Unmatched Drive files — photos in Drive that aren't linked to any product */}
+          {scanResult.unmatchedDriveFiles.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-amber-200">
+              <p className="text-xs font-medium text-red-700 mb-1">
+                📂 Drive photos with NO product match ({scanResult.unmatchedDriveFiles.length} shown) — rename these files to match a product name or QNE code, then scan again:
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {scanResult.unmatchedDriveFiles.map((f, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700 font-mono">
+                    {f.name}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Tip: rename Drive photos to your QNE item code (e.g. <span className="font-mono">HP85A.jpg</span>) for instant automatic matching.
+              </p>
             </div>
           )}
         </div>

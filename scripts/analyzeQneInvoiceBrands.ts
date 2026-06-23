@@ -295,47 +295,15 @@ async function main() {
   // ── 5. Build Excel workbook ───────────────────────────────────────────────
   const wb = XLSX.utils.book_new()
 
-  // Sheet 1: Brand Summary
-  const brandHeader = [
-    'Brand',
-    'Categories',
-    'Unique Items',
-    'Total Invoices (lines)',
-    'Total Qty Sold',
-    'Total Revenue (MYR)',
-    'Avg Revenue per Invoice Line',
-  ]
-  const brandData = [
-    brandHeader,
-    ...brandRows.map(b => [
-      b.brand,
-      [...b.categories].filter(Boolean).sort().join(', '),
-      b.uniqueItems,
-      b.invoiceCount,
-      +b.totalQty.toFixed(2),
-      +b.totalRevenue.toFixed(2),
-      +(b.totalRevenue / Math.max(b.invoiceCount, 1)).toFixed(2),
-    ]),
-  ]
-  const ws1 = XLSX.utils.aoa_to_sheet(brandData)
-  ws1['!cols'] = [
-    { wch: 28 }, { wch: 50 }, { wch: 14 }, { wch: 26 }, { wch: 16 }, { wch: 22 }, { wch: 28 },
-  ]
-  XLSX.utils.book_append_sheet(wb, ws1, 'Brand Summary')
-
-  // Sheet 2: Item Detail (all items, sorted by brand then revenue)
-  const itemsSorted = [...allItems].sort((a, b) => {
-    const brandCmp = a.brand.localeCompare(b.brand)
-    if (brandCmp !== 0) return brandCmp
-    return b.totalRevenue - a.totalRevenue
-  })
-
-  const itemHeader = [
-    'Brand',
-    'QNE Category',
-    'QNE Group / Sub-category',
+  // Common column definition: Item Name first, then Brand
+  // Used across all item-level sheets
+  const itemCols = [
+    'Rank',
+    'Item Name',         // ← first: most important for scanning
+    'Brand',             // ← second: what we want to know
     'Item Code',
-    'Item Name',
+    'QNE Category',
+    'QNE Group',
     'Unit',
     'Times Invoiced',
     'Total Qty Sold',
@@ -343,84 +311,184 @@ async function main() {
     'Avg Unit Price (MYR)',
     'Last Invoice Date',
   ]
-  const itemData = [
-    itemHeader,
-    ...itemsSorted.map(i => [
+  function itemRow(i: ItemAgg, rank: number): unknown[] {
+    return [
+      rank,
+      i.itemName,
       i.brand,
+      i.itemCode,
       i.qneCategory,
       i.qneGroup,
-      i.itemCode,
-      i.itemName,
       i.unit,
       i.invoiceCount,
       +i.totalQty.toFixed(2),
       +i.totalRevenue.toFixed(2),
       i.totalQty > 0 ? +(i.totalRevenue / i.totalQty).toFixed(4) : 0,
       i.lastDate,
-    ]),
+    ]
+  }
+  const itemColWidths = [
+    { wch: 6 }, { wch: 55 }, { wch: 22 }, { wch: 20 },
+    { wch: 22 }, { wch: 26 }, { wch: 8 },
+    { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 18 },
   ]
-  const ws2 = XLSX.utils.aoa_to_sheet(itemData)
-  ws2['!cols'] = [
-    { wch: 24 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 50 },
-    { wch: 8 },  { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
-  ]
-  XLSX.utils.book_append_sheet(wb, ws2, 'Item Detail')
 
-  // Sheet 3: Top 50 by Revenue
-  const top50Rev = [...allItems]
-    .sort((a, b) => b.totalRevenue - a.totalRevenue)
-    .slice(0, 50)
-  const top50RevData = [
-    ['Rank', ...itemHeader],
-    ...top50Rev.map((i, idx) => [
-      idx + 1,
-      i.brand,
-      i.qneCategory,
-      i.qneGroup,
-      i.itemCode,
-      i.itemName,
-      i.unit,
-      i.invoiceCount,
-      +i.totalQty.toFixed(2),
-      +i.totalRevenue.toFixed(2),
-      i.totalQty > 0 ? +(i.totalRevenue / i.totalQty).toFixed(4) : 0,
-      i.lastDate,
-    ]),
-  ]
-  const ws3 = XLSX.utils.aoa_to_sheet(top50RevData)
-  ws3['!cols'] = [
-    { wch: 6 }, { wch: 24 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 50 },
-    { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
-  ]
-  XLSX.utils.book_append_sheet(wb, ws3, 'Top 50 by Revenue')
+  // ── Sheet 1: All Items by Invoice Count (primary analysis sheet) ──────────
+  // Item name first, sorted by Times Invoiced DESC.
+  // Use this to scan "what we sell most → what brand it is."
+  const byFreq = [...allItems].sort((a, b) => b.invoiceCount - a.invoiceCount)
+  const ws1 = XLSX.utils.aoa_to_sheet([itemCols, ...byFreq.map((i, idx) => itemRow(i, idx + 1))])
+  ws1['!cols'] = itemColWidths
+  XLSX.utils.book_append_sheet(wb, ws1, 'By Invoice Frequency')
 
-  // Sheet 4: Top 50 by Invoice Count
-  const top50Inv = [...allItems]
-    .sort((a, b) => b.invoiceCount - a.invoiceCount)
-    .slice(0, 50)
-  const top50InvData = [
-    ['Rank', ...itemHeader],
-    ...top50Inv.map((i, idx) => [
-      idx + 1,
-      i.brand,
-      i.qneCategory,
-      i.qneGroup,
-      i.itemCode,
-      i.itemName,
-      i.unit,
-      i.invoiceCount,
-      +i.totalQty.toFixed(2),
-      +i.totalRevenue.toFixed(2),
-      i.totalQty > 0 ? +(i.totalRevenue / i.totalQty).toFixed(4) : 0,
-      i.lastDate,
-    ]),
+  // ── Sheet 2: All Items by Revenue ─────────────────────────────────────────
+  const byRev = [...allItems].sort((a, b) => b.totalRevenue - a.totalRevenue)
+  const ws2 = XLSX.utils.aoa_to_sheet([itemCols, ...byRev.map((i, idx) => itemRow(i, idx + 1))])
+  ws2['!cols'] = itemColWidths
+  XLSX.utils.book_append_sheet(wb, ws2, 'By Revenue')
+
+  // ── Sheet 3: Brand Summary (with top 5 items per brand) ───────────────────
+  // For each brand: revenue, invoice count, AND the top 5 item names so you
+  // can see at a glance what each brand actually sells.
+  const itemsByBrand = new Map<string, ItemAgg[]>()
+  for (const item of allItems) {
+    const list = itemsByBrand.get(item.brand) ?? []
+    list.push(item)
+    itemsByBrand.set(item.brand, list)
+  }
+
+  const brandHeader = [
+    'Brand',
+    'Total Revenue (MYR)',
+    'Total Invoices',
+    'Unique Items',
+    'Top 5 Items by Invoice Count',
+    'Categories',
   ]
-  const ws4 = XLSX.utils.aoa_to_sheet(top50InvData)
+  const brandSummaryRows = brandRows.map(b => {
+    const items = (itemsByBrand.get(b.brand) ?? [])
+      .sort((x, y) => y.invoiceCount - x.invoiceCount)
+      .slice(0, 5)
+      .map(x => `${x.itemName} (${x.invoiceCount}×)`)
+      .join(' | ')
+    return [
+      b.brand,
+      +b.totalRevenue.toFixed(2),
+      b.invoiceCount,
+      b.uniqueItems,
+      items,
+      [...b.categories].filter(Boolean).sort().join(', '),
+    ]
+  })
+  const ws3 = XLSX.utils.aoa_to_sheet([brandHeader, ...brandSummaryRows])
+  ws3['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 90 }, { wch: 50 }]
+  XLSX.utils.book_append_sheet(wb, ws3, 'Brand Summary')
+
+  // ── Sheet 4: Brand Preference Guide ──────────────────────────────────────
+  // PURPOSE: Feed this sheet back to Claude to auto-generate brand preference
+  // rules. For each common product keyword, shows the #1 brand by invoice count.
+  //
+  // Columns: Product Keyword | #1 Brand | Invoices | Example Items | Rivals
+  //
+  // Method: tokenise item names → group by word → find dominant brand per word
+
+  // Build word → { brand → count } map from all invoiced items
+  const wordBrandMap = new Map<string, Map<string, number>>()
+  const STOP = new Set([
+    'the','and','for','with','pcs','box','set','pack','roll','bxs','card',
+    'per','nos','lot','bag','bkt','ctn','doz','ream','tub','btl','tube',
+    'x','a','of','in','to','cm','mm','ml','kg','gm','gr','ltr','mtr',
+    '1','2','3','4','5','6','7','8','9','0','no','na',
+    '20card','20','18','12','10','48','36','24','80','60','100','150','200',
+    'unknown','brand','others','otehrs','otehr',
+  ])
+
+  for (const item of allItems) {
+    if (item.brand === 'Unknown Brand' || item.brand === 'OTEHRS' || item.brand === 'OTEHR') continue
+    const words = item.itemName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !STOP.has(w) && !/^\d+$/.test(w))
+
+    for (const word of words) {
+      const brandCounts = wordBrandMap.get(word) ?? new Map<string, number>()
+      brandCounts.set(item.brand, (brandCounts.get(item.brand) ?? 0) + item.invoiceCount)
+      wordBrandMap.set(word, brandCounts)
+    }
+  }
+
+  // Keep only words that appear across ≥3 items and have ≥10 total invoices
+  type GuideRow = {
+    keyword:     string
+    topBrand:    string
+    topCount:    number
+    totalCount:  number
+    dominance:   number  // topBrand's share of total
+    examples:    string
+    rivals:      string
+  }
+
+  const guideRows: GuideRow[] = []
+  for (const [word, brandCounts] of wordBrandMap.entries()) {
+    const total     = [...brandCounts.values()].reduce((s, n) => s + n, 0)
+    if (total < 10) continue
+
+    // How many distinct items contain this word?
+    const matchCount = allItems.filter(i =>
+      i.itemName.toLowerCase().includes(word) &&
+      i.brand !== 'Unknown Brand'
+    ).length
+    if (matchCount < 3) continue
+
+    const sorted   = [...brandCounts.entries()].sort((a, b) => b[1] - a[1])
+    const topBrand = sorted[0]![0]
+    const topCount = sorted[0]![1]
+    const dominance = Math.round((topCount / total) * 100)
+
+    const examples = allItems
+      .filter(i => i.itemName.toLowerCase().includes(word) && i.brand === topBrand)
+      .sort((a, b) => b.invoiceCount - a.invoiceCount)
+      .slice(0, 3)
+      .map(i => i.itemName)
+      .join(' | ')
+
+    const rivals = sorted.slice(1, 4)
+      .map(([brand, cnt]) => `${brand} (${cnt})`)
+      .join(', ')
+
+    guideRows.push({ keyword: word, topBrand, topCount, totalCount: total, dominance, examples, rivals })
+  }
+
+  // Sort by total invoice count descending — most relevant product types first
+  guideRows.sort((a, b) => b.totalCount - a.totalCount)
+
+  const guideHeader = [
+    'Product Keyword',
+    '#1 Brand',
+    'Brand Invoices',
+    'Total Invoices (all brands)',
+    'Brand Dominance %',
+    'Example Items',
+    'Other Brands (invoices)',
+  ]
+  const ws4 = XLSX.utils.aoa_to_sheet([
+    guideHeader,
+    ...guideRows.map(r => [
+      r.keyword,
+      r.topBrand,
+      r.topCount,
+      r.totalCount,
+      r.dominance,
+      r.examples,
+      r.rivals,
+    ]),
+  ])
   ws4['!cols'] = [
-    { wch: 6 }, { wch: 24 }, { wch: 22 }, { wch: 26 }, { wch: 18 }, { wch: 50 },
-    { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
+    { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 28 }, { wch: 18 },
+    { wch: 80 }, { wch: 45 },
   ]
-  XLSX.utils.book_append_sheet(wb, ws4, 'Top 50 by Invoice Count')
+  XLSX.utils.book_append_sheet(wb, ws4, 'Brand Preference Guide')
 
   // ── 6. Write file ─────────────────────────────────────────────────────────
   const date     = new Date().toISOString().slice(0, 10)
@@ -432,33 +500,33 @@ async function main() {
   console.log(`✓ Excel written: ${filename}\n`)
 
   // ── 7. Console summary ────────────────────────────────────────────────────
-  console.log('── Brand Summary (top 15 by revenue) ──────────────────────────')
+  console.log('── Top 20 Most-Invoiced Items (Item Name + Brand) ──────────────')
   console.log(
-    'Brand'.padEnd(28) +
-    'Items'.padStart(8) +
-    'Qty'.padStart(12) +
-    'Revenue (MYR)'.padStart(18),
+    'Rank'.padEnd(6) +
+    'Item Name'.padEnd(45) +
+    'Brand'.padEnd(22) +
+    'Invoices'.padStart(10),
   )
-  console.log('─'.repeat(66))
-  for (const b of brandRows.slice(0, 15)) {
+  console.log('─'.repeat(83))
+  for (const [idx, i] of byFreq.slice(0, 20).entries()) {
     console.log(
-      b.brand.padEnd(28) +
-      String(b.uniqueItems).padStart(8) +
-      String(b.totalQty.toFixed(0)).padStart(12) +
-      String(b.totalRevenue.toFixed(2)).padStart(18),
+      String(idx + 1).padEnd(6) +
+      i.itemName.slice(0, 44).padEnd(45) +
+      i.brand.padEnd(22) +
+      String(i.invoiceCount).padStart(10),
     )
   }
 
   console.log('\n── Top 10 Items by Revenue ─────────────────────────────────────')
   console.log(
-    'Item Code'.padEnd(20) +
+    'Item Name'.padEnd(45) +
     'Brand'.padEnd(22) +
     'Revenue (MYR)'.padStart(16),
   )
-  console.log('─'.repeat(58))
-  for (const i of top50Rev.slice(0, 10)) {
+  console.log('─'.repeat(83))
+  for (const i of byRev.slice(0, 10)) {
     console.log(
-      i.itemCode.padEnd(20) +
+      i.itemName.slice(0, 44).padEnd(45) +
       i.brand.padEnd(22) +
       String(i.totalRevenue.toFixed(2)).padStart(16),
     )

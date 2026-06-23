@@ -10,7 +10,7 @@
  */
 import { z } from 'zod'
 import { verifySession } from '@/lib/session'
-import { parseItemList, matchProductsForLines } from '@/lib/smartOrder'
+import { parseItemList, matchProductsForLines, extractDeliveryInfo } from '@/lib/smartOrder'
 
 const BodySchema = z.object({
   text:      z.string().min(1, 'text is required').max(20_000, 'text too long'),
@@ -31,8 +31,9 @@ export async function POST(request: Request) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
   }
 
+  const deliveryInfo = extractDeliveryInfo(parsed.data.text)
   const lines        = parseItemList(parsed.data.text)
   const matchedLines = await matchProductsForLines(lines, parsed.data.companyId)
 
-  return Response.json({ lines: matchedLines })
+  return Response.json({ lines: matchedLines, deliveryInfo })
 }

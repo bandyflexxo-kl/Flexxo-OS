@@ -48,9 +48,12 @@ export async function sendWabaTemplate(
     return { ok: false, error: 'WABA not configured' }
   }
 
-  // Normalise phone: strip leading '+', spaces, dashes
-  const phone = toPhone.replace(/^\+/, '').replace(/[\s\-]/g, '')
+  // Normalise to E.164 without '+' (e.g. 601110951274)
+  // Handles: +601110951274 / 601110951274 / 01110951274 (Malaysian local format)
+  let phone = toPhone.replace(/[\s\-()]/g, '').replace(/^\+/, '')
+  if (phone.startsWith('0')) phone = '6' + phone   // 01x → 601x (Malaysia)
   if (!phone) return { ok: false, error: 'Empty phone number' }
+  console.log(`[WABA] Sending template "${template}" to ${phone}`)
 
   const payload = {
     messaging_product: 'whatsapp',

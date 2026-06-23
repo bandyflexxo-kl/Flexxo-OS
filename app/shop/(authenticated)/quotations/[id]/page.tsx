@@ -20,6 +20,8 @@ type Quotation = {
   status:          string
   currency:        string
   totalAmount:     string | null
+  poNumber:        string | null
+  costCentre:      string | null
   termsConditions: string | null
   sentAt:          string | null
   expiresAt:       string | null
@@ -96,6 +98,22 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
           <p className="text-xs text-amber-600 mt-3 font-medium">
             ⏱ Expires: {new Date(quotation.expiresAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
+        )}
+        {(quotation.poNumber || quotation.costCentre) && (
+          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-4 text-sm">
+            {quotation.poNumber && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">PO Number</p>
+                <p className="font-mono font-medium text-gray-800">{quotation.poNumber}</p>
+              </div>
+            )}
+            {quotation.costCentre && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Cost Centre</p>
+                <p className="font-medium text-gray-800">{quotation.costCentre}</p>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

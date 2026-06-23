@@ -30,10 +30,16 @@ export type QneAgingSummary = {
   creditLimit:   number | null
 }
 
+export type QneMonthlySpend = { month: string; amount: number }
+
 export type QneFinancialData = {
   customer:       QneCustomerFinancials
   recentInvoices: QneInvoice[]
   aging:          QneAgingSummary | null   // null if aging endpoint unavailable
+  /** Monthly invoice totals for last 6 months — computed from all fetched invoices */
+  monthlySpend:   QneMonthlySpend[]
+  /** Aggregate stats for last 6 months */
+  invoiceStats:   { count: number; totalAmount: number }
   fetchedAt:      string
 }
 
@@ -132,27 +138,65 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
 
   // ── 2. Fetch recent invoices ──────────────────────────────────────────────
   let invoices: QneInvoice[] = []
+  const monthlySpendArr: QneMonthlySpend[] = []
+  let invoiceCount = 0
+  let invoiceTotal = 0
 
   try {
     // Fetch recent invoices globally then filter client-side by customer code.
     // QNE's filter params on /SalesInvoices are not consistent — we fetch
     // recent invoices and filter by the 'customer' field (= companyCode).
-    const raw = await qneGet<unknown>(`/SalesInvoices?$top=200&$orderby=invoiceDate desc`, token)
-    const all: RawInvoice[] = Array.isArray(raw)
-      ? (raw as RawInvoice[])
-      : ((raw as { value?: RawInvoice[] })?.value ?? [])
+    // Prefer customer-specific filter — avoids pulling thousands of global invoices.
+    // Falls back to global $top=500 if the QNE build doesn't support that param.
+    let allCustomerInvoices: RawInvoice[] = []
 
-    const customerInvoices = all
-      .filter(inv => inv.customer === qneCustomerCode && !inv.isCancelled)
-      .slice(0, 10)
+    try {
+      const rawCust = await qneGet<unknown>(
+        `/SalesInvoices?customer=${encodeURIComponent(qneCustomerCode)}&$top=500&$orderby=invoiceDate desc`,
+        token,
+      )
+      const custArr: RawInvoice[] = Array.isArray(rawCust)
+        ? (rawCust as RawInvoice[])
+        : ((rawCust as { value?: RawInvoice[] })?.value ?? [])
+      if (custArr.length > 0) {
+        allCustomerInvoices = custArr.filter(inv => !inv.isCancelled)
+      }
+    } catch { /* customer filter not supported — fall through to global */ }
 
-    invoices = customerInvoices.map(inv => ({
+    if (allCustomerInvoices.length === 0) {
+      // Fallback: fetch larger global batch and filter client-side
+      const rawGlob = await qneGet<unknown>(`/SalesInvoices?$top=1000&$orderby=invoiceDate desc`, token)
+      const globArr: RawInvoice[] = Array.isArray(rawGlob)
+        ? (rawGlob as RawInvoice[])
+        : ((rawGlob as { value?: RawInvoice[] })?.value ?? [])
+      allCustomerInvoices = globArr.filter(inv => inv.customer === qneCustomerCode && !inv.isCancelled)
+    }
+
+    // Store all fetched invoices — UI controls how many to display
+    invoices = allCustomerInvoices.map(inv => ({
       invoiceNo:   inv.invoiceCode ?? '—',
       invoiceDate: inv.invoiceDate ?? '',
       dueDate:     calcDueDate(inv.invoiceDate, inv.term),
       amount:      Number(inv.totalAmount ?? 0),
       isCancelled: Boolean(inv.isCancelled),
     }))
+
+    // Compute monthly spend from ALL customer invoices (last 6 months)
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      monthlySpendArr.push({ month: d.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' }), amount: 0 })
+    }
+    for (const inv of allCustomerInvoices) {
+      if (!inv.invoiceDate) continue
+      const d = new Date(inv.invoiceDate)
+      const monthsAgo = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+      if (monthsAgo >= 0 && monthsAgo <= 5) {
+        monthlySpendArr[5 - monthsAgo].amount += Number(inv.totalAmount ?? 0)
+        invoiceCount  += 1
+        invoiceTotal  += Number(inv.totalAmount ?? 0)
+      }
+    }
   } catch {
     // Non-fatal — show empty invoice list
   }
@@ -185,10 +229,21 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
     // Non-fatal — aging section simply won't render
   }
 
+  // If the invoice fetch failed, build an empty 6-month array as fallback
+  if (monthlySpendArr.length === 0) {
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      monthlySpendArr.push({ month: d.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' }), amount: 0 })
+    }
+  }
+
   return {
     customer:       customerInfo,
     recentInvoices: invoices,
     aging,
+    monthlySpend:   monthlySpendArr,
+    invoiceStats:   { count: invoiceCount, totalAmount: invoiceTotal },
     fetchedAt:      new Date().toISOString(),
   }
 }
@@ -216,7 +271,7 @@ const QNE_FIN_TTL = 4 * 60 * 60  // 4 hours in seconds
 
 export async function fetchQneFinancialDataCached(qneCustomerCode: string): Promise<QneFinancialData> {
   const redis = getRedis()
-  const key   = `qne-fin:v1:${qneCustomerCode}`
+  const key   = `qne-fin:v3:${qneCustomerCode}`  // v3: $top=500 per customer, store all invoices
 
   // Layer 1: Redis
   if (redis) {
@@ -231,7 +286,7 @@ export async function fetchQneFinancialDataCached(qneCustomerCode: string): Prom
   // Layer 2: unstable_cache (fallback when Redis not configured)
   return unstable_cache(
     () => fetchQneFinancialData(qneCustomerCode),
-    [`qne-fin-${qneCustomerCode}`],
+    [`qne-fin-v3-${qneCustomerCode}`],
     { revalidate: QNE_FIN_TTL, tags: [`qne-fin-${qneCustomerCode}`] }
   )()
 }

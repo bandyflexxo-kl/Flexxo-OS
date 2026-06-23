@@ -116,6 +116,9 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   // Action state
   const [sending,         setSending]          = useState(false)
   const [sendError,       setSendError]        = useState<string | null>(null)
+  const [resending,       setResending]        = useState(false)
+  const [resendError,     setResendError]      = useState<string | null>(null)
+  const [resendOk,        setResendOk]         = useState<string | null>(null)
   const [savingMeta,      setSavingMeta]       = useState(false)
   const [submitting,      setSubmitting]       = useState(false)
   const [approving,       setApproving]        = useState(false)
@@ -265,6 +268,24 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
       router.refresh()
     } finally {
       setSending(false)
+    }
+  }
+
+  // ── Resend already-sent quotation (email + WABA) ─────────────────────────
+
+  async function resendQuotation() {
+    setResendError(null)
+    setResendOk(null)
+    setResending(true)
+    try {
+      const res  = await fetch(`/api/quotations/${initial.id}/resend`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; sentTo?: string; waba?: { ok: boolean; detail: string }; error?: string }
+      if (!res.ok) { setResendError(data.error ?? 'Resend failed'); return }
+      const wabaStatus = data.waba?.ok ? 'WhatsApp sent ✓' : `WhatsApp: ${data.waba?.detail ?? 'not sent'}`
+      setResendOk(`Email sent to ${data.sentTo ?? 'customer'} · ${wabaStatus}`)
+      router.refresh()
+    } finally {
+      setResending(false)
     }
   }
 
@@ -809,10 +830,21 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
             </p>
           )}
           {status === 'sent' && (
-            <p className="text-sm text-purple-700 font-medium">
-              ✓ Sent {initial.sentAt ? `on ${new Date(initial.sentAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-sm text-purple-700 font-medium">
+                ✓ Sent {initial.sentAt ? `on ${new Date(initial.sentAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+              </p>
+              <button
+                onClick={resendQuotation}
+                disabled={resending}
+                className="text-xs text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 disabled:opacity-50 transition-colors"
+              >
+                {resending ? 'Resending…' : '↺ Resend email + WhatsApp'}
+              </button>
+            </div>
           )}
+          {resendOk  && <p className="text-sm text-green-700">{resendOk}</p>}
+          {resendError && <p className="text-sm text-red-600">{resendError}</p>}
           {status === 'accepted' && (
             <p className="text-sm text-green-700 font-medium">✓ Customer accepted this quotation.</p>
           )}

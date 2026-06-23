@@ -1,17 +1,10 @@
 import { sendGenericEmail } from '@/lib/email'
 
-const SHOP_HOST = process.env.SHOP_HOST ?? 'shop.localhost'
-const APP_URL   = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
-
-// Derive the shop base URL from SHOP_HOST or fall back to APP_URL + /shop
-function shopBaseUrl(): string {
-  if (SHOP_HOST && !SHOP_HOST.includes('localhost:3000') && !SHOP_HOST.startsWith('localhost')) {
-    const proto = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-    return `${proto}://${SHOP_HOST}`
-  }
-  // Single-domain mode (e.g. flexxo-os.vercel.app or localhost:3000)
-  return APP_URL
-}
+// PORTAL_URL is the publicly-accessible base URL used in emails sent to customers.
+// Must be set to the live domain (e.g. https://flexxo-os.vercel.app) so that
+// email links work for recipients outside the office network.
+// Falls back to NEXTAUTH_URL for local dev (links won't be clickable externally).
+const PORTAL_URL = process.env.PORTAL_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
 
 export async function sendQuotationEmail(params: {
   to:              string
@@ -29,7 +22,7 @@ export async function sendQuotationEmail(params: {
     referenceNo, currency, totalAmount, expiresAt, quotationId,
   } = params
 
-  const portalUrl  = `${shopBaseUrl()}/shop/quotations/${quotationId}`
+  const portalUrl  = `${PORTAL_URL}/shop/quotations/${quotationId}`
   const greeting   = contactName ? `Hi ${contactName},` : `Hi ${companyName},`
   const totalFmt   = `${currency} ${Number(totalAmount).toFixed(2)}`
   const expiryLine = expiresAt

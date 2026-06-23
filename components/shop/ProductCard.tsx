@@ -95,7 +95,7 @@ export default function ProductCard({
 
           {/* StockBadge overlay — top-right corner (Condition 14) */}
           <div className="absolute top-2 right-2">
-            <StockBadge status={stockStatus} size="xs" />
+            <StockBadge status={stockStatus} size="xs" qty={availableQty} />
           </div>
 
           {/* "Added ✓" flash overlay (Add-to-Cart state 3 — success) */}

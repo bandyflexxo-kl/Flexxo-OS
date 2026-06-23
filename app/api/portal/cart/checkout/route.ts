@@ -1,8 +1,14 @@
 import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { sendPushToUser } from '@/lib/webpush'
+import { z } from 'zod'
 
-export async function POST() {
+const BodySchema = z.object({
+  poNumber:   z.string().max(100).nullable().optional(),
+  costCentre: z.string().max(100).nullable().optional(),
+})
+
+export async function POST(request: Request) {
   const session = await getOptionalShopSession()
   if (!session || session.role !== 'B2B Client') {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -10,6 +16,15 @@ export async function POST() {
   if (!session.customerCompanyId) {
     return Response.json({ error: 'No company linked to this account.' }, { status: 400 })
   }
+
+  let poNumber:   string | null = null
+  let costCentre: string | null = null
+  try {
+    const raw  = await request.json().catch(() => ({}))
+    const body = BodySchema.parse(raw)
+    poNumber   = body.poNumber   ?? null
+    costCentre = body.costCentre ?? null
+  } catch { /* optional fields — ignore parse errors */ }
 
   const cart = await prisma.quotation.findFirst({
     where: { status: 'cart', createdById: session.userId },
@@ -27,7 +42,7 @@ export async function POST() {
   const quotation = await prisma.$transaction(async tx => {
     const updated = await tx.quotation.update({
       where: { id: cart.id },
-      data:  { status: 'pending_review', referenceNo: refNo },
+      data:  { status: 'pending_review', referenceNo: refNo, poNumber, costCentre },
     })
     await tx.quotationStatusHistory.create({
       data: {

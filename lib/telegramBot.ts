@@ -3,6 +3,7 @@
  * Thin wrapper around the Telegram Bot API.
  * Only used server-side (webhook handler).
  */
+import { prisma } from '@/lib/prisma'
 
 const apiBase = () => {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -251,4 +252,54 @@ export async function removeInlineKeyboard(
     message_id:   messageId,
     reply_markup: { inline_keyboard: [] },
   })
+}
+
+// ── Proactive notify helpers ──────────────────────────────────────────────────
+
+/**
+ * Send an HTML message (with optional inline buttons) to all active CRM users
+ * who have one of the given roles AND have a telegramChatId set.
+ * Intended for fire-and-forget usage: wrap with .catch(() => undefined).
+ */
+export async function notifyByRole(
+  roles:    string[],
+  html:     string,
+  buttons?: TelegramInlineButton[][],
+): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: {
+      isActive:       true,
+      telegramChatId: { not: null },
+      userRoles: {
+        some: { role: { name: { in: roles } }, revokedAt: null },
+      },
+    },
+    select: { telegramChatId: true },
+  })
+  await Promise.allSettled(
+    users.map(u =>
+      buttons
+        ? sendHtmlWithButtons(Number(u.telegramChatId!), html, buttons)
+        : sendHtml(Number(u.telegramChatId!), html)
+    )
+  )
+}
+
+/**
+ * Send an HTML message (with optional inline buttons) to a specific CRM user
+ * identified by their userId. No-op if they have no telegramChatId.
+ */
+export async function notifyUser(
+  userId:   string,
+  html:     string,
+  buttons?: TelegramInlineButton[][],
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where:  { id: userId },
+    select: { telegramChatId: true },
+  })
+  if (!user?.telegramChatId) return
+  await (buttons
+    ? sendHtmlWithButtons(Number(user.telegramChatId), html, buttons)
+    : sendHtml(Number(user.telegramChatId), html))
 }

@@ -1,20 +1,10 @@
-import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { verifySession } from '@/lib/session'
-import { prisma } from '@/lib/prisma'
-import { companyOwnerFilter } from '@/lib/authorization'
-import Topbar from '@/components/layout/Topbar'
-import NewQuotationButton from '@/components/quotations/NewQuotationButton'
-
-const STATUS_COLORS: Record<string, string> = {
-  draft:          'bg-gray-100 text-gray-600',
-  pending_review: 'bg-yellow-100 text-yellow-700',
-  approved:       'bg-blue-100 text-blue-700',
-  sent:           'bg-purple-100 text-purple-700',
-  accepted:       'bg-green-100 text-green-700',
-  declined:       'bg-red-100 text-red-700',
-  expired:        'bg-gray-100 text-gray-500',
-}
+import { redirect }           from 'next/navigation'
+import { verifySession }       from '@/lib/session'
+import { prisma }              from '@/lib/prisma'
+import { companyOwnerFilter }  from '@/lib/authorization'
+import Topbar                  from '@/components/layout/Topbar'
+import NewQuotationButton      from '@/components/quotations/NewQuotationButton'
+import QuotationsTable         from '@/components/quotations/QuotationsTable'
 
 export default async function QuotationsPage() {
   const session = await verifySession().catch(() => null)
@@ -24,8 +14,9 @@ export default async function QuotationsPage() {
 
   const quotations = await prisma.quotation.findMany({
     where: {
-      status:  { not: 'cart' },
-      company: ownerFilter,
+      status:     { not: 'cart' },
+      isArchived: false,
+      company:    ownerFilter,
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -36,7 +27,19 @@ export default async function QuotationsPage() {
     take: 200,
   })
 
-  const pendingCount = quotations.filter(q => q.status === 'pending_review').length
+  const pendingCount  = quotations.filter(q => q.status === 'pending_review').length
+
+  // Serialize Prisma Decimal → string for client component
+  const rows = quotations.map(q => ({
+    id:          q.id,
+    referenceNo: q.referenceNo,
+    status:      q.status,
+    totalAmount: q.totalAmount?.toString() ?? null,
+    createdAt:   q.createdAt.toISOString(),
+    company:     q.company,
+    createdBy:   q.createdBy,
+    _count:      q._count,
+  }))
 
   return (
     <div>
@@ -73,58 +76,7 @@ export default async function QuotationsPage() {
             <p className="text-xs text-gray-400">Quotations are created when customers check out from the portal,<br/>or you can start one manually from a company page.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 font-medium">Reference</th>
-                  <th className="px-4 py-3 font-medium">Company</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Items</th>
-                  <th className="px-4 py-3 font-medium">Total</th>
-                  <th className="px-4 py-3 font-medium">Created By</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {quotations.map(q => (
-                  <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900">{q.referenceNo}</td>
-                    <td className="px-4 py-3">
-                      <Link href={`/companies/${q.company.id}`} className="text-gray-700 hover:text-blue-600 transition-colors">
-                        {q.company.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[q.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {q.status.replace(/_/g, ' ')}
-                      </span>
-                      {q.status === 'pending_review' && (
-                        <span className="ml-1.5 text-xs text-yellow-600 font-medium animate-pulse">Action needed</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{q._count.items}</td>
-                    <td className="px-4 py-3 font-semibold text-gray-900">
-                      {q.totalAmount ? `MYR ${Number(q.totalAmount).toFixed(2)}` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{q.createdBy.name}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">
-                      {new Date(q.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/quotations/${q.id}`}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                      >
-                        Open →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <QuotationsTable quotations={rows} role={session.role} />
         )}
       </div>
     </div>

@@ -2,6 +2,8 @@ import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertPortalCompanyAccess } from '@/lib/authorization'
 import { sendPushToUser } from '@/lib/webpush'
+import { notifyUser, notifyByRole, esc } from '@/lib/telegramBot'
+import { sendOrderStatusWhatsApp } from '@/lib/wabaMessages'
 import { z } from 'zod'
 
 const Schema = z.object({
@@ -25,6 +27,7 @@ export async function POST(
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
     include: {
+      company: { select: { name: true } },
       items: {
         select: {
           id: true, productId: true,
@@ -45,7 +48,7 @@ export async function POST(
 
   const newStatus = parsed.data.action === 'accept' ? 'accepted' : 'declined'
 
-  await prisma.$transaction(async tx => {
+  const { newOrder } = await prisma.$transaction(async tx => {
     await tx.quotation.update({ where: { id }, data: { status: newStatus } })
 
     await tx.quotationStatusHistory.create({
@@ -81,27 +84,71 @@ export async function POST(
       if (quotation.items.length > 0) {
         await tx.orderItem.createMany({
           data: quotation.items.map(item => ({
-            orderId:        order.id,
-            productId:      item.productId,
+            orderId:         order.id,
+            productId:       item.productId,
             quotationItemId: item.id,
-            qty:            item.qty,
-            unitPrice:      item.unitPrice,
-            lineTotal:      item.lineTotal,
+            qty:             item.qty,
+            unitPrice:       item.unitPrice,
+            lineTotal:       item.lineTotal,
           })),
         })
       }
+
+      return { newOrder: { id: order.id, referenceNo: order.referenceNo as string | null } }
     }
+
+    return { newOrder: null as { id: string; referenceNo: string | null } | null }
   })
+
+  const isAccepted = parsed.data.action === 'accept'
+  const companyName = quotation.company.name
+  const qtRef       = quotation.referenceNo ?? 'quotation'
+  const orderRef    = newOrder?.referenceNo ?? null
+  const amtMyr      = quotation.totalAmount ? `MYR ${Number(quotation.totalAmount).toFixed(2)}` : ''
 
   // Push: notify the salesperson who created the quote (fire-and-forget)
   if (quotation.createdById) {
-    const isAccepted = parsed.data.action === 'accept'
     sendPushToUser(quotation.createdById, {
       title: isAccepted ? '🎉 Quote Accepted!' : '❌ Quote Declined',
       body:  isAccepted
-        ? `${quotation.referenceNo ?? 'Your quotation'} was accepted by the client — an order has been created.`
-        : `${quotation.referenceNo ?? 'Your quotation'} was declined by the client.`,
+        ? `${qtRef} was accepted by ${companyName} — order ${orderRef ?? ''} created.`
+        : `${qtRef} was declined by ${companyName}.`,
       url: `/quotations/${id}`,
+    }).catch(() => undefined)
+  }
+
+  if (isAccepted && newOrder) {
+    const ordId12 = newOrder.id.slice(0, 12)
+
+    // Telegram → salesperson: simple confirmation
+    if (quotation.createdById) {
+      notifyUser(
+        quotation.createdById,
+        `🎉 <b>${esc(companyName)}</b> accepted <b>${esc(qtRef)}</b>!\n\n` +
+        `Order <b>${esc(orderRef ?? '')} </b>${amtMyr ? `(${esc(amtMyr)})` : ''} has been created.\n` +
+        `Admin will approve it shortly.`,
+      ).catch(() => undefined)
+    }
+
+    // Telegram → Admin/Director: with [Approve Order] inline button
+    notifyByRole(
+      ['Admin', 'Director', 'Manager'],
+      `🎉 <b>New Order — Action Required</b>\n\n` +
+      `<b>${esc(companyName)}</b> accepted <b>${esc(qtRef)}</b>\n` +
+      `Order: <b>${esc(orderRef ?? '')}</b>${amtMyr ? ` · ${esc(amtMyr)}` : ''}\n\n` +
+      `Tap <b>Approve</b> to issue invoice + create warehouse picking task.`,
+      [[
+        { text: '✅ Approve Order', callback_data: `aord:${ordId12}` },
+      ]],
+    ).catch(() => undefined)
+
+    // WABA → customer: order confirmed
+    sendOrderStatusWhatsApp({
+      companyId: quotation.companyId,
+      orderId:   newOrder.id,
+      orderRef:  orderRef ?? newOrder.id.slice(0, 8),
+      newStatus: 'Confirmed',
+      userId:    'system',
     }).catch(() => undefined)
   }
 

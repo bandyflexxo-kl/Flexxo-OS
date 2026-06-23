@@ -2,7 +2,6 @@ import { verifySession }       from '@/lib/session'
 import { prisma }               from '@/lib/prisma'
 import { isPrivilegedRole }     from '@/lib/authorization'
 import { sendPushToUser }       from '@/lib/webpush'
-import { sendQuotationEmail }   from '@/lib/quotationEmail'
 import { z } from 'zod'
 
 const Schema = z.object({
@@ -11,8 +10,8 @@ const Schema = z.object({
 
 /**
  * Manager / Admin approves a pending_review quotation.
- * Status flow: pending_review → sent  (auto-send on approval — no extra click needed)
- * The quotation email is sent immediately after approval.
+ * Status flow: pending_review → approved
+ * Salesperson then clicks "Send to Customer" which sends email + WABA and sets status → sent.
  */
 export async function POST(
   request: Request,
@@ -49,61 +48,40 @@ export async function POST(
     )
   }
 
-  const itemCount = await prisma.quotationItem.count({ where: { quotationId: id } })
-  const recipientEmail = quotation.contact?.email ?? quotation.company.generalEmail
-
   // Approve + log status + log activity in one transaction
   await prisma.$transaction(async tx => {
     await tx.quotation.update({
       where: { id },
-      data:  { status: 'sent', sentAt: new Date(), approvedById: session.userId },
+      data:  { status: 'approved', approvedById: session.userId },
     })
     await tx.quotationStatusHistory.create({
       data: {
         quotationId: id,
         fromStatus:  'pending_review',
-        toStatus:    'sent',
+        toStatus:    'approved',
         changedById: session.userId,
-        notes:       parsed.data.notes ? `Approved & sent: ${parsed.data.notes}` : 'Approved and auto-sent to customer',
+        notes:       parsed.data.notes ? `Approved: ${parsed.data.notes}` : 'Approved — ready to send to customer',
       },
     })
-    if (recipientEmail) {
-      await tx.activity.create({
-        data: {
-          companyId:    quotation.companyId,
-          activityType: 'email',
-          direction:    'outbound',
-          subject:      `Quotation ${quotation.referenceNo} approved and sent to customer`,
-          body:         `Approved by ${session.name}. Email sent to ${recipientEmail}.`,
-          userId:       session.userId,
-        },
-      })
-    }
+    await tx.activity.create({
+      data: {
+        companyId:    quotation.companyId,
+        activityType: 'note',
+        subject:      `Quotation ${quotation.referenceNo} approved`,
+        body:         `Approved by ${session.name}. Click "Send to Customer" to email and notify via WhatsApp.`,
+        userId:       session.userId,
+      },
+    })
   })
 
-  // ── Send email (outside transaction — failure doesn't roll back approval) ──
-  if (recipientEmail && itemCount > 0) {
-    sendQuotationEmail({
-      to:              recipientEmail,
-      contactName:     quotation.contact?.name ?? null,
-      salespersonName: quotation.createdBy.name,
-      companyName:     quotation.company.name,
-      referenceNo:     quotation.referenceNo,
-      currency:        quotation.currency,
-      totalAmount:     quotation.totalAmount?.toString() ?? '0',
-      expiresAt:       quotation.expiresAt?.toISOString() ?? null,
-      quotationId:     id,
-    }).catch(err => console.error('Quotation auto-send email failed:', err))
-  }
-
-  // ── Push: notify salesperson (fire-and-forget) ────────────────────────────
+  // ── Push: notify salesperson to send (fire-and-forget) ───────────────────
   if (quotation.createdById) {
     sendPushToUser(quotation.createdById, {
-      title: '✅ Quote Approved & Sent',
-      body:  `${quotation.referenceNo ?? 'Your quotation'} was approved by ${session.name} and emailed to the client.`,
+      title: '✅ Quote Approved — Ready to Send',
+      body:  `${quotation.referenceNo ?? 'Your quotation'} was approved by ${session.name}. Open it to send to the customer.`,
       url:   `/quotations/${id}`,
     }).catch(() => undefined)
   }
 
-  return Response.json({ ok: true, status: 'sent', emailSent: !!(recipientEmail && itemCount > 0) })
+  return Response.json({ ok: true, status: 'approved' })
 }

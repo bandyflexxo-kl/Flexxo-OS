@@ -24,11 +24,13 @@ type CartData = {
 }
 
 export default function CartPage() {
-  const [cart,     setCart]     = useState<CartData | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [busy,     setBusy]     = useState<Set<string>>(new Set())
-  const [checking, setChecking] = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
+  const [cart,       setCart]       = useState<CartData | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [busy,       setBusy]       = useState<Set<string>>(new Set())
+  const [checking,   setChecking]   = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+  const [poNumber,   setPoNumber]   = useState('')
+  const [costCentre, setCostCentre] = useState('')
   const router = useRouter()
 
   const loadCart = useCallback(async () => {
@@ -69,7 +71,14 @@ export default function CartPage() {
     setChecking(true)
     setError(null)
     try {
-      const res  = await fetch('/api/portal/cart/checkout', { method: 'POST' })
+      const res  = await fetch('/api/portal/cart/checkout', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          poNumber:   poNumber.trim()   || null,
+          costCentre: costCentre.trim() || null,
+        }),
+      })
       const data = await res.json() as { quotationId?: string; error?: string }
       if (!res.ok) { setError(data.error ?? 'Checkout failed'); return }
       router.push(`/shop/quotations/${data.quotationId}`)
@@ -245,6 +254,36 @@ export default function CartPage() {
             <p className="text-xs text-gray-400 -mt-2 leading-relaxed">
               Final pricing will be confirmed by your Flexxo sales representative before the order is processed.
             </p>
+
+            {/* PO Number + Cost Centre — optional procurement fields */}
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                  PO Number <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={poNumber}
+                  onChange={e => setPoNumber(e.target.value)}
+                  placeholder="e.g. PO-2026-001"
+                  maxLength={100}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-green-500 focus:ring-2 focus:ring-green-100 outline-none transition placeholder-gray-400"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                  Cost Centre / Department <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={costCentre}
+                  onChange={e => setCostCentre(e.target.value)}
+                  placeholder="e.g. Marketing, IT, Finance"
+                  maxLength={100}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-green-500 focus:ring-2 focus:ring-green-100 outline-none transition placeholder-gray-400"
+                />
+              </div>
+            </div>
 
             <button
               onClick={checkout}

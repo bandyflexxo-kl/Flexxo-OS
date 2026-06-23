@@ -52,7 +52,17 @@ export default async function ShopOrderDetailPage({
       currency: true, totalAmount: true, createdAt: true, deliveredAt: true,
       qneDoRef: true,
       companyId: true,
-      quotation: { select: { id: true, referenceNo: true } },
+      quotation:       { select: { id: true, referenceNo: true } },
+      deliveryBooking: {
+        select: {
+          shareLink:       true,
+          driverName:      true,
+          driverPhone:     true,
+          plateNumber:     true,
+          bookingStatus:   true,
+          driverAssignedAt: true,
+        },
+      },
       items: {
         select: {
           id: true, qty: true, unitPrice: true, lineTotal: true,
@@ -146,6 +156,51 @@ export default async function ShopOrderDetailPage({
           </p>
         )}
       </div>
+
+      {/* Live delivery tracking card — only when driver is assigned */}
+      {order.deliveryBooking && (order.deliveryBooking.driverName || order.deliveryBooking.shareLink) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"/>
+            </svg>
+            Live Delivery
+          </h3>
+          {order.deliveryBooking.driverName && (
+            <div className="flex items-center gap-6 text-sm mb-3">
+              <div>
+                <p className="text-[10px] text-blue-500 font-semibold uppercase tracking-wide mb-0.5">Driver</p>
+                <p className="text-blue-900 font-semibold">{order.deliveryBooking.driverName}</p>
+                {order.deliveryBooking.driverPhone && (
+                  <a href={`tel:${order.deliveryBooking.driverPhone}`} className="text-xs text-blue-600 hover:underline">
+                    {order.deliveryBooking.driverPhone}
+                  </a>
+                )}
+              </div>
+              {order.deliveryBooking.plateNumber && (
+                <div>
+                  <p className="text-[10px] text-blue-500 font-semibold uppercase tracking-wide mb-0.5">Vehicle</p>
+                  <p className="text-blue-900 font-mono font-bold tracking-wider">{order.deliveryBooking.plateNumber}</p>
+                </div>
+              )}
+            </div>
+          )}
+          {order.deliveryBooking.shareLink && (
+            <a
+              href={order.deliveryBooking.shareLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              Track My Delivery (Live)
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Items */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">

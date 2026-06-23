@@ -11,6 +11,7 @@ export type NotificationType =
   | 'pending_approval'
   | 'inactive_account'
   | 'account_request'
+  | 'contact_edit_request'
 
 export type NotificationItem = {
   type:      NotificationType
@@ -175,7 +176,30 @@ export async function getNotificationsForUser(
     }
   }
 
-  // ── 6. Pending account requests (Admin / Manager only) ───────────────────
+  // ── 6. Pending contact edit requests (Admin / Manager only) ─────────────
+  if (isPrivileged) {
+    const pendingEdits = await prisma.contactEditRequest.findMany({
+      where:   { status: 'pending' },
+      include: {
+        contact:     { select: { id: true, name: true, companyId: true, company: { select: { id: true, name: true } } } },
+        requestedBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+      take:    10,
+    })
+
+    for (const req of pendingEdits) {
+      items.push({
+        type:      'contact_edit_request',
+        title:     `Contact edit pending: ${req.contact.name}`,
+        body:      `${req.requestedBy.name} wants to update ${req.contact.name} at ${req.contact.company.name}`,
+        url:       `/companies/${req.contact.company.id}?tab=contacts`,
+        createdAt: req.createdAt,
+      })
+    }
+  }
+
+  // ── 7. Pending account requests (Admin / Manager only) ───────────────────
   if (isPrivileged) {
     const pendingRequests = await prisma.accountRequest.findMany({
       where:   { status: 'pending' },
@@ -218,8 +242,9 @@ export async function getNotificationsForUser(
     }
   }
 
-  const pendingRequestCount = items.filter(i => i.type === 'account_request').length
-  const urgent = overdueFollowUps.length + approvedQuotes.length + pendingRequestCount
+  const pendingRequestCount    = items.filter(i => i.type === 'account_request').length
+  const pendingContactEdits    = items.filter(i => i.type === 'contact_edit_request').length
+  const urgent = overdueFollowUps.length + approvedQuotes.length + pendingRequestCount + pendingContactEdits
 
   return { items, count: items.length, urgent }
 }

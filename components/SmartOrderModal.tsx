@@ -10,8 +10,106 @@
  * Access: CRM only (rendered inside QuotationBuilder, never in B2B portal).
  */
 
-import { useState, useRef, useCallback } from 'react'
-import type { MatchedLine, ProductMatch } from '@/lib/smartOrder'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import type { MatchedLine, ProductMatch, DeliveryInfo } from '@/lib/smartOrder'
+
+// ── Inline product search combobox ────────────────────────────────────────────
+
+type DropRect = { top: number; left: number; width: number }
+
+function ProductSearchInput({
+  currency,
+  onSelect,
+}: {
+  currency: string
+  onSelect: (match: ProductMatch) => void
+}) {
+  const [query,    setQuery]    = useState('')
+  const [results,  setResults]  = useState<ProductMatch[]>([])
+  const [loading,  setLoading]  = useState(false)
+  const [open,     setOpen]     = useState(false)
+  const [dropRect, setDropRect] = useState<DropRect | null>(null)
+  const timer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function handleChange(q: string) {
+    setQuery(q)
+    if (timer.current) clearTimeout(timer.current)
+    if (q.length < 2) { setResults([]); setOpen(false); return }
+    timer.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res  = await fetch(`/api/admin/products/search?q=${encodeURIComponent(q)}`)
+        const data = await res.json() as { products?: ProductMatch[] }
+        setResults(data.products ?? [])
+        // Capture position just before opening so the fixed dropdown lands correctly
+        if (wrapRef.current) {
+          const r = wrapRef.current.getBoundingClientRect()
+          setDropRect({ top: r.bottom + 2, left: r.left, width: r.width })
+        }
+        setOpen(true)
+      } catch { /* ignore */ } finally {
+        setLoading(false)
+      }
+    }, 300)
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={e => handleChange(e.target.value)}
+        placeholder="Search product by name, brand or code…"
+        className="w-full border border-blue-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
+      />
+      {loading && (
+        <span className="absolute right-2 top-1.5 text-[10px] text-gray-400 animate-pulse">…</span>
+      )}
+      {/* Fixed-position dropdown — escapes overflow:hidden on table wrapper */}
+      {open && results.length > 0 && dropRect && (
+        <div
+          style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto"
+        >
+          {results.map(r => (
+            <button
+              key={r.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onSelect(r); setQuery(''); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 border-b border-gray-100 last:border-0"
+            >
+              <div className="flex justify-between gap-2">
+                <span className="font-medium truncate">{r.name}</span>
+                <span className="text-blue-600 shrink-0">
+                  {r.sellingPrice ? `${r.currency} ${Number(r.sellingPrice).toFixed(2)}` : '—'}
+                </span>
+              </div>
+              {r.brand && <span className="text-gray-400 text-[10px]">{r.brand}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && results.length === 0 && !loading && query.length >= 2 && dropRect && (
+        <div
+          style={{ position: 'fixed', top: dropRect.top, left: dropRect.left, width: dropRect.width, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow p-2 text-xs text-gray-400"
+        >
+          No products found
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Confidence UI helpers ─────────────────────────────────────────────────────
 
@@ -28,22 +126,26 @@ function ConfidenceBadge({ confidence }: { confidence: 'high' | 'medium' | 'none
 // ── Row types ─────────────────────────────────────────────────────────────────
 
 type RowState = {
-  line:             MatchedLine
-  included:         boolean
-  selectedMatch:    ProductMatch | null   // null = free-text mode
-  freeDesc:         string
-  freePrice:        string
-  qtyOverride:      string
+  line:                MatchedLine
+  included:            boolean
+  selectedMatch:       ProductMatch | null   // null = free-text mode
+  freeDesc:            string
+  freePrice:           string
+  qtyOverride:         string
+  wasManuallySearched: boolean   // user picked via ProductSearchInput (not dropdown)
+  saveAlias:           boolean   // user wants to remember this query→product mapping
 }
 
 function initRows(lines: MatchedLine[]): RowState[] {
   return lines.map(l => ({
-    line:          l,
-    included:      true,
-    selectedMatch: l.topMatch,
-    freeDesc:      l.topMatch ? '' : l.parsedName,
-    freePrice:     '',
-    qtyOverride:   String(l.qty),
+    line:                l,
+    included:            true,
+    selectedMatch:       l.topMatch,
+    freeDesc:            l.topMatch ? '' : l.parsedName,
+    freePrice:           '',
+    qtyOverride:         String(l.qty),
+    wasManuallySearched: false,
+    saveAlias:           false,
   }))
 }
 
@@ -72,6 +174,8 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
   const [pdfBase64,     setPdfBase64]     = useState<string | null>(null)
   const [pdfName,       setPdfName]       = useState<string | null>(null)
   const [extractedText, setExtractedText] = useState<string | null>(null)
+  const [delivery,      setDelivery]      = useState<DeliveryInfo>({ address: null, recipient: null, phone: null })
+  const [addrLoading,   setAddrLoading]   = useState(false)
   const fileRef    = useRef<HTMLInputElement>(null)
   const pdfFileRef = useRef<HTMLInputElement>(null)
 
@@ -87,13 +191,14 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ text: pasteText, companyId }),
       })
-      const data = await res.json() as { lines?: MatchedLine[]; error?: string }
+      const data = await res.json() as { lines?: MatchedLine[]; deliveryInfo?: DeliveryInfo; error?: string }
       if (!res.ok || !data.lines) {
         setParseError(data.error ?? 'Parsing failed')
         setPhase('input')
         return
       }
       setRows(initRows(data.lines))
+      if (data.deliveryInfo) setDelivery(data.deliveryInfo)
       setPhase('results')
     } catch {
       setParseError('Network error — please try again')
@@ -128,7 +233,7 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ imageBase64, mimeType: imageMime, companyId }),
       })
-      const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
+      const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; deliveryInfo?: DeliveryInfo; error?: string }
       if (!res.ok || !data.lines) {
         setParseError(data.error ?? 'Scan failed')
         setPhase('input')
@@ -136,6 +241,7 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
       }
       setExtractedText(data.extractedText ?? null)
       setRows(initRows(data.lines))
+      if (data.deliveryInfo) setDelivery(data.deliveryInfo)
       setPhase('results')
     } catch {
       setParseError('Network error — please try again')
@@ -167,7 +273,7 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ pdfBase64, companyId }),
       })
-      const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; error?: string }
+      const data = await res.json() as { lines?: MatchedLine[]; extractedText?: string; deliveryInfo?: DeliveryInfo; error?: string }
       if (!res.ok || !data.lines) {
         setParseError(data.error ?? 'Scan failed')
         setPhase('input')
@@ -175,6 +281,7 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
       }
       setExtractedText(data.extractedText ?? null)
       setRows(initRows(data.lines))
+      if (data.deliveryInfo) setDelivery(data.deliveryInfo)
       setPhase('results')
     } catch {
       setParseError('Network error — please try again')
@@ -190,9 +297,34 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
 
   // ── Bulk add ────────────────────────────────────────────────────────────────
 
+  async function loadCompanyAddress() {
+    setAddrLoading(true)
+    try {
+      const res  = await fetch(`/api/companies/${companyId}/default-address`)
+      const data = await res.json() as { address?: string | null }
+      if (data.address) setDelivery(prev => ({ ...prev, address: data.address ?? null }))
+    } catch { /* ignore */ } finally {
+      setAddrLoading(false)
+    }
+  }
+
   async function handleAddAll() {
     setAddError(null)
     setPhase('adding')
+
+    // Save delivery info to quotation first (fire separate PATCH)
+    const hasDelivery = delivery.address || delivery.recipient || delivery.phone
+    if (hasDelivery) {
+      await fetch(`/api/quotations/${quotationId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          deliveryAddress:   delivery.address   || null,
+          deliveryRecipient: delivery.recipient || null,
+          deliveryPhone:     delivery.phone     || null,
+        }),
+      }).catch(() => undefined) // don't block item adding on PATCH failure
+    }
 
     const toAdd = rows.filter(r => r.included)
     let addedCount = 0
@@ -215,7 +347,17 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(body),
         })
-        if (res.ok) addedCount++
+        if (res.ok) {
+          addedCount++
+          // Save alias in background — fire-and-forget, don't block the add
+          if (row.saveAlias && row.line.parsedName) {
+            fetch('/api/smart-order/aliases', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ query: row.line.parsedName, productId: row.selectedMatch.id }),
+            }).catch(() => undefined)
+          }
+        }
       } else {
         // Free-text fallback
         const desc  = row.freeDesc.trim()
@@ -462,6 +604,54 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
             </table>
           </div>
 
+          {/* Delivery Details */}
+          <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-700">📦 Delivery Details</p>
+              <button
+                type="button"
+                onClick={loadCompanyAddress}
+                disabled={addrLoading}
+                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+              >
+                {addrLoading ? 'Loading…' : 'Load company address'}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-400">Optional — leave blank to use company&apos;s registered address by default.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Recipient</label>
+                <input
+                  type="text"
+                  value={delivery.recipient ?? ''}
+                  onChange={e => setDelivery(p => ({ ...p, recipient: e.target.value || null }))}
+                  placeholder="Contact person name"
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Phone</label>
+                <input
+                  type="text"
+                  value={delivery.phone ?? ''}
+                  onChange={e => setDelivery(p => ({ ...p, phone: e.target.value || null }))}
+                  placeholder="e.g. 012-3456789"
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">Delivery Address</label>
+              <textarea
+                rows={2}
+                value={delivery.address ?? ''}
+                onChange={e => setDelivery(p => ({ ...p, address: e.target.value || null }))}
+                placeholder="Full delivery address"
+                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+              />
+            </div>
+          </div>
+
           {addError && <p className="text-sm text-red-600">{addError}</p>}
 
           <div className="flex items-center gap-3">
@@ -504,7 +694,7 @@ function ResultRow({
   currency: string
   onChange: (patch: Partial<RowState>) => void
 }) {
-  const { line, included, selectedMatch, freeDesc, freePrice, qtyOverride } = row
+  const { line, included, selectedMatch, freeDesc, freePrice, qtyOverride, wasManuallySearched, saveAlias } = row
 
   return (
     <tr className={`transition-colors ${!included ? 'opacity-40 bg-gray-50' : ''}`}>
@@ -536,6 +726,12 @@ function ResultRow({
               }}
               className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
             >
+              {/* Inject manually-picked product as option when it's not in alternatives */}
+              {wasManuallySearched && selectedMatch && !line.alternatives.some(a => a.id === selectedMatch.id) && (
+                <option value={selectedMatch.id}>
+                  {selectedMatch.name}{selectedMatch.brand ? ` (${selectedMatch.brand})` : ''} — {selectedMatch.sellingPrice ? `${currency} ${Number(selectedMatch.sellingPrice).toFixed(2)}` : 'No price'}{typeof selectedMatch.availableQty === 'number' ? ` · stock ${selectedMatch.availableQty}` : ''} ✓ manually selected
+                </option>
+              )}
               {line.alternatives.map(alt => (
                 <option key={alt.id} value={alt.id}>
                   {alt.name}{alt.brand ? ` (${alt.brand})` : ''} — {alt.sellingPrice ? `${currency} ${Number(alt.sellingPrice).toFixed(2)}` : 'No price'}{typeof alt.availableQty === 'number' ? ` · stock ${alt.availableQty}` : ''}
@@ -544,26 +740,59 @@ function ResultRow({
               <option value="">✎ Enter manually</option>
             </select>
             {!selectedMatch && (
-              <div className="flex gap-1">
+              <div className="space-y-1">
+                <ProductSearchInput
+                  currency={currency}
+                  onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true })}
+                />
                 <input
                   type="text"
-                  placeholder="Description"
+                  placeholder="Or type a description if not in catalogue"
                   value={freeDesc}
                   onChange={e => onChange({ freeDesc: e.target.value })}
-                  className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs"
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs"
                 />
               </div>
             )}
+            {wasManuallySearched && selectedMatch && (
+              <label className="flex items-center gap-1.5 text-[10px] text-blue-600 mt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveAlias}
+                  onChange={e => onChange({ saveAlias: e.target.checked })}
+                  className="rounded"
+                />
+                Remember: &ldquo;{line.parsedName.slice(0, 28)}{line.parsedName.length > 28 ? '…' : ''}&rdquo; = {selectedMatch.name.slice(0, 25)}{selectedMatch.name.length > 25 ? '…' : ''}
+              </label>
+            )}
           </div>
         ) : (
-          // No match — free-text entry
-          <input
-            type="text"
-            placeholder="Description (required)"
-            value={freeDesc}
-            onChange={e => onChange({ freeDesc: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-          />
+          // No match — search first, fall back to free text
+          <div className="space-y-1">
+            <ProductSearchInput
+              currency={currency}
+              onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true })}
+            />
+            {wasManuallySearched && selectedMatch ? (
+              <label className="flex items-center gap-1.5 text-[10px] text-blue-600 mt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveAlias}
+                  onChange={e => onChange({ saveAlias: e.target.checked })}
+                  className="rounded"
+                />
+                Remember: &ldquo;{line.parsedName.slice(0, 28)}{line.parsedName.length > 28 ? '…' : ''}&rdquo; = {selectedMatch.name.slice(0, 25)}{selectedMatch.name.length > 25 ? '…' : ''}
+              </label>
+            ) : !selectedMatch && (
+              <input
+                type="text"
+                placeholder="Or type a description if not in catalogue"
+                value={freeDesc}
+                onChange={e => onChange({ freeDesc: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            )}
+          </div>
         )}
       </td>
 

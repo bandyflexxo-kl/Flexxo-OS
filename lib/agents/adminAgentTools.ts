@@ -14,6 +14,93 @@ export interface ApproverCtx {
   name:   string
 }
 
+// ── approve_order ─────────────────────────────────────────────────────────────
+
+/**
+ * Approve a Confirmed order: generate invoice, create warehouse task, move to Approved.
+ * Mirrors the logic in app/api/orders/[id]/approve/route.ts so Telegram inline
+ * buttons can trigger approval without an HTTP round-trip.
+ */
+export async function approveOrder(
+  orderId:  string,
+  approver: ApproverCtx,
+): Promise<ToolResult & { companyId?: string }> {
+  const order = await prisma.order.findUnique({
+    where:   { id: orderId },
+    include: {
+      company: { select: { id: true, name: true } },
+      items:   { include: { product: { select: { name: true } } } },
+    },
+  })
+  if (!order) return { error: 'Order not found.' }
+  if (order.status !== 'Confirmed') {
+    return { error: `Order is ${order.status}, not Confirmed — cannot approve.` }
+  }
+
+  const year      = new Date().getFullYear()
+  const invCount  = await prisma.invoice.count()
+  const invoiceNo = `INV-${year}-${String(invCount + 1).padStart(4, '0')}`
+
+  const [invoice, warehouseTask] = await prisma.$transaction(async tx => {
+    const inv = await tx.invoice.create({
+      data: {
+        orderId,
+        companyId:   order.companyId,
+        invoiceNo,
+        currency:    order.currency,
+        totalAmount: order.totalAmount ?? 0,
+        issuedById:  approver.userId,
+      },
+    })
+    const task = await tx.warehouseTask.create({
+      data: { orderId, status: 'pending' },
+    })
+    await tx.order.update({ where: { id: orderId }, data: { status: 'Approved' } })
+    await tx.activity.create({
+      data: {
+        companyId:    order.companyId,
+        activityType: 'order_status_change',
+        subject:      `Order ${order.referenceNo ?? orderId} approved — ${invoiceNo} issued`,
+        body:         `Approved by ${approver.name} via Telegram. Warehouse task created.`,
+        userId:       approver.userId,
+      },
+    })
+    await tx.qnePendingAction.create({
+      data: {
+        actionType:   'invoice',
+        referenceNo:  invoiceNo,
+        originalDate: new Date(),
+        payload:      {
+          invoiceNo,
+          orderId,
+          orderRef:    order.referenceNo ?? orderId,
+          companyId:   order.companyId,
+          companyName: order.company.name,
+          currency:    order.currency,
+          totalAmount: order.totalAmount?.toString() ?? '0',
+          issuedBy:    approver.name,
+        },
+        status: 'pending',
+        notes:  `Auto-staged when order ${order.referenceNo ?? orderId} was approved via Telegram.`,
+      },
+    })
+    return [inv, task]
+  })
+
+  return {
+    approved:        true,
+    orderId,
+    companyId:       order.companyId,
+    orderRef:        order.referenceNo ?? orderId,
+    company:         order.company.name,
+    itemCount:       order.items.length,
+    invoiceNo,
+    invoiceId:       invoice.id,
+    warehouseTaskId: warehouseTask.id,
+    message:         `✅ ${order.referenceNo ?? orderId} approved — ${invoiceNo} issued. Warehouse task created.`,
+  }
+}
+
 // ── list_pending_approvals ────────────────────────────────────────────────────
 
 export async function listPendingApprovals(): Promise<ToolResult> {
