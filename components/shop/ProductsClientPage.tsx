@@ -145,65 +145,61 @@ function SkeletonGrid() {
 }
 
 // ---------------------------------------------------------------------------
-// BarcodeScanner — uses native BarcodeDetector API (Chrome / Edge / Android)
+// BarcodeScanner — uses @zxing/browser (works in all modern browsers)
 // ---------------------------------------------------------------------------
 
 function BarcodeScanner({ onScan, onClose }: {
   onScan:  (code: string) => void
   onClose: () => void
 }) {
-  const videoRef   = useRef<HTMLVideoElement>(null)
+  const videoRef      = useRef<HTMLVideoElement>(null)
   const [err, setErr] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
-  // Stabilise onScan so the effect dep array stays clean
   const onScanRef = useRef(onScan)
   useEffect(() => { onScanRef.current = onScan }, [onScan])
 
   useEffect(() => {
-    let stream:   MediaStream | null = null
-    let interval: ReturnType<typeof setInterval> | null = null
+    let stopped = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let controls: { stop: () => void } | null = null
 
     async function start() {
-      // Feature-detect
-      if (!('BarcodeDetector' in window)) {
-        setErr('Barcode scanning requires Chrome or Edge on Android/desktop. Try the photo search instead.')
-        return
-      }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-        })
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play()
-          setReady(true)
-        }
+        const { BrowserMultiFormatReader } = await import('@zxing/browser')
+        if (stopped) return
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix'],
-        })
+        const reader = new BrowserMultiFormatReader()
+        setReady(true)
 
-        interval = setInterval(async () => {
-          if (!videoRef.current) return
-          try {
-            const results = await detector.detect(videoRef.current) as Array<{ rawValue: string }>
-            if (results.length > 0) {
-              clearInterval(interval!)
-              onScanRef.current(results[0].rawValue)
+        controls = await reader.decodeFromVideoDevice(
+          undefined,
+          videoRef.current!,
+          (result, err) => {
+            if (result) {
+              controls?.stop()
+              onScanRef.current(result.getText())
             }
-          } catch { /* ignore per-frame errors */ }
-        }, 500)
-      } catch {
-        setErr('Could not access camera. Please grant camera permission and try again.')
+            // ignore per-frame DecodeHintType errors — they are expected when no barcode in frame
+            if (err && !err.message?.includes('No MultiFormat Readers')) {
+              // non-fatal
+            }
+          },
+        )
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('allowed') || msg.toLowerCase().includes('denied')) {
+          setErr('Camera permission denied. Please allow camera access and try again.')
+        } else {
+          setErr('Could not start camera. Please try the photo search instead.')
+        }
       }
     }
 
     start()
     return () => {
-      if (interval) clearInterval(interval)
-      stream?.getTracks().forEach(t => t.stop())
+      stopped = true
+      controls?.stop()
     }
   }, [])
 
