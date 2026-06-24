@@ -13,10 +13,15 @@ export async function GET(request: Request) {
   if (!isPrivilegedRole(session.role)) return Response.json({ error: 'Admin or Manager required' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
-  const statusFilter     = searchParams.get('status') ?? undefined   // pending | approved | rejected | all
+  const statusFilter = searchParams.get('status') ?? undefined   // pending | approved | rejected | all
+  const typeFilter   = searchParams.get('type')   ?? undefined   // invoice | quotation | sales_order | delivery_order | all
+
+  const where: Record<string, unknown> = {}
+  if (statusFilter && statusFilter !== 'all') where.status = statusFilter
+  if (typeFilter   && typeFilter   !== 'all') where.actionType = typeFilter
 
   const items = await prisma.qnePendingAction.findMany({
-    where:   statusFilter && statusFilter !== 'all' ? { status: statusFilter } : undefined,
+    where:   Object.keys(where).length > 0 ? where : undefined,
     include: { approvedBy: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
     take:    200,

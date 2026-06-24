@@ -141,6 +141,9 @@ model Company {
   invoices                 Invoice[]
   topItems                 QneTopItem[]
   qneInvoices              QneInvoice[]
+  qneQuotations            QneQuotation[]
+  qneSalesOrders           QneSalesOrder[]
+  qneDeliveryOrders        QneDeliveryOrder[]
   telegramAccountRequests  TelegramAccountRequest[]  @relation("CompanyFromTelegramRequest")
 
   @@map("companies")
@@ -359,6 +362,7 @@ model Product {
   packDescription String?   @map("pack_description")
   internalSku     String?   @unique @map("internal_sku")
   qneItemCode          String?   @map("qne_item_code")
+  barcode              String?   @map("barcode")
   isActive             Boolean   @default(true) @map("is_active")
   catalogDescription   String?   @db.Text @map("catalog_description")
   defaultMarginPct     Decimal?  @db.Decimal(6, 2) @map("default_margin_pct")
@@ -366,6 +370,7 @@ model Product {
   isVisibleToCustomers Boolean   @default(false) @map("is_visible_to_customers")
   qneLastSalePrice     Decimal?  @db.Decimal(12, 4) @map("qne_last_sale_price")
   qneLastSalePriceAt   DateTime? @map("qne_last_sale_price_at")
+  customSellingPrice   Decimal?  @db.Decimal(12, 4) @map("custom_selling_price")
   // Live stock availability synced from QNE (GET /api/Stocks/available).
   // Shop hides products where (qneAvailableQty ?? 0) <= 0.
   qneAvailableQty      Int?      @map("qne_available_qty")
@@ -386,8 +391,11 @@ model Product {
   stagingMatches  SupplierPriceStaging[]
   quotationItems  QuotationItem[]
   orderItems      OrderItem[]
-  qneInvoiceItems QneInvoiceItem[]
-  aliases         ProductAlias[]
+  qneInvoiceItems       QneInvoiceItem[]
+  qneQuotationItems     QneQuotationItem[]
+  qneSalesOrderItems    QneSalesOrderItem[]
+  qneDeliveryOrderItems QneDeliveryOrderItem[]
+  aliases            ProductAlias[]
 
   // Listing query: WHERE isActive=true AND isVisibleToCustomers=true ORDER BY name
   @@index([isActive, isVisibleToCustomers, name])
@@ -626,6 +634,8 @@ model Quotation {
   deliveryPhone     String?   @map("delivery_phone") @db.VarChar(50)
   sentAt            DateTime? @map("sent_at")
   expiresAt         DateTime? @map("expires_at")
+  clientAmended     Boolean   @default(false) @map("client_amended")
+  clientAmendedAt   DateTime? @map("client_amended_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -845,6 +855,122 @@ model QneInvoiceItem {
   @@index([invoiceId])
   @@index([stockCode])
   @@map("qne_invoice_items")
+}
+
+model QneQuotation {
+  id           String    @id @default(uuid())
+  docNo        String    @unique @map("doc_no")
+  docDate      DateTime  @map("doc_date")
+  expiryDate   DateTime? @map("expiry_date")
+  customerCode String    @map("customer_code")
+  customerName String    @map("customer_name")
+  salesperson  String?
+  totalAmount  Decimal   @default(0) @map("total_amount") @db.Decimal(14, 4)
+  status       String?
+  companyId    String?   @map("company_id")
+  syncedAt     DateTime  @default(now()) @map("synced_at")
+
+  company Company?          @relation(fields: [companyId], references: [id])
+  items   QneQuotationItem[]
+
+  @@index([customerCode])
+  @@index([docDate])
+  @@index([companyId])
+  @@map("qne_quotations")
+}
+
+model QneQuotationItem {
+  id          String  @id @default(uuid())
+  quotationId String  @map("quotation_id")
+  stockCode   String? @map("stock_code")
+  description String
+  qty         Decimal @default(0) @db.Decimal(14, 4)
+  unitPrice   Decimal @default(0) @map("unit_price") @db.Decimal(14, 4)
+  lineTotal   Decimal @default(0) @map("line_total") @db.Decimal(14, 4)
+  productId   String? @map("product_id")
+
+  quotation QneQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product   Product?     @relation(fields: [productId], references: [id])
+
+  @@index([quotationId])
+  @@index([stockCode])
+  @@map("qne_quotation_items")
+}
+
+model QneSalesOrder {
+  id           String   @id @default(uuid())
+  docNo        String   @unique @map("doc_no")
+  docDate      DateTime @map("doc_date")
+  customerCode String   @map("customer_code")
+  customerName String   @map("customer_name")
+  companyId    String?  @map("company_id")
+  totalAmount  Decimal  @default(0) @map("total_amount") @db.Decimal(14, 4)
+  status       String?
+  syncedAt     DateTime @default(now()) @map("synced_at")
+
+  company Company?            @relation(fields: [companyId], references: [id])
+  items   QneSalesOrderItem[]
+
+  @@index([customerCode])
+  @@index([docDate])
+  @@index([companyId])
+  @@map("qne_sales_orders")
+}
+
+model QneSalesOrderItem {
+  id           String  @id @default(uuid())
+  salesOrderId String  @map("sales_order_id")
+  stockCode    String? @map("stock_code")
+  description  String
+  qty          Decimal @default(0) @db.Decimal(14, 4)
+  unitPrice    Decimal @default(0) @map("unit_price") @db.Decimal(14, 4)
+  lineTotal    Decimal @default(0) @map("line_total") @db.Decimal(14, 4)
+  productId    String? @map("product_id")
+
+  salesOrder QneSalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product    Product?      @relation(fields: [productId], references: [id])
+
+  @@index([salesOrderId])
+  @@index([stockCode])
+  @@map("qne_sales_order_items")
+}
+
+model QneDeliveryOrder {
+  id           String   @id @default(uuid())
+  docNo        String   @unique @map("doc_no")
+  docDate      DateTime @map("doc_date")
+  customerCode String   @map("customer_code")
+  customerName String   @map("customer_name")
+  companyId    String?  @map("company_id")
+  totalAmount  Decimal  @default(0) @map("total_amount") @db.Decimal(14, 4)
+  status       String?
+  syncedAt     DateTime @default(now()) @map("synced_at")
+
+  company Company?             @relation(fields: [companyId], references: [id])
+  items   QneDeliveryOrderItem[]
+
+  @@index([customerCode])
+  @@index([docDate])
+  @@index([companyId])
+  @@map("qne_delivery_orders")
+}
+
+model QneDeliveryOrderItem {
+  id              String  @id @default(uuid())
+  deliveryOrderId String  @map("delivery_order_id")
+  stockCode       String? @map("stock_code")
+  description     String
+  qty             Decimal @default(0) @db.Decimal(14, 4)
+  unitPrice       Decimal @default(0) @map("unit_price") @db.Decimal(14, 4)
+  lineTotal       Decimal @default(0) @map("line_total") @db.Decimal(14, 4)
+  productId       String? @map("product_id")
+
+  deliveryOrder QneDeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+  product       Product?         @relation(fields: [productId], references: [id])
+
+  @@index([deliveryOrderId])
+  @@index([stockCode])
+  @@map("qne_delivery_order_items")
 }
 
 // ============================================================

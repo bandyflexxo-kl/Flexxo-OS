@@ -59,45 +59,38 @@ function readCode(item: Record<string, unknown>): string {
  *
  * If VPN is inactive, throws QneUnavailableError.
  */
-export async function syncQneStock(): Promise<StockSyncResult> {
+export async function syncQneStock(onProgress?: (msg: string) => void): Promise<StockSyncResult> {
   const errors: string[] = []
 
   // ── 1. Authenticate ────────────────────────────────────────────────────────
+  onProgress?.('Logging in for stock sync…')
   const token = await qneLogin()
 
-  // ── 2. Fetch all stock balances from QNE (paginated by 200) ────────────────
-  // Build a map: STOCK_CODE → availableQty. When a code appears more than once
-  // (e.g. multiple locations) we sum the quantities.
+  // ── 2. Fetch all stock balances from QNE ────────────────────────────────────
+  onProgress?.('Fetching stock balances from QNE…')
+  // /Stocks/available returns all balances in one flat call — no pagination params.
+  // Build a map: STOCK_CODE → availableQty, summing across multiple warehouse locations.
   const qtyMap = new Map<string, number>()
-  let   skip   = 0
-  const top    = 200
 
-  while (true) {
-    try {
-      const raw  = await qneGet<unknown>(`/Stocks/available?$top=${top}&$skip=${skip}`, token)
-      const page = (
-        Array.isArray(raw)                                       ? raw
-        : Array.isArray((raw as Record<string, unknown>).value)  ? (raw as Record<string, unknown>).value
-        : Array.isArray((raw as Record<string, unknown>).data)   ? (raw as Record<string, unknown>).data
-        : []
-      ) as Record<string, unknown>[]
+  try {
+    const raw  = await qneGet<unknown>('/Stocks/available', token)
+    const page = (
+      Array.isArray(raw)                                       ? raw
+      : Array.isArray((raw as Record<string, unknown>).value)  ? (raw as Record<string, unknown>).value
+      : Array.isArray((raw as Record<string, unknown>).data)   ? (raw as Record<string, unknown>).data
+      : []
+    ) as Record<string, unknown>[]
 
-      if (page.length === 0) break
-
-      for (const item of page) {
-        const code = readCode(item)
-        if (!code) continue
-        qtyMap.set(code, (qtyMap.get(code) ?? 0) + readQty(item))
-      }
-
-      if (page.length < top) break
-      skip += top
-    } catch (err) {
-      if (err instanceof QneUnavailableError) throw err
-      const msg = err instanceof Error ? err.message : String(err)
-      errors.push(`Stocks/available page (skip=${skip}): ${msg}`)
-      break  // partial data is still useful — continue with what we have
+    for (const item of page) {
+      const code = readCode(item)
+      if (!code) continue
+      // Sum if a code appears in multiple locations/warehouses
+      qtyMap.set(code, (qtyMap.get(code) ?? 0) + readQty(item))
     }
+  } catch (err) {
+    if (err instanceof QneUnavailableError) throw err
+    const msg = err instanceof Error ? err.message : String(err)
+    errors.push(`Stocks/available: ${msg}`)
   }
 
   if (qtyMap.size === 0) {
@@ -105,6 +98,7 @@ export async function syncQneStock(): Promise<StockSyncResult> {
   }
 
   // ── 3. Load products that have a qneItemCode ───────────────────────────────
+  onProgress?.(`Fetched ${qtyMap.size} stock balances — updating products…`)
   const products = await prisma.product.findMany({
     where:  { isActive: true, qneItemCode: { not: null } },
     select: { id: true, qneItemCode: true },

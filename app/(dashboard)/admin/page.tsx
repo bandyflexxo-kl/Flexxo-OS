@@ -4,7 +4,8 @@ import Topbar from '@/components/layout/Topbar'
 import Link from 'next/link'
 import QneSyncPanel from '@/components/admin/QneSyncPanel'
 import QnePriceSyncPanel from '@/components/admin/QnePriceSyncPanel'
-import QneStockSyncPanel from '@/components/admin/QneStockSyncPanel'
+import QneProductSyncPanel from '@/components/admin/QneProductSyncPanel'
+import QneDocumentSyncPanel from '@/components/admin/QneDocumentSyncPanel'
 
 export default async function AdminPage() {
   const session = await verifySession()
@@ -187,7 +188,8 @@ export default async function AdminPage() {
 
         <QneSyncPanel recentSyncs={recentSyncs} pendingCount={pendingCount} />
         <QnePriceSyncPanel />
-        <QneStockSyncPanel />
+        <QneProductSyncPanel />
+        <QneDocumentSyncPanel />
       </div>
     </div>
   )

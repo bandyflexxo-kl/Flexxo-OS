@@ -68,6 +68,14 @@ export default async function CompanyDetailPage({
 
   if (!company) notFound()
 
+  // QNE quotations for this company (created directly in QNE, not via CRM)
+  const qneQuotations = await prisma.qneQuotation.findMany({
+    where:   { companyId: id },
+    include: { items: { select: { stockCode: true, description: true, qty: true, unitPrice: true, lineTotal: true } } },
+    orderBy: { docDate: 'desc' },
+    take:    50,
+  })
+
   // Salesperson can only access companies assigned to them
   if (!isPrivilegedRole(session.role)) {
     const hasAccess = company.assignments.some(
@@ -275,39 +283,88 @@ export default async function CompanyDetailPage({
         )}
 
         {tab === 'quotations' && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-700">Quotations</h3>
-              <NewQuotationButton companyId={company.id} />
-            </div>
-            {company.quotations.length === 0 ? (
-              <p className="text-sm text-gray-400">No quotations yet.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                    <th className="pb-2 font-medium">Reference</th>
-                    <th className="pb-2 font-medium">Status</th>
-                    <th className="pb-2 font-medium">Total</th>
-                    <th className="pb-2 font-medium">Created By</th>
-                    <th className="pb-2 font-medium">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {company.quotations.map((q) => (
-                    <tr key={q.id} className="border-b border-gray-50">
-                      <td className="py-2 font-mono">
-                        <Link href={`/quotations/${q.id}`} className="text-blue-600 hover:underline">{q.referenceNo}</Link>
-                      </td>
-                      <td className="py-2"><Badge>{q.status}</Badge></td>
-                      <td className="py-2 text-gray-700">{q.totalAmount ? `MYR ${Number(q.totalAmount).toFixed(2)}` : '—'}</td>
-                      <td className="py-2 text-gray-500">{q.createdBy.name}</td>
-                      <td className="py-2 text-gray-400">{new Date(q.createdAt).toLocaleDateString()}</td>
+          <div className="space-y-6">
+            {/* CRM Quotations */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">CRM Quotations</h3>
+                <NewQuotationButton companyId={company.id} />
+              </div>
+              {company.quotations.length === 0 ? (
+                <p className="text-sm text-gray-400">No quotations created in Flexxo OS yet.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                      <th className="pb-2 font-medium">Reference</th>
+                      <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium">Total</th>
+                      <th className="pb-2 font-medium">Created By</th>
+                      <th className="pb-2 font-medium">Date</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {company.quotations.map((q) => (
+                      <tr key={q.id} className="border-b border-gray-50">
+                        <td className="py-2 font-mono">
+                          <Link href={`/quotations/${q.id}`} className="text-blue-600 hover:underline">{q.referenceNo}</Link>
+                        </td>
+                        <td className="py-2"><Badge>{q.status}</Badge></td>
+                        <td className="py-2 text-gray-700">{q.totalAmount ? `MYR ${Number(q.totalAmount).toFixed(2)}` : '—'}</td>
+                        <td className="py-2 text-gray-500">{q.createdBy.name}</td>
+                        <td className="py-2 text-gray-400">{new Date(q.createdAt).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* QNE Quotations (created directly in QNE) */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">QNE Quotations</h3>
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">created directly in QNE</span>
+              </div>
+              {qneQuotations.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  No QNE quotations synced yet.{' '}
+                  {!company.qneCustomerCode && <span className="text-amber-600">This company has no QNE customer code linked.</span>}
+                  {company.qneCustomerCode && <span>Go to Admin → ↻ Sync QNE Quotations to pull them in.</span>}
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                      <th className="pb-2 font-medium">QNE Ref</th>
+                      <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium">Total</th>
+                      <th className="pb-2 font-medium">Salesperson</th>
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qneQuotations.map((q) => (
+                      <tr key={q.id} className="border-b border-gray-50">
+                        <td className="py-2 font-mono text-gray-800">{q.docNo}</td>
+                        <td className="py-2">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            q.status === 'Confirmed' ? 'bg-green-100 text-green-700' :
+                            q.status === 'Expired'   ? 'bg-red-100 text-red-600' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>{q.status ?? 'Open'}</span>
+                        </td>
+                        <td className="py-2 text-gray-700">MYR {Number(q.totalAmount).toFixed(2)}</td>
+                        <td className="py-2 text-gray-500">{q.salesperson ?? '—'}</td>
+                        <td className="py-2 text-gray-400">{new Date(q.docDate).toLocaleDateString()}</td>
+                        <td className="py-2 text-gray-400">{q.items.length} line{q.items.length !== 1 ? 's' : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 

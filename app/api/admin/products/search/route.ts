@@ -1,7 +1,7 @@
-import { verifySession }    from '@/lib/session'
-import { prisma }            from '@/lib/prisma'
-import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
-import type { ProductMatch } from '@/lib/smartOrder'
+import { verifySession }                        from '@/lib/session'
+import { prisma }                               from '@/lib/prisma'
+import { tieredSellingPrice, getTierRates }     from '@/lib/tieredPricing'
+import type { ProductMatch }                    from '@/lib/smartOrder'
 
 export async function GET(request: Request) {
   const session = await verifySession().catch(() => null)
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? ''
   if (q.length < 2) return Response.json({ products: [] })
 
-  const [products, globalSetting] = await Promise.all([
+  const [products, rates] = await Promise.all([
     prisma.product.findMany({
       where: {
         isActive: true,
@@ -33,8 +33,8 @@ export async function GET(request: Request) {
         isVisibleToCustomers: true,
         qneInvoiceFreq:       true,
         qneAvailableQty:      true,
-        defaultMarginPct:     true,
-        category: { select: { name: true, defaultMarginPct: true } },
+        customSellingPrice:   true,
+        category: { select: { name: true } },
         priceVersions: {
           where:   { isCurrent: true },
           orderBy: { approvedAt: 'desc' },
@@ -43,16 +43,15 @@ export async function GET(request: Request) {
         },
       },
     }),
-    prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
+    getTierRates(),
   ])
-
-  const globalMargin = globalSetting?.value ?? '30'
 
   const results: ProductMatch[] = products.map(p => {
     const price = p.priceVersions[0] ?? null
-    const sellingPrice = price
-      ? roundPrice(calculateSellingPrice(price.costPrice, p.defaultMarginPct, p.category.defaultMarginPct, globalMargin)).toString()
-      : null
+    const calculatedSell = price ? tieredSellingPrice(price.costPrice.toNumber(), rates) : null
+    const custom         = p.customSellingPrice ? Number(p.customSellingPrice).toFixed(2) : null
+    const sellingPrice   = custom ?? calculatedSell
+    const costPrice      = price?.costPrice.toString() ?? null
 
     return {
       id:                     p.id,
@@ -62,6 +61,7 @@ export async function GET(request: Request) {
       qneItemCode:            p.qneItemCode,
       categoryName:           p.category.name,
       sellingPrice,
+      costPrice,
       currency:               price?.currency ?? 'MYR',
       supplierPriceVersionId: price?.id ?? null,
       score:                  1,

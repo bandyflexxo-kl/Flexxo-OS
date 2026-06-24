@@ -26,6 +26,8 @@ type Quotation = {
   sentAt:          string | null
   expiresAt:       string | null
   createdAt:       string
+  clientAmended:   boolean
+  clientAmendedAt: string | null
   company:         { name: string }
   createdBy:       { name: string }
   items:           QuotationItem[]
@@ -40,18 +42,40 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function ShopQuotationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const [quotation,  setQuotation]  = useState<Quotation | null>(null)
-  const [loading,    setLoading]    = useState(true)
-  const [responding, setResponding] = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
+  const [quotation,    setQuotation]    = useState<Quotation | null>(null)
+  const [loading,      setLoading]      = useState(true)
+  const [responding,   setResponding]   = useState(false)
+  const [amendMode,    setAmendMode]    = useState(false)
+  const [amendQtys,    setAmendQtys]    = useState<Record<string, number>>({})
+  const [removedIds,   setRemovedIds]   = useState<Set<string>>(new Set())
+  const [submitting,   setSubmitting]   = useState(false)
+  const [amendSuccess, setAmendSuccess] = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [quotationId,  setQuotationId]  = useState<string | null>(null)
 
   useEffect(() => {
-    params.then(({ id }) =>
+    params.then(({ id }) => {
+      setQuotationId(id)
       fetch(`/api/portal/quotations/${id}`)
         .then(r => r.json() as Promise<Quotation>)
         .then(data => { setQuotation(data); setLoading(false) })
-    )
+    })
   }, [params])
+
+  function enterAmendMode() {
+    if (!quotation) return
+    const initial: Record<string, number> = {}
+    quotation.items.forEach(item => { initial[item.id] = parseInt(item.qty, 10) })
+    setAmendQtys(initial)
+    setRemovedIds(new Set())
+    setError(null)
+    setAmendMode(true)
+  }
+
+  function cancelAmend() {
+    setAmendMode(false)
+    setError(null)
+  }
 
   async function respond(action: 'accept' | 'decline') {
     if (!quotation) return
@@ -71,14 +95,76 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
     }
   }
 
+  async function submitAmendment() {
+    if (!quotation || !quotationId) return
+    setSubmitting(true)
+    setError(null)
+
+    const items: { itemId: string; qty: number }[] = quotation.items
+      .filter(item => !removedIds.has(item.id))
+      .map(item => ({ itemId: item.id, qty: amendQtys[item.id] ?? parseInt(item.qty, 10) }))
+      .concat(
+        [...removedIds].map(id => ({ itemId: id, qty: 0 }))
+      )
+
+    // Validate: at least one item with qty > 0 remaining
+    const remaining = items.filter(i => i.qty > 0)
+    if (remaining.length === 0) {
+      setError('Cannot remove all items.')
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      const res  = await fetch(`/api/portal/quotations/${quotationId}/amend`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ items }),
+      })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (!res.ok) { setError(data.error ?? 'Amendment failed'); return }
+
+      // Refetch updated quotation
+      const updated = await fetch(`/api/portal/quotations/${quotationId}`).then(r => r.json() as Promise<Quotation>)
+      setQuotation(updated)
+      setAmendMode(false)
+      setAmendSuccess(true)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   if (loading) return <div className="text-center py-16 text-gray-400 animate-pulse">Loading…</div>
   if (!quotation) return <div className="text-center py-16 text-red-500">Quotation not found.</div>
+
+  const canAmend = quotation.status === 'sent' && !quotation.clientAmended
+
+  // In amend mode, compute the preview total
+  const amendPreviewTotal = amendMode
+    ? quotation.items
+        .filter(i => !removedIds.has(i.id))
+        .reduce((sum, i) => sum + Number(i.unitPrice) * (amendQtys[i.id] ?? parseInt(i.qty, 10)), 0)
+    : 0
 
   return (
     <div className="max-w-3xl space-y-6">
       <Link href="/shop/quotations" className="text-sm text-gray-500 hover:text-gray-700 inline-block">
         ← My Quotations
       </Link>
+
+      {/* Amendment success banner */}
+      {amendSuccess && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800 font-medium">
+          ✓ Your amendment has been submitted. Your Flexxo sales representative will review and update your quotation shortly.
+        </div>
+      )}
+
+      {/* Already amended banner */}
+      {quotation.clientAmended && !amendSuccess && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+          ⚠️ You have already submitted one amendment for this quotation. Further amendments are not allowed — please contact your Flexxo sales representative directly.
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
@@ -109,13 +195,20 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
             )}
             {quotation.costCentre && (
               <div>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Cost Centre</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Remark</p>
                 <p className="font-medium text-gray-800">{quotation.costCentre}</p>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Amend mode warning */}
+      {amendMode && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-sm text-amber-800 font-medium">
+          ⚠️ You can only submit one amendment. Once submitted, further changes are not allowed — make sure your quantities are correct before confirming.
+        </div>
+      )}
 
       {/* Items table */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -126,36 +219,89 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
               <th className="px-4 py-3 font-medium text-right">Qty</th>
               <th className="px-4 py-3 font-medium text-right">Unit Price</th>
               <th className="px-4 py-3 font-medium text-right">Total</th>
+              {amendMode && <th className="px-4 py-3 font-medium text-center">Remove</th>}
             </tr>
           </thead>
           <tbody>
-            {quotation.items.map(item => (
-              <tr key={item.id} className="border-b border-gray-50">
-                <td className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{item.description}</p>
-                  {item.brand && <p className="text-xs text-gray-400">{item.brand}</p>}
-                </td>
-                <td className="px-4 py-3 text-right text-gray-700">
-                  {Number(item.qty).toFixed(0)} {item.unit ?? ''}
-                </td>
-                <td className="px-4 py-3 text-right text-gray-700">
-                  {quotation.currency} {Number(item.unitPrice).toFixed(2)}
-                </td>
-                <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                  {quotation.currency} {Number(item.lineTotal).toFixed(2)}
-                </td>
-              </tr>
-            ))}
+            {quotation.items.map(item => {
+              const isRemoved = removedIds.has(item.id)
+              const editQty   = amendMode ? (amendQtys[item.id] ?? parseInt(item.qty, 10)) : parseInt(item.qty, 10)
+              const lineTotal = amendMode && !isRemoved ? Number(item.unitPrice) * editQty : Number(item.lineTotal)
+              return (
+                <tr key={item.id} className={`border-b border-gray-50 ${isRemoved ? 'opacity-40 line-through' : ''}`}>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{item.description}</p>
+                    {item.brand && <p className="text-xs text-gray-400">{item.brand}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">
+                    {amendMode && !isRemoved ? (
+                      <input
+                        type="number"
+                        min={1}
+                        value={editQty}
+                        onChange={e => {
+                          const v = Math.max(1, parseInt(e.target.value, 10) || 1)
+                          setAmendQtys(prev => ({ ...prev, [item.id]: v }))
+                        }}
+                        className="w-16 text-right border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 tabular-nums"
+                      />
+                    ) : (
+                      <>{parseInt(item.qty, 10)} {item.unit ?? ''}</>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">
+                    {quotation.currency} {Number(item.unitPrice).toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                    {quotation.currency} {lineTotal.toFixed(2)}
+                  </td>
+                  {amendMode && (
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => {
+                          setRemovedIds(prev => {
+                            const next = new Set(prev)
+                            if (next.has(item.id)) next.delete(item.id)
+                            else next.add(item.id)
+                            return next
+                          })
+                        }}
+                        className={`text-xs font-medium px-2 py-1 rounded-lg transition-colors ${
+                          isRemoved
+                            ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            : 'bg-red-100 text-red-600 hover:bg-red-200'
+                        }`}
+                      >
+                        {isRemoved ? 'Undo' : 'Remove'}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
-              <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</td>
+              <td colSpan={amendMode ? 3 : 3} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</td>
               <td className="px-4 py-3 text-right text-lg font-bold text-gray-900">
-                {quotation.currency} {quotation.totalAmount ? Number(quotation.totalAmount).toFixed(2) : '—'}
+                {quotation.currency} {(amendMode ? amendPreviewTotal : (quotation.totalAmount ? Number(quotation.totalAmount) : 0)).toFixed(2)}
               </td>
+              {amendMode && <td />}
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      {/* PDF Download */}
+      <div className="flex justify-end">
+        <a
+          href={`/api/portal/quotations/${quotation.id}/print`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-700 transition-colors"
+        >
+          📄 Download PDF
+        </a>
       </div>
 
       {/* Terms */}
@@ -166,8 +312,31 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Accept / Decline */}
-      {quotation.status === 'sent' && (
+      {/* Amend mode actions */}
+      {amendMode && (
+        <div className="bg-white border border-blue-200 rounded-2xl p-6 space-y-3">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              onClick={submitAmendment}
+              disabled={submitting}
+              className="flex-1 py-3 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {submitting ? 'Submitting…' : 'Submit Amendment'}
+            </button>
+            <button
+              onClick={cancelAmend}
+              disabled={submitting}
+              className="flex-1 py-3 bg-white text-gray-600 border border-gray-300 text-sm font-bold rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Accept / Decline + Amend */}
+      {quotation.status === 'sent' && !amendMode && (
         <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6 space-y-3">
           <p className="text-sm font-semibold text-purple-900">Your quotation is ready — please respond:</p>
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -181,6 +350,17 @@ export default function ShopQuotationDetailPage({ params }: { params: Promise<{ 
               {responding ? '…' : '✕ Decline'}
             </button>
           </div>
+          {canAmend && (
+            <div className="pt-2 border-t border-purple-100">
+              <button
+                onClick={enterAmendMode}
+                className="w-full py-2.5 bg-white text-blue-600 border border-blue-200 text-sm font-semibold rounded-xl hover:bg-blue-50 transition-colors"
+              >
+                ✏️ Request Qty Amendment
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-1.5">One amendment allowed per quotation</p>
+            </div>
+          )}
         </div>
       )}
 

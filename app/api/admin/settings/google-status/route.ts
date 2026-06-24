@@ -8,19 +8,23 @@ export async function GET() {
 
   const hasClientId = !!process.env.GOOGLE_CLIENT_ID
 
-  const adminUser = await prisma.user.findUnique({
-    where:  { id: session.userId },
-    select: { name: true, googleRefreshToken: true },
-  })
-
-  const folderSetting = await prisma.systemSetting.findUnique({
-    where: { key: 'google_drive_photos_folder_id' },
-  })
+  // Find any active admin with a Google refresh token (connection is system-wide)
+  const [connectedAdmin, folderSetting] = await Promise.all([
+    prisma.user.findFirst({
+      where: {
+        isActive:           true,
+        googleRefreshToken: { not: null },
+        userRoles: { some: { role: { name: { in: ['Admin', 'Director'] } }, revokedAt: null } },
+      },
+      select: { name: true },
+    }),
+    prisma.systemSetting.findUnique({ where: { key: 'google_drive_photos_folder_id' } }),
+  ])
 
   return Response.json({
     hasClientId,
-    isConnected:   !!adminUser?.googleRefreshToken,
-    connectedName: adminUser?.name ?? null,
+    isConnected:   !!connectedAdmin,
+    connectedName: connectedAdmin?.name ?? null,
     folderId:      process.env.GOOGLE_DRIVE_PRODUCT_PHOTOS_FOLDER_ID || folderSetting?.value || '',
   })
 }

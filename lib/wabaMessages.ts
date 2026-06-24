@@ -30,25 +30,57 @@ export async function sendQuotationWhatsApp(params: {
   userId:        string
   referenceNo:   string | null
   quotationId:   string
+  totalAmount?:  string | null
 }): Promise<WabaSendResult> {
-  const { contactName, contactPhone, companyId, contactId, userId, referenceNo, quotationId } = params
+  const { contactName, contactPhone, companyId, contactId, userId, referenceNo, quotationId, totalAmount } = params
 
   const name    = contactName ?? 'there'
   const refNo   = referenceNo ?? 'your quotation'
   const viewUrl = `${PORTAL_URL}/shop/quotations/${quotationId}`
+  const amtText = totalAmount ? `MYR ${Number(totalAmount).toFixed(2)}` : ''
 
-  const components: WabaTemplateComponent[] = [
+  // Try template with quick-reply buttons first (quotation_ready_buttons).
+  // Falls back to plain template (quotation_ready) if button template is not yet approved.
+  const buttonComponents: WabaTemplateComponent[] = [
     {
       type:       'body',
       parameters: [
         { type: 'text', text: name },
         { type: 'text', text: refNo },
+        { type: 'text', text: amtText },
         { type: 'text', text: viewUrl },
       ],
     },
+    {
+      type:     'button',
+      sub_type: 'quick_reply',
+      index:    '0',
+      parameters: [{ type: 'payload', payload: `ACCEPT_${quotationId}` }],
+    },
+    {
+      type:     'button',
+      sub_type: 'quick_reply',
+      index:    '1',
+      parameters: [{ type: 'payload', payload: `DECLINE_${quotationId}` }],
+    },
   ]
 
-  const result = await sendWabaTemplate(contactPhone, 'quotation_ready', components)
+  let result = await sendWabaTemplate(contactPhone, 'quotation_ready_buttons', buttonComponents)
+
+  // Fallback to plain template if button template isn't available
+  if (!result.ok) {
+    const plainComponents: WabaTemplateComponent[] = [
+      {
+        type:       'body',
+        parameters: [
+          { type: 'text', text: name },
+          { type: 'text', text: refNo },
+          { type: 'text', text: viewUrl },
+        ],
+      },
+    ]
+    result = await sendWabaTemplate(contactPhone, 'quotation_ready', plainComponents)
+  }
 
   if (result.ok) {
     await prisma.activity.create({
@@ -59,7 +91,7 @@ export async function sendQuotationWhatsApp(params: {
         activityType: 'WhatsApp',
         direction:    'Outbound',
         subject:      `WhatsApp: Quotation ${refNo} sent`,
-        body:         `Template "quotation_ready" sent to ${contactPhone} (Msg ID: ${result.messageId})`,
+        body:         `Template sent to ${contactPhone} (Msg ID: ${result.messageId})`,
         linkedEntityType: 'Quotation',
         linkedEntityId:   quotationId,
       },

@@ -112,6 +112,7 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   // Inline edit state
   const [editingQty,      setEditingQty]       = useState<Record<string, string>>({})
   const [editingPrice,    setEditingPrice]     = useState<Record<string, string>>({})
+  const [deletingId,      setDeletingId]       = useState<string | null>(null)
 
   // Action state
   const [sending,         setSending]          = useState(false)
@@ -228,7 +229,9 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   }
 
   async function deleteItem(itemId: string) {
+    setDeletingId(itemId)
     const res = await fetch(`/api/quotations/${initial.id}/items/${itemId}`, { method: 'DELETE' })
+    setDeletingId(null)
     if (!res.ok) return
     const newItems = items.filter(i => i.id !== itemId)
     setItems(newItems)
@@ -472,10 +475,13 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
                     <td className="px-2 py-3 text-center">
                       <button
                         onClick={() => deleteItem(item.id)}
-                        className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none"
+                        disabled={deletingId === item.id}
+                        className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none disabled:cursor-not-allowed"
                         title="Remove item"
                       >
-                        ×
+                        {deletingId === item.id
+                          ? <span className="inline-block w-3.5 h-3.5 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+                          : '×'}
                       </button>
                     </td>
                   )}

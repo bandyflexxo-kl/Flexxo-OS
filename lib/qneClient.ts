@@ -11,11 +11,16 @@ const QNE_PASSWORD = process.env.QNE_PASSWORD ?? '12345'
 
 /** Fetches a fresh bearer token from QNE. Token is not cached — call once per operation. */
 export async function qneLogin(): Promise<string> {
-  const res = await fetch(`${QNE_API_URL}/Users/Login`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ dbCode: QNE_DB_CODE, userName: QNE_USERNAME, password: QNE_PASSWORD }),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${QNE_API_URL}/Users/Login`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ dbCode: QNE_DB_CODE, userName: QNE_USERNAME, password: QNE_PASSWORD }),
+    })
+  } catch (err) {
+    throw new QneUnavailableError(`QNE unreachable: ${err instanceof Error ? err.message : String(err)}`)
+  }
   if (!res.ok) throw new Error(`QNE login failed: HTTP ${res.status}`)
   const body = (await res.json()) as { token?: string }
   if (!body.token) throw new Error('QNE login: no token in response')

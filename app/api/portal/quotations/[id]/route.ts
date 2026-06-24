@@ -43,6 +43,8 @@ export async function GET(
     sentAt:          quotation.sentAt?.toISOString() ?? null,
     expiresAt:       quotation.expiresAt?.toISOString() ?? null,
     createdAt:       quotation.createdAt.toISOString(),
+    clientAmended:   quotation.clientAmended,
+    clientAmendedAt: quotation.clientAmendedAt?.toISOString() ?? null,
     company:         quotation.company,
     createdBy:       quotation.createdBy,
     items: quotation.items.map(item => ({

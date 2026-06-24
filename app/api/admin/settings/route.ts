@@ -1,6 +1,8 @@
-import { verifySession } from '@/lib/session'
-import { prisma } from '@/lib/prisma'
-import { z } from 'zod'
+import { verifySession }             from '@/lib/session'
+import { prisma }                    from '@/lib/prisma'
+import { z }                         from 'zod'
+import { invalidateProductsCache }   from '@/lib/products-api'
+import { invalidateSmartOrderCache } from '@/lib/smartOrder'
 
 export async function GET() {
   const session = await verifySession().catch(() => null)
@@ -17,8 +19,13 @@ const Schema = z.object({
   default_margin_pct:            z.string().regex(marginRegex, 'Must be a number e.g. 30 or 25.5').optional(),
   retail_margin_pct:             z.string().regex(marginRegex, 'Must be a number e.g. 30 or 25.5').optional(),
   b2b_margin_pct:                z.string().regex(marginRegex, 'Must be a number e.g. 20 or 22.5').optional(),
+  tier_margin_low_pct:           z.string().regex(marginRegex, 'Must be a number e.g. 30').optional(),
+  tier_margin_mid_pct:           z.string().regex(marginRegex, 'Must be a number e.g. 25').optional(),
+  tier_margin_high_pct:          z.string().regex(marginRegex, 'Must be a number e.g. 20').optional(),
   google_drive_photos_folder_id: z.string().optional(),
 })
+
+const TIER_KEYS = new Set(['tier_margin_low_pct', 'tier_margin_mid_pct', 'tier_margin_high_pct'])
 
 export async function PATCH(request: Request) {
   const session = await verifySession().catch(() => null)
@@ -32,6 +39,7 @@ export async function PATCH(request: Request) {
   }
 
   const updates = parsed.data
+  let tierChanged = false
   for (const [key, value] of Object.entries(updates)) {
     if (value !== undefined) {
       await prisma.systemSetting.upsert({
@@ -39,7 +47,15 @@ export async function PATCH(request: Request) {
         update: { value },
         create: { key, value },
       })
+      if (TIER_KEYS.has(key)) tierChanged = true
     }
+  }
+
+  if (tierChanged) {
+    await Promise.all([
+      invalidateProductsCache(),
+      invalidateSmartOrderCache(),
+    ])
   }
 
   return Response.json({ ok: true })

@@ -272,13 +272,13 @@ export default function CartPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">
-                  Cost Centre / Department <span className="text-gray-400 font-normal">(optional)</span>
+                  Remark <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <input
                   type="text"
                   value={costCentre}
                   onChange={e => setCostCentre(e.target.value)}
-                  placeholder="e.g. Marketing, IT, Finance"
+                  placeholder="e.g. urgent, deliver before 5pm, 2nd floor"
                   maxLength={100}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-green-500 focus:ring-2 focus:ring-green-100 outline-none transition placeholder-gray-400"
                 />

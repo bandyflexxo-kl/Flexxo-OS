@@ -13,8 +13,9 @@ type GoogleStatus = {
 
 export default function AdminSettingsPage() {
   const [margin,        setMargin]        = useState('')
-  const [retailMargin,  setRetailMargin]  = useState('')
-  const [b2bMargin,     setB2bMargin]     = useState('')
+  const [tierLow,       setTierLow]       = useState('')
+  const [tierMid,       setTierMid]       = useState('')
+  const [tierHigh,      setTierHigh]      = useState('')
   const [loading,       setLoading]       = useState(true)
   const [saving,        setSaving]        = useState(false)
   const [savingShop,    setSavingShop]    = useState(false)
@@ -49,9 +50,10 @@ export default function AdminSettingsPage() {
       fetch('/api/admin/settings').then(r => r.json() as Promise<Record<string, string>>),
       fetch('/api/admin/settings/google-status').then(r => r.json() as Promise<GoogleStatus>),
     ]).then(([settings, gs]) => {
-      setMargin(settings['default_margin_pct']  ?? '30')
-      setRetailMargin(settings['retail_margin_pct'] ?? '30')
-      setB2bMargin(settings['b2b_margin_pct']       ?? '20')
+      setMargin(settings['default_margin_pct']     ?? '30')
+      setTierLow(settings['tier_margin_low_pct']   ?? '30')
+      setTierMid(settings['tier_margin_mid_pct']   ?? '25')
+      setTierHigh(settings['tier_margin_high_pct'] ?? '20')
       setGStatus(gs)
       setFolderId(gs.folderId)
     }).finally(() => setLoading(false))
@@ -77,7 +79,7 @@ export default function AdminSettingsPage() {
     }
   }
 
-  // ── Save shop pricing ────────────────────────────────────────────────────
+  // ── Save tiered pricing ──────────────────────────────────────────────────
   async function saveShopPricing(e: React.FormEvent) {
     e.preventDefault()
     setSavingShop(true)
@@ -87,9 +89,13 @@ export default function AdminSettingsPage() {
       const res = await fetch('/api/admin/settings', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ retail_margin_pct: retailMargin, b2b_margin_pct: b2bMargin }),
+        body:    JSON.stringify({
+          tier_margin_low_pct:  tierLow,
+          tier_margin_mid_pct:  tierMid,
+          tier_margin_high_pct: tierHigh,
+        }),
       })
-      if (!res.ok) { setError('Failed to save shop pricing.'); return }
+      if (!res.ok) { setError('Failed to save pricing.'); return }
       setSuccess('shop')
       setTimeout(() => setSuccess(''), 3000)
     } finally {
@@ -179,51 +185,52 @@ export default function AdminSettingsPage() {
               </button>
             </form>
 
-            {/* ── Shop Pricing ── */}
+            {/* ── Tiered Pricing ── */}
             <form onSubmit={saveShopPricing} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
               <div>
-                <h2 className="text-sm font-semibold text-gray-800">Shop Pricing</h2>
+                <h2 className="text-sm font-semibold text-gray-800">Tiered Shop Pricing</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Prices at <strong>shop.flexxo.com.my</strong>. Changes take effect immediately for all products — no per-product update needed.
+                  Gross margin % applied to all products in the B2B shop and Smart Order, based on supplier cost price.<br />
+                  Formula: <span className="font-mono">sell = cost ÷ (1 − margin%)</span>, rounded up to nearest 10 sen.
+                  Changes take effect immediately — product cache is cleared on save.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Retail Margin % <span className="text-xs text-gray-400 font-normal">(guests / public)</span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number" value={retailMargin} onChange={e => setRetailMargin(e.target.value)}
-                      min="0" max="200" step="0.5"
-                      className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
-                    />
-                    <span className="text-sm text-gray-500">%</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">Global only — overrides not allowed. One rate for all products.</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    B2B Margin % <span className="text-xs text-gray-400 font-normal">(logged-in customers)</span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number" value={b2bMargin} onChange={e => setB2bMargin(e.target.value)}
-                      min="0" max="200" step="0.5"
-                      className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
-                    />
-                    <span className="text-sm text-gray-500">%</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">Base rate — overridable per product or category.</p>
-                </div>
+              <div className="space-y-3">
+                {[
+                  { label: 'Cost ≤ RM 0.99',         value: tierLow,  setter: setTierLow,  hint: 'Small / cheap items — higher margin to cover handling cost' },
+                  { label: 'Cost RM 1.00 – RM 2.99',  value: tierMid,  setter: setTierMid,  hint: 'Mid-range items' },
+                  { label: 'Cost ≥ RM 3.00',           value: tierHigh, setter: setTierHigh, hint: 'Higher-cost items — standard margin' },
+                ].map(({ label, value, setter, hint }) => {
+                  const cost = label === 'Cost ≤ RM 0.99' ? 0.50 : label.startsWith('Cost RM') ? 2.00 : 10.00
+                  const pct = parseFloat(value)
+                  const example = (!isNaN(pct) && pct < 100) ? (Math.ceil(cost / (1 - pct / 100) * 10) / 10).toFixed(2) : '—'
+                  return (
+                    <div key={label} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="w-44 shrink-0">
+                        <p className="text-sm font-medium text-gray-700">{label}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{hint}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" value={value} onChange={e => setter(e.target.value)}
+                          min="1" max="99" step="0.5"
+                          className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-center"
+                        />
+                        <span className="text-sm text-gray-500">%</span>
+                      </div>
+                      <p className="text-xs text-gray-400 ml-2">
+                        e.g. cost RM {cost.toFixed(2)} → sell RM {example}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
 
-              {success === 'shop' && <p className="text-sm text-green-600">✓ Shop pricing saved. All product prices updated immediately.</p>}
+              {success === 'shop' && <p className="text-sm text-green-600">✓ Pricing saved. Product cache cleared — all prices updated immediately.</p>}
               <button type="submit" disabled={savingShop}
                 className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                {savingShop ? 'Saving…' : 'Save Shop Pricing'}
+                {savingShop ? 'Saving…' : 'Save Tiered Pricing'}
               </button>
             </form>
 

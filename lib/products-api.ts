@@ -23,7 +23,7 @@
 
 import { unstable_cache }                        from 'next/cache'
 import { prisma }                                from '@/lib/prisma'
-import { calculateSellingPrice, calculateRetailPrice, roundPrice } from '@/lib/pricing'
+import { tieredSellingPrice, getTierRates }      from '@/lib/tieredPricing'
 import { calcDisplayPrice }                      from '@/lib/qnePriceSync'
 import { getRedis }                              from '@/lib/redis'
 
@@ -35,6 +35,7 @@ export type ProductListItem = {
   brand:        string | null
   unit:         string | null
   qneItemCode:  string | null
+  barcode:      string | null
   category:     { id: string; name: string }
   hasPhoto:     boolean
   sellingPrice: string | null
@@ -50,9 +51,7 @@ const REDIS_KEY   = (tier: 'retail' | 'b2b') => `flexxo:products:v1:${tier}`
 // ── Core DB query (no cache) ──────────────────────────────────────────────────
 
 async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]> {
-  const isB2B = tier === 'b2b'
-
-  const [products, retailSetting, b2bSetting] = await Promise.all([
+  const [products, rates] = await Promise.all([
     prisma.product.findMany({
       where: {
         isActive:             true,
@@ -67,11 +66,12 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
         brand:               true,
         unit:                true,
         qneItemCode:         true,
-        defaultMarginPct:    true,
+        barcode:             true,
         googleDrivePhotoId:  true,
         qneLastSalePrice:    true,
         qneAvailableQty:     true,
-        category:            { select: { id: true, name: true, defaultMarginPct: true } },
+        customSellingPrice:  true,
+        category:            { select: { id: true, name: true } },
         priceVersions: {
           where:   { isCurrent: true },
           orderBy: { approvedAt: 'desc' },
@@ -81,29 +81,22 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
       },
       orderBy: { name: 'asc' },
     }),
-    prisma.systemSetting.findUnique({ where: { key: 'retail_margin_pct' } }),
-    prisma.systemSetting.findUnique({ where: { key: 'b2b_margin_pct' } }),
+    getTierRates(),
   ])
 
-  const retailMargin = retailSetting?.value ?? '30'
-  const b2bMargin    = b2bSetting?.value    ?? '20'
+  // tier param kept for cache-key separation (retail vs b2b) — pricing is identical
+  void tier
 
   return products.map(p => {
-    // Priority 1: QNE last sale price × 1.20
-    // Priority 2: cost × margin (fallback when QNE not yet synced)
+    // Priority 1: customSellingPrice (per-product admin override)
+    // Priority 2: tiered gross-margin from supplier cost price
+    // Priority 3: QNE last-sale × 1.20 (fallback when no cost price uploaded yet)
+    const custom     = p.customSellingPrice ? Number(p.customSellingPrice).toFixed(2) : null
+    const costPrice  = p.priceVersions[0]?.costPrice ?? null
+    const fromCost   = costPrice ? tieredSellingPrice(costPrice.toNumber(), rates) : null
     const qneDisplay = calcDisplayPrice(p.qneLastSalePrice ? Number(p.qneLastSalePrice) : null)
 
-    let sellingPrice: string | null = null
-    if (qneDisplay !== null) {
-      sellingPrice = qneDisplay.toString()
-    } else {
-      const costPrice = p.priceVersions[0]?.costPrice ?? null
-      if (costPrice) {
-        sellingPrice = isB2B
-          ? roundPrice(calculateSellingPrice(costPrice, p.defaultMarginPct, p.category.defaultMarginPct, b2bMargin)).toString()
-          : roundPrice(calculateRetailPrice(costPrice, retailMargin)).toString()
-      }
-    }
+    const sellingPrice: string | null = custom ?? fromCost ?? (qneDisplay !== null ? qneDisplay.toString() : null)
 
     return {
       id:           p.id,
@@ -111,6 +104,7 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
       brand:        p.brand,
       unit:         p.unit,
       qneItemCode:  p.qneItemCode,
+      barcode:      p.barcode,
       category:     { id: p.category.id, name: p.category.name },
       hasPhoto:     !!p.googleDrivePhotoId,
       sellingPrice,

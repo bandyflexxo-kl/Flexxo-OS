@@ -39,10 +39,13 @@ export type PriceSyncResult = {
  *
  * If VPN is inactive, throws QneUnavailableError.
  */
-export async function syncQnePrices(): Promise<PriceSyncResult> {
+export async function syncQnePrices(
+  onProgress?: (msg: string) => void,
+): Promise<PriceSyncResult> {
   const errors: string[] = []
 
   // ── 1. Authenticate ────────────────────────────────────────────────────────
+  onProgress?.('Logging in to QNE…')
   const token = await qneLogin()
 
   // ── 2. Fetch all stock items from QNE (paginated by 200) ──────────────────
@@ -53,6 +56,8 @@ export async function syncQnePrices(): Promise<PriceSyncResult> {
   const priceMap = new Map<string, number>()  // stockCode.toUpperCase() → purchasePrice
   let skip       = 0
   const top      = 200
+
+  onProgress?.(`Fetching stock prices from QNE…`)
 
   while (true) {
     try {
@@ -77,6 +82,7 @@ export async function syncQnePrices(): Promise<PriceSyncResult> {
 
       if (page.length < top) break
       skip += top
+      onProgress?.(`Fetched ${priceMap.size} prices so far…`)
     } catch (err) {
       if (err instanceof QneUnavailableError) throw err
       const msg = err instanceof Error ? err.message : String(err)
@@ -88,6 +94,8 @@ export async function syncQnePrices(): Promise<PriceSyncResult> {
   if (priceMap.size === 0) {
     return { ok: true, invoicesFetched: 0, productsUpdated: 0, skipped: 0, errors }
   }
+
+  onProgress?.(`Updating ${priceMap.size} prices in database…`)
 
   // ── 3. Load products that have a qneItemCode ───────────────────────────────
   const products = await prisma.product.findMany({

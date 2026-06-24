@@ -113,6 +113,12 @@ type QneStock = {
   category:      string | null
   class:         string | null   // brand
   group:         string | null
+  // Barcode/EAN — field name varies by QNE version; capture any that exist
+  barcode?:      string | null
+  ean?:          string | null
+  barcodeNo?:    string | null
+  eanCode?:      string | null
+  upc?:          string | null
 }
 
 async function fetchAllStocks(token: string): Promise<QneStock[]> {
@@ -205,6 +211,12 @@ async function main() {
   )
   console.log(`Valid items (active, not bundled, has price): ${valid.length}`)
 
+  // Build set of inactive QNE item codes (disabled in QNE)
+  const activeCodesInQne = new Set(valid.map(s => s.stockCode.trim().toUpperCase()))
+  const inactiveCodes    = stocks
+    .filter(s => !s.isActive && s.stockCode)
+    .map(s => s.stockCode.trim().toUpperCase())
+
   let created  = 0
   let updated  = 0
   let skipped  = 0
@@ -220,6 +232,8 @@ async function main() {
       const catId        = catMap[subSlug] ?? catMap['os--general'] ?? catMap['other']
       const brand    = stock.class?.trim() || null
       const unit     = stock.baseUOM?.trim() || null
+      // Capture barcode/EAN from whichever field QNE uses
+      const barcode  = (stock.barcode ?? stock.ean ?? stock.barcodeNo ?? stock.eanCode ?? stock.upc)?.trim() || null
 
       // Cost price: prefer purchasePrice, fallback to listPrice * 0.75
       const rawCost  = stock.purchasePrice > 0
@@ -249,6 +263,7 @@ async function main() {
             isActive:   true,
             qneCategory,
             qneGroup,
+            ...(barcode !== null ? { barcode } : {}),
           },
           select: { id: true },
         })
@@ -260,6 +275,7 @@ async function main() {
             brand,
             unit,
             qneItemCode: stock.stockCode,
+            barcode,
             categoryId:  catId,
             isActive:    true,
             createdById: admin.id,
@@ -326,11 +342,38 @@ async function main() {
     }
   }
 
+  // ── Deactivate CRM products that are now disabled in QNE ──────────────────
+  // Find all CRM products whose qneItemCode is in QNE's inactive list
+  // and is NOT in the active list (handles items never returned by QNE at all).
+  let deactivated = 0
+  if (inactiveCodes.length > 0) {
+    const toDeactivate = await prisma.product.findMany({
+      where: {
+        isActive:    true,
+        qneItemCode: { in: inactiveCodes, notIn: [...activeCodesInQne] },
+      },
+      select: { id: true, name: true, qneItemCode: true },
+    })
+
+    if (toDeactivate.length > 0) {
+      console.log(`\nDeactivating ${toDeactivate.length} CRM products disabled in QNE:`)
+      for (const p of toDeactivate) {
+        console.log(`  ✗ [${p.qneItemCode}] ${p.name}`)
+      }
+      await prisma.product.updateMany({
+        where: { id: { in: toDeactivate.map(p => p.id) } },
+        data:  { isActive: false, isVisibleToCustomers: false },
+      })
+      deactivated = toDeactivate.length
+    }
+  }
+
   console.log('\n=== SYNC COMPLETE ===')
-  console.log(`  Products created:  ${created}`)
-  console.log(`  Products updated:  ${updated}`)
-  console.log(`  Skipped:           ${skipped}`)
-  console.log(`  Errors:            ${errors}`)
+  console.log(`  Products created:   ${created}`)
+  console.log(`  Products updated:   ${updated}`)
+  console.log(`  Deactivated in CRM: ${deactivated}  ← were disabled in QNE`)
+  console.log(`  Skipped:            ${skipped}`)
+  console.log(`  Errors:             ${errors}`)
   console.log(`\nGo to /admin/products to mark products visible for the portal.`)
 
   await prisma.$disconnect()

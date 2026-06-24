@@ -31,6 +31,7 @@ type ApiProduct = {
   brand:       string | null
   unit:        string | null
   qneItemCode: string | null
+  barcode:     string | null
   category:    { id: string; name: string }
   hasPhoto:    boolean
   sellingPrice: string | null
@@ -369,6 +370,7 @@ export default function ProductsClientPage({
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
   const [photoSearching,     setPhotoSearching]     = useState(false)
   const [photoDetectedQuery, setPhotoDetectedQuery] = useState<string | null>(null)
+  const [barcodeNotFound,    setBarcodeNotFound]    = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
   // ── Load products ─────────────────────────────────────────────────
@@ -561,12 +563,16 @@ export default function ProductsClientPage({
   // ── Barcode scan result handler ───────────────────────────────────
   function handleBarcodeScan(code: string) {
     setShowBarcodeScanner(false)
-    const exact = allProducts?.find(p => p.qneItemCode?.toLowerCase() === code.toLowerCase())
-    if (exact) {
-      router.push(`/shop/products/${exact.id}`)
-    } else {
-      applySearch(code)
-    }
+    setBarcodeNotFound(null)
+    const normalised = code.toLowerCase()
+    // 1. Match by barcode/EAN field (populated by syncQneProducts)
+    const byBarcode = allProducts?.find(p => p.barcode?.toLowerCase() === normalised)
+    if (byBarcode) { router.push(`/shop/products/${byBarcode.id}`); return }
+    // 2. Match by QNE item code (e.g. salesperson scans internal label)
+    const byCode = allProducts?.find(p => p.qneItemCode?.toLowerCase() === normalised)
+    if (byCode) { router.push(`/shop/products/${byCode.id}`); return }
+    // 3. Not found — show informative banner instead of a useless search
+    setBarcodeNotFound(code)
   }
 
   // ── Filtered product grid ─────────────────────────────────────────
@@ -1089,6 +1095,24 @@ export default function ProductsClientPage({
               type="button"
               onClick={() => setPhotoDetectedQuery(null)}
               className="ml-auto text-green-400 hover:text-green-700 transition-colors text-base leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* Barcode not found banner */}
+        {barcodeNotFound && (
+          <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg -mt-2">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <span>Barcode <strong>{barcodeNotFound}</strong> not found in catalogue. Try searching by product name.</span>
+            <button
+              type="button"
+              onClick={() => setBarcodeNotFound(null)}
+              className="ml-auto text-amber-400 hover:text-amber-700 transition-colors text-base leading-none"
               aria-label="Dismiss"
             >
               ×

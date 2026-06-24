@@ -7,20 +7,9 @@
  * scan-image route to extract text from a photo before calling parseItemList.
  */
 
-import { prisma }   from '@/lib/prisma'
-import { Prisma }   from '@/app/generated/prisma/client'
-import { getRedis } from '@/lib/redis'
-
-// Inline price helpers — avoids importing lib/pricing which has 'server-only'
-function _calcSellingPrice(
-  costPrice:      Prisma.Decimal,
-  productMargin:  Prisma.Decimal | null,
-  categoryMargin: Prisma.Decimal | null,
-  globalMarginPct: string,
-): Prisma.Decimal {
-  const margin = productMargin ?? categoryMargin ?? new Prisma.Decimal(globalMarginPct)
-  return costPrice.times(new Prisma.Decimal(1).plus(margin.dividedBy(100))).toDecimalPlaces(2)
-}
+import { prisma }                              from '@/lib/prisma'
+import { getRedis }                            from '@/lib/redis'
+import { tieredSellingPrice, getTierRates }    from '@/lib/tieredPricing'
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -39,6 +28,7 @@ export type ProductMatch = {
   qneItemCode:            string | null
   categoryName:           string
   sellingPrice:           string | null
+  costPrice:              string | null   // supplier cost price (null if no supplier version)
   currency:               string
   supplierPriceVersionId: string | null
   score:                  number
@@ -403,7 +393,8 @@ type CatalogueProduct = {
   parentCategoryName: string | null
   category:         { name: string }
   // Prices pre-computed at cache-fill time (Decimal-free, safe for Redis JSON)
-  sellingPrice:             string | null
+  sellingPrice:             string | null   // resolved selling price (customSellingPrice wins if set)
+  costPrice:                string | null   // supplier cost price
   currency:                 string
   supplierPriceVersionId:   string | null
 }
@@ -430,7 +421,14 @@ let _cache: CatalogueCache | null = null
 let _cacheFetchedAt: number = 0
 const CATALOGUE_TTL_MS = 5 * 60_000      // 5 minutes (in-process TTL check)
 const CATALOGUE_TTL_S  = 5 * 60          // 5 minutes (Redis ex seconds)
-const CATALOGUE_REDIS_KEY = 'flexxo:smart-order:catalogue:v1'
+const CATALOGUE_REDIS_KEY = 'flexxo:smart-order:catalogue:v2'
+
+export async function invalidateSmartOrderCache(): Promise<void> {
+  _cache = null
+  _cacheFetchedAt = 0
+  const redis = getRedis()
+  if (redis) await redis.del(CATALOGUE_REDIS_KEY).catch(() => undefined)
+}
 
 async function fetchCatalogue(): Promise<CatalogueCache> {
   // L1: in-process cache (fastest — avoids Redis round-trip on warm instances)
@@ -454,7 +452,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
   }
 
   // L3: DB query (only runs on true cold start or after cache invalidation)
-  const [products, globalSetting, brandPrefs] = await Promise.all([
+  const [products, globalSetting, brandPrefs, rates] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
       select: {
@@ -467,6 +465,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
         qneAvailableQty:      true,
         qneInvoiceFreq:       true,
         defaultMarginPct:     true,
+        customSellingPrice:   true,
         category: { select: { name: true, defaultMarginPct: true, parentCategory: { select: { name: true } } } },
         priceVersions: {
           where:   { isCurrent: true },
@@ -479,6 +478,7 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
     }),
     prisma.systemSetting.findUnique({ where: { key: 'default_margin_pct' } }),
     prisma.productBrandPreference.findMany({ where: { isActive: true } }),
+    getTierRates(),
   ])
 
   const globalMargin = globalSetting?.value ?? '30'
@@ -495,13 +495,17 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
   const enriched: CatalogueProduct[] = products.map(p => {
     const price = p.priceVersions[0] ?? null
     let sellingPrice: string | null           = null
+    let costPrice: string | null              = null
     let currency                              = 'MYR'
     let supplierPriceVersionId: string | null = null
     if (price) {
-      sellingPrice           = _calcSellingPrice(price.costPrice, p.defaultMarginPct, p.category.defaultMarginPct, globalMargin).toString()
+      sellingPrice           = tieredSellingPrice(price.costPrice.toNumber(), rates)
+      costPrice              = price.costPrice.toString()
       currency               = price.currency
       supplierPriceVersionId = price.id
     }
+    // customSellingPrice overrides the calculated selling price (user-set in Smart Order modal)
+    const custom = p.customSellingPrice ? Number(p.customSellingPrice).toFixed(2) : null
     return {
       id:                     p.id,
       name:                   p.name,
@@ -513,7 +517,8 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
       availableQty:           p.qneAvailableQty ?? null,
       parentCategoryName:     p.category.parentCategory?.name ?? null,
       category:               { name: p.category.name },
-      sellingPrice,
+      sellingPrice:           custom ?? sellingPrice,
+      costPrice,
       currency,
       supplierPriceVersionId,
     }
@@ -529,8 +534,8 @@ async function fetchCatalogue(): Promise<CatalogueCache> {
   return result
 }
 
-function getProductPrice(p: CatalogueProduct): { selling: string | null; currency: string; versionId: string | null } {
-  return { selling: p.sellingPrice, currency: p.currency, versionId: p.supplierPriceVersionId }
+function getProductPrice(p: CatalogueProduct): { selling: string | null; cost: string | null; currency: string; versionId: string | null } {
+  return { selling: p.sellingPrice, cost: p.costPrice, currency: p.currency, versionId: p.supplierPriceVersionId }
 }
 
 /**
@@ -581,7 +586,7 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
     if (aliasProductId) {
       const p = catalogue.find(c => c.id === aliasProductId)
       if (p) {
-        const { selling, currency, versionId } = getProductPrice(p)
+        const { selling, cost, currency, versionId } = getProductPrice(p)
         const match: ProductMatch = {
           id:                     p.id,
           name:                   p.name,
@@ -590,6 +595,7 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
           qneItemCode:            p.qneItemCode,
           categoryName:           p.category.name,
           sellingPrice:           selling,
+          costPrice:              cost,
           currency,
           supplierPriceVersionId: versionId,
           score:                  1.0,
@@ -698,7 +704,7 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
       .slice(0, 3)
 
     const alternatives: ProductMatch[] = top3.map(({ product: p, score, adjustedScore }) => {
-      const { selling, currency, versionId } = getProductPrice(p)
+      const { selling, cost, currency, versionId } = getProductPrice(p)
       return {
         id:                     p.id,
         name:                   p.name,
@@ -707,9 +713,10 @@ export async function matchProductsForLines(lines: ParsedLine[], companyId?: str
         qneItemCode:            p.qneItemCode,
         categoryName:           p.category.name,
         sellingPrice:           selling,
+        costPrice:              cost,
         currency,
         supplierPriceVersionId: versionId,
-        score:                  Math.min(adjustedScore, 1.0),  // cap at 1.0 for display; business priority baked in
+        score:                  Math.min(adjustedScore, 1.0),
         isVisible:              p.isVisible,
         orderFreq:              p.orderFreq,
         availableQty:           p.availableQty,

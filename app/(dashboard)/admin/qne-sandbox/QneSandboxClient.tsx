@@ -28,12 +28,24 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-700',
 }
 
+type DocTypeFilter = 'all' | 'invoice' | 'quotation' | 'sales_order' | 'delivery_order'
+type StatusFilter  = 'pending' | 'approved' | 'rejected' | 'all'
+
+const DOC_TYPE_LABELS: Record<DocTypeFilter, string> = {
+  all:            'All Types',
+  invoice:        '🧾 Invoices',
+  quotation:      '📋 Quotations',
+  sales_order:    '🛒 Sales Orders',
+  delivery_order: '📦 Delivery Orders',
+}
+
 export default function QneSandboxClient() {
   const [items,       setItems]       = useState<QnePendingItem[]>([])
   const [loading,     setLoading]     = useState(true)
-  const [filter,      setFilter]      = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
-  const [acting,      setActing]      = useState<string | null>(null)   // id of row being actioned
-  const [expanded,    setExpanded]    = useState<string | null>(null)   // id of row with payload open
+  const [filter,      setFilter]      = useState<StatusFilter>('pending')
+  const [docType,     setDocType]     = useState<DocTypeFilter>('all')
+  const [acting,      setActing]      = useState<string | null>(null)
+  const [expanded,    setExpanded]    = useState<string | null>(null)
   const [notes,       setNotes]       = useState<Record<string, string>>({})
   const [error,       setError]       = useState<string | null>(null)
 
@@ -41,7 +53,7 @@ export default function QneSandboxClient() {
     setLoading(true)
     setError(null)
     try {
-      const res  = await fetch(`/api/admin/qne-sandbox?status=${filter}`)
+      const res  = await fetch(`/api/admin/qne-sandbox?status=${filter}&type=${docType}`)
       const data = await res.json() as { items?: QnePendingItem[]; error?: string }
       if (!res.ok) { setError(data.error ?? 'Load failed'); return }
       setItems(data.items ?? [])
@@ -50,7 +62,7 @@ export default function QneSandboxClient() {
     } finally {
       setLoading(false)
     }
-  }, [filter])
+  }, [filter, docType])
 
   useEffect(() => { void load() }, [load])
 
@@ -103,7 +115,7 @@ export default function QneSandboxClient() {
         </ul>
       </div>
 
-      {/* ── Filter tabs ── */}
+      {/* ── Status filter tabs ── */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {(['pending', 'approved', 'rejected', 'all'] as const).map(f => (
           <button
@@ -116,6 +128,23 @@ export default function QneSandboxClient() {
             }`}
           >
             {f}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Doc type filter tabs ── */}
+      <div className="flex flex-wrap gap-1.5">
+        {(Object.entries(DOC_TYPE_LABELS) as [DocTypeFilter, string][]).map(([type, label]) => (
+          <button
+            key={type}
+            onClick={() => setDocType(type)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+              docType === type
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-700'
+            }`}
+          >
+            {label}
           </button>
         ))}
       </div>

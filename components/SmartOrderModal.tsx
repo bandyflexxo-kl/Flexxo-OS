@@ -132,6 +132,7 @@ type RowState = {
   freeDesc:            string
   freePrice:           string
   qtyOverride:         string
+  priceOverride:       string   // editable selling price for matched products
   wasManuallySearched: boolean   // user picked via ProductSearchInput (not dropdown)
   saveAlias:           boolean   // user wants to remember this query→product mapping
 }
@@ -144,6 +145,7 @@ function initRows(lines: MatchedLine[]): RowState[] {
     freeDesc:            l.topMatch ? '' : l.parsedName,
     freePrice:           '',
     qtyOverride:         String(l.qty),
+    priceOverride:       l.topMatch?.sellingPrice ?? '',
     wasManuallySearched: false,
     saveAlias:           false,
   }))
@@ -333,7 +335,9 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
       const qty = parseFloat(row.qtyOverride) || row.line.qty
 
       if (row.selectedMatch) {
-        // Matched product
+        // Matched product — use priceOverride if set and valid
+        const overridePrice = parseFloat(row.priceOverride)
+        const unitPrice     = !isNaN(overridePrice) && overridePrice > 0 ? overridePrice : undefined
         const body: Record<string, unknown> = {
           productId:              row.selectedMatch.id,
           supplierPriceVersionId: row.selectedMatch.supplierPriceVersionId ?? undefined,
@@ -341,6 +345,7 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
           brand:                  row.selectedMatch.brand ?? null,
           unit:                   row.selectedMatch.unit  ?? row.line.unit ?? null,
           qty,
+          ...(unitPrice !== undefined ? { unitPrice } : {}),
         }
         const res = await fetch(`/api/quotations/${quotationId}/items`, {
           method:  'POST',
@@ -349,12 +354,23 @@ export default function SmartOrderModal({ quotationId, companyId, currency, onSu
         })
         if (res.ok) {
           addedCount++
+          // If the price was manually changed, persist it as customSellingPrice
+          const originalPrice = row.selectedMatch.sellingPrice
+          const priceChanged  = unitPrice !== undefined &&
+            (!originalPrice || Math.abs(unitPrice - parseFloat(originalPrice)) > 0.001)
+          if (priceChanged) {
+            fetch(`/api/admin/products/${row.selectedMatch.id}`, {
+              method:  'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ customSellingPrice: unitPrice }),
+            }).catch(() => undefined)
+          }
           // Save alias in background — fire-and-forget, don't block the add
           if (row.saveAlias && row.line.parsedName) {
             fetch('/api/smart-order/aliases', {
               method:  'POST',
               headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({ query: row.line.parsedName, productId: row.selectedMatch.id }),
+              body:    JSON.stringify({ query: row.line.parsedName, productId: row.selectedMatch!.id }),
             }).catch(() => undefined)
           }
         }
@@ -694,7 +710,7 @@ function ResultRow({
   currency: string
   onChange: (patch: Partial<RowState>) => void
 }) {
-  const { line, included, selectedMatch, freeDesc, freePrice, qtyOverride, wasManuallySearched, saveAlias } = row
+  const { line, included, selectedMatch, freeDesc, freePrice, qtyOverride, priceOverride, wasManuallySearched, saveAlias } = row
 
   return (
     <tr className={`transition-colors ${!included ? 'opacity-40 bg-gray-50' : ''}`}>
@@ -722,7 +738,7 @@ function ResultRow({
               value={selectedMatch?.id ?? ''}
               onChange={e => {
                 const match = line.alternatives.find(a => a.id === e.target.value) ?? null
-                onChange({ selectedMatch: match, freeDesc: match ? '' : line.parsedName })
+                onChange({ selectedMatch: match, freeDesc: match ? '' : line.parsedName, priceOverride: match?.sellingPrice ?? '' })
               }}
               className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
             >
@@ -743,7 +759,7 @@ function ResultRow({
               <div className="space-y-1">
                 <ProductSearchInput
                   currency={currency}
-                  onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true })}
+                  onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true, priceOverride: match.sellingPrice ?? '' })}
                 />
                 <input
                   type="text"
@@ -769,10 +785,28 @@ function ResultRow({
         ) : (
           // No match — search first, fall back to free text
           <div className="space-y-1">
-            <ProductSearchInput
-              currency={currency}
-              onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true })}
-            />
+            {wasManuallySearched && selectedMatch ? (
+              // Show selected product chip — clear search box confusion
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5">
+                <span className="text-xs text-blue-800 font-medium flex-1 truncate">{selectedMatch.name}</span>
+                {selectedMatch.sellingPrice && (
+                  <span className="text-xs text-blue-600 shrink-0">{currency} {Number(selectedMatch.sellingPrice).toFixed(2)}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onChange({ selectedMatch: null, wasManuallySearched: false, saveAlias: false })}
+                  className="text-blue-400 hover:text-red-500 text-xs shrink-0 ml-1"
+                  title="Clear selection"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <ProductSearchInput
+                currency={currency}
+                onSelect={match => onChange({ selectedMatch: match, freeDesc: '', wasManuallySearched: true, saveAlias: true, priceOverride: match.sellingPrice ?? '' })}
+              />
+            )}
             {wasManuallySearched && selectedMatch ? (
               <label className="flex items-center gap-1.5 text-[10px] text-blue-600 mt-1 cursor-pointer">
                 <input
@@ -809,17 +843,32 @@ function ResultRow({
         {line.unit && <p className="text-[10px] text-gray-400 mt-0.5">{line.unit}</p>}
       </td>
 
-      {/* Unit price — auto-filled from matched product, editable for free-text */}
+      {/* Unit price — editable for matched products, free input for free-text */}
       <td className="px-3 py-2.5">
         {selectedMatch ? (
-          selectedMatch.sellingPrice ? (
-            <p className="text-xs font-medium text-gray-800">
-              {currency} {Number(selectedMatch.sellingPrice).toFixed(2)}
-              <span className="text-[10px] text-gray-400 block">auto</span>
-            </p>
-          ) : (
-            <p className="text-xs text-gray-400 italic">No price</p>
-          )
+          <div className="space-y-0.5">
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={priceOverride}
+              onChange={e => onChange({ priceOverride: e.target.value })}
+              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="0.00"
+            />
+            {selectedMatch.costPrice && (() => {
+              const cost   = parseFloat(selectedMatch.costPrice)
+              const sell   = parseFloat(priceOverride)
+              const margin = (!isNaN(cost) && !isNaN(sell) && cost > 0)
+                ? (((sell - cost) / sell) * 100).toFixed(0)
+                : null
+              return (
+                <p className="text-[10px] text-amber-600">
+                  cost {currency} {cost.toFixed(2)}{margin !== null ? ` · ${margin}% margin` : ''}
+                </p>
+              )
+            })()}
+          </div>
         ) : (
           <input
             type="number"

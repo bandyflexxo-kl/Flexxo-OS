@@ -15,10 +15,11 @@ const GRAPH_API_URL    = 'https://graph.facebook.com/v19.0'
 export type WabaTemplateComponent =
   | { type: 'body';   parameters: WabaParameter[] }
   | { type: 'header'; parameters: WabaParameter[] }
-  | { type: 'button'; sub_type: string; index: string; parameters: WabaParameter[] }
+  | { type: 'button'; sub_type: 'quick_reply' | 'url'; index: string; parameters: WabaParameter[] }
 
 export type WabaParameter =
   | { type: 'text';     text: string }
+  | { type: 'payload';  payload: string }
   | { type: 'currency'; currency: { fallback_value: string; code: string; amount_1000: number } }
   | { type: 'date_time'; date_time: { fallback_value: string } }
 
