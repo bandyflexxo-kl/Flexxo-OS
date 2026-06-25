@@ -19,13 +19,14 @@ type Props = {
   sellingPrice: string | null
   currency:     string
   hasPhoto:     boolean
+  photoUrl?:    string | null    // Supabase CDN URL (used directly, bypasses proxy)
   availableQty?: number | null   // QNE stock; null/undefined = not yet synced
   isB2B?:       boolean   // optional — card works without it (guest add-to-cart)
   priority?:    boolean   // true for first visible cards — emits <link rel="preload">
 }
 
 export default function ProductCard({
-  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, availableQty = null, isB2B = false, priority = false,
+  id, name, brand, unit, categoryName, sellingPrice, currency, hasPhoto, photoUrl = null, availableQty = null, isB2B = false, priority = false,
 }: Props) {
   const router = useRouter()
   const [cartState, setCartState] = useState<'idle' | 'loading' | 'added'>('idle')
@@ -78,7 +79,7 @@ export default function ProductCard({
         <div className="shop-photo-container aspect-square bg-gray-50">
           {hasPhoto ? (
             <Image
-              src={`/api/portal/photo/${id}`}
+              src={photoUrl ?? `/api/portal/photo/${id}`}
               alt={name}
               fill
               priority={priority}
@@ -120,7 +121,6 @@ export default function ProductCard({
           <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-green-700 transition-colors duration-200">
             {name}
           </p>
-          {brand && <p className="text-xs text-gray-400">{brand}</p>}
           <div className="mt-auto pt-1.5">
             {sellingPrice ? (
               <div className="flex items-baseline gap-1">
