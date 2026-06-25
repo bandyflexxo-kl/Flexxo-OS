@@ -135,7 +135,8 @@ export default async function ShopProductDetailPage({
       categoryName: p.category.name,
       sellingPrice: sp,
       currency:     p.priceVersions[0]?.currency ?? 'MYR',
-      hasPhoto:     !!p.googleDrivePhotoId,
+      hasPhoto:     !!p.googleDrivePhotoId || !!p.photoUrl,
+      photoUrl:     p.photoUrl ?? null,
     }
   })
 
@@ -152,7 +153,7 @@ export default async function ShopProductDetailPage({
     ...(product.brand && { brand: { '@type': 'Brand', name: product.brand } }),
     ...(product.catalogDescription && { description: product.catalogDescription }),
     ...(product.qneItemCode && { sku: product.qneItemCode }),
-    ...(product.googleDrivePhotoId && { image: `${baseUrl}/api/portal/photo/${id}` }),
+    ...((product.googleDrivePhotoId || product.photoUrl) && { image: product.photoUrl ?? `${baseUrl}/api/portal/photo/${id}` }),
     offers: {
       '@type':       'Offer',
       url:            productUrl,
@@ -200,13 +201,12 @@ export default async function ShopProductDetailPage({
 
           {/* 1. Product image — Fix 1: <Image fill> reserves space, prevents CLS */}
           <div className="lg:col-span-3 aspect-square bg-gray-50 flex items-center justify-center p-8 sm:border-b lg:border-b-0 sm:border-r-0 lg:border-r border-gray-100 relative overflow-hidden group">
-            {product.googleDrivePhotoId ? (
+            {(product.googleDrivePhotoId || product.photoUrl) ? (
               <Image
-                src={`/api/portal/photo/${product.id}`}
+                src={product.photoUrl ?? `/api/portal/photo/${product.id}`}
                 alt={product.name}
                 fill
-                unoptimized
-                priority                /* LCP image — load eagerly */
+                priority
                 sizes="(max-width:640px) 100vw, 60vw"
                 className="object-contain transition-transform duration-300 group-hover:scale-105"
               />
