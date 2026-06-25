@@ -34,6 +34,7 @@ type ApiProduct = {
   barcode:     string | null
   category:    { id: string; name: string }
   hasPhoto:    boolean
+  photoUrl?:   string | null
   sellingPrice: string | null
   currency:    string
   availableQty?: number | null   // QNE stock; null/undefined = not yet synced
@@ -1192,6 +1193,7 @@ export default function ProductsClientPage({
                       sellingPrice={p.sellingPrice}
                       currency={p.currency}
                       hasPhoto={p.hasPhoto}
+                      photoUrl={p.photoUrl}
                       availableQty={p.availableQty}
                       isB2B={isB2B}
                       priority={i < 4}

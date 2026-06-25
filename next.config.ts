@@ -66,6 +66,10 @@ const nextConfig: NextConfig = {
         protocol: 'http',
         hostname: 'shop.localhost',
       },
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+      },
     ],
   },
 };

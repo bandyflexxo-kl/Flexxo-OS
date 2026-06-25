@@ -61,11 +61,16 @@ export async function GET(
 
   const product = await prisma.product.findUnique({
     where:  { id: productId },
-    select: { googleDrivePhotoId: true, isVisibleToCustomers: true },
+    select: { googleDrivePhotoId: true, photoUrl: true, isVisibleToCustomers: true },
   })
 
-  if (!product?.googleDrivePhotoId) {
+  if (!product?.googleDrivePhotoId && !product?.photoUrl) {
     return new Response('No photo available', { status: 404 })
+  }
+
+  // Supabase Storage (or any CDN URL) — redirect directly; no proxy hop needed
+  if (product.photoUrl) {
+    return Response.redirect(product.photoUrl, 302)
   }
 
   const driveFileId = product.googleDrivePhotoId

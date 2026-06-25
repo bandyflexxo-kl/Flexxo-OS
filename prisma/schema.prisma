@@ -367,6 +367,7 @@ model Product {
   catalogDescription   String?   @db.Text @map("catalog_description")
   defaultMarginPct     Decimal?  @db.Decimal(6, 2) @map("default_margin_pct")
   googleDrivePhotoId   String?   @map("google_drive_photo_id")
+  photoUrl             String?   @map("photo_url")
   isVisibleToCustomers Boolean   @default(false) @map("is_visible_to_customers")
   qneLastSalePrice     Decimal?  @db.Decimal(12, 4) @map("qne_last_sale_price")
   qneLastSalePriceAt   DateTime? @map("qne_last_sale_price_at")
