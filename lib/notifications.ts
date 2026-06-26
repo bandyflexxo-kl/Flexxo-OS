@@ -242,6 +242,22 @@ export async function getNotificationsForUser(
     }
   }
 
+  // ── 8. Pending photo approvals (Director / Manager only) ────────────────────
+  if (role === 'Director' || role === 'Manager') {
+    const pendingPhotos = await prisma.product.count({
+      where: { photoApprovalPending: true, photoUrl: { not: null }, isActive: true },
+    })
+    if (pendingPhotos > 0) {
+      items.push({
+        type:      'pending_approval',
+        title:     `Photo approval${pendingPhotos !== 1 ? 's' : ''} pending`,
+        body:      `${pendingPhotos} photo${pendingPhotos !== 1 ? 's' : ''} waiting for your review`,
+        url:       '/admin/products?tab=photos&filter=pending',
+        createdAt: new Date(),
+      })
+    }
+  }
+
   const pendingRequestCount    = items.filter(i => i.type === 'account_request').length
   const pendingContactEdits    = items.filter(i => i.type === 'contact_edit_request').length
   const urgent = overdueFollowUps.length + approvedQuotes.length + pendingRequestCount + pendingContactEdits

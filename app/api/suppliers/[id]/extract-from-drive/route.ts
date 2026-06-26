@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { downloadDriveFile, normaliseStem } from '@/lib/googleDrive'
 import { extractPricesFromPdf, extractPricesFromImage } from '@/lib/pdfExtract'
 import { z } from 'zod'
-import type { Prisma } from '@/app/generated/prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 import crypto from 'crypto'
 import * as XLSX from 'xlsx'
 

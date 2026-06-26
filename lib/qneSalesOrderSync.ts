@@ -7,7 +7,7 @@
 
 import { prisma }                                from '@/lib/prisma'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
-import { Prisma }                                from '@/app/generated/prisma/client'
+import { Prisma }                                from '@/generated/prisma/client'
 
 export type SalesOrderSyncResult = {
   ok:                 boolean

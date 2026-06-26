@@ -1,7 +1,7 @@
 import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
-import { Prisma } from '@/app/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 
 const UpdateSchema = z.object({ qty: z.number().int().positive() })
 

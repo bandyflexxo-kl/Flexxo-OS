@@ -2,7 +2,7 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
 import { z } from 'zod'
-import { Prisma } from '@/app/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 
 async function recalcTotals(quotationId: string, tx: Prisma.TransactionClient) {
   const items    = await tx.quotationItem.findMany({ where: { quotationId } })

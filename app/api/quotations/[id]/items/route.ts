@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
 import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 import { z } from 'zod'
-import { Prisma } from '@/app/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 
 const AddItemSchema = z.object({
   productId:             z.string().uuid().optional(),

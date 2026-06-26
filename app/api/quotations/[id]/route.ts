@@ -1,7 +1,7 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
-import { Prisma } from '@/app/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { z } from 'zod'
 
 export async function GET(

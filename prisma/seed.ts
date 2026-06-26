@@ -8,7 +8,7 @@ import { config } from 'dotenv'
 config({ path: '.env.local' })
 config()
 
-import { PrismaClient } from '../app/generated/prisma/client'
+import { PrismaClient } from '../generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import bcrypt from 'bcryptjs'
 

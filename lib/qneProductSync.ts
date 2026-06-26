@@ -8,7 +8,7 @@
 import { prisma }  from '@/lib/prisma'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
 import { classify } from '@/lib/productClassifier'
-import { Prisma }   from '@/app/generated/prisma/client'
+import { Prisma }   from '@/generated/prisma/client'
 
 export type ProductSyncResult = {
   ok:          boolean

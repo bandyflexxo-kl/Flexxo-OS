@@ -12,7 +12,7 @@
 import { getOptionalShopSession }            from '@/lib/session'
 import { prisma }                            from '@/lib/prisma'
 import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
-import { Prisma }                            from '@/app/generated/prisma/client'
+import { Prisma }                            from '@/generated/prisma/client'
 import { z }                                 from 'zod'
 
 const LineSchema = z.object({

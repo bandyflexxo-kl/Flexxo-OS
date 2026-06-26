@@ -16,7 +16,7 @@ an office supply company in Malaysia (B2B, serving corporate clients).
 
 ## Tech stack
 - Next.js 15 (App Router), TypeScript strict mode
-- PostgreSQL + Prisma ORM v7 (custom client output: `app/generated/prisma`)
+- PostgreSQL + Prisma ORM v7 (custom client output: `generated/prisma` at repo root — kept OUTSIDE `app/` so `prisma generate` never disturbs Turbopack's route graph)
 - Tailwind CSS v4
 - NextAuth.js (credentials provider)
 - Nodemailer (Gmail SMTP)
@@ -507,6 +507,7 @@ UPSTASH_REDIS_REST_TOKEN=""
 | 5 | AI sales intelligence (health scores, forecasting, cross-sell, P&L dashboard) | 🔴 Not started |
 
 ## Next priorities
+- **QNE write integration (stock creation + QT→SO→DO→Invoice)**: implementation spec ready at `docs/qne-write-integration-brief.md` (official SOP: `docs/stock-code-creation-sop.pdf`). Deferred/design-ready — read the brief before building.
 - **Vercel env vars**: Add all 9 LALAMOVE_* vars to Vercel dashboard → Settings → Environment Variables (see Lalamove section above)
 - **QNE stock sync**: Run with Radmin VPN active at /admin → "↻ Sync Stock" to populate qneAvailableQty for all products. Only then will the shop hide out-of-stock items.
 - **QNE price sync**: Run with Radmin VPN active at /admin → "↻ Sync Prices" to populate display prices for all 3,700+ products

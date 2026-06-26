@@ -79,7 +79,7 @@ const matchOnly = process.argv.includes('--match-only')
 async function main() {
   // Dynamic imports so Prisma + Decimal are instantiated AFTER env is loaded
   const { prisma }                              = await import('../lib/prisma')
-  const { Prisma }                              = await import('../app/generated/prisma/client')
+  const { Prisma }                              = await import('../generated/prisma/client')
   const { parseItemList, matchProductsForLines } = await import('../lib/smartOrder')
 
   function calcSellingPrice(

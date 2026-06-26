@@ -1,5 +1,5 @@
 import 'server-only'
-import { Prisma } from '@/app/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 
 /**
  * Calculates the selling price from supplier cost using a margin percentage.

@@ -1,6 +1,6 @@
 import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@/app/generated/prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 import * as XLSX from 'xlsx'
 
 // Column name aliases for auto-detection

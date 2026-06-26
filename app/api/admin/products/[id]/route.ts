@@ -1,7 +1,7 @@
 import { verifySession }             from '@/lib/session'
 import { prisma }                    from '@/lib/prisma'
 import { invalidateSmartOrderCache } from '@/lib/smartOrder'
-import { Prisma }                    from '@/app/generated/prisma/client'
+import { Prisma }                    from '@/generated/prisma/client'
 
 export async function PATCH(
   request: Request,
