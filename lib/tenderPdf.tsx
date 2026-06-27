@@ -130,3 +130,70 @@ function RfqDocument({ data }: { data: RfqPdfData }) {
 export async function renderRfqPdf(data: RfqPdfData): Promise<Buffer> {
   return renderToBuffer(<RfqDocument data={data} />)
 }
+
+// ── Evaluation summary ──────────────────────────────────────────────────────
+
+export type EvalPdfData = {
+  refNo: string
+  tenderName: string
+  threshold: number
+  lockedAt: Date | null
+  items: {
+    pos: number; name: string; unit: string | null; qty: number
+    normalUnitPrice: number | null
+    awardedSupplierName: string | null
+    awardedUnitPrice: number | null
+    quotes: { supplierName: string; quotedUnitPrice: number; variancePct: number | null; flagged: boolean }[]
+  }[]
+}
+
+const ev = StyleSheet.create({
+  page:    { paddingTop: 30, paddingBottom: 40, paddingHorizontal: 30, fontSize: 8, color: '#222', fontFamily: 'Helvetica' },
+  title:   { fontSize: 14, fontFamily: 'Helvetica-Bold', color: GREEN },
+  sub:     { fontSize: 8, color: '#666', marginBottom: 8 },
+  rule:    { borderBottomWidth: 2, borderBottomColor: GREEN, marginBottom: 10 },
+  th:      { flexDirection: 'row', backgroundColor: '#f0f0f0', paddingVertical: 4, paddingHorizontal: 3, fontFamily: 'Helvetica-Bold' },
+  tr:      { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e6e6e6', paddingVertical: 3, paddingHorizontal: 3 },
+  footer:  { position: 'absolute', bottom: 20, left: 30, right: 30, fontSize: 7, color: '#999', textAlign: 'center' },
+})
+
+function EvalDocument({ data }: { data: EvalPdfData }) {
+  return (
+    <Document title={`Evaluation ${data.refNo}`}>
+      <Page size="A4" orientation="landscape" style={ev.page}>
+        <Text style={ev.title}>Tender Evaluation Summary</Text>
+        <Text style={ev.sub}>
+          {data.refNo} · {data.tenderName} · variance threshold {data.threshold}%{data.lockedAt ? ` · PRICES LOCKED ${fmt(data.lockedAt)}` : ' · DRAFT'}
+        </Text>
+        <View style={ev.rule} />
+        <View style={ev.th}>
+          <Text style={{ width: '4%' }}>#</Text>
+          <Text style={{ width: '26%' }}>Item</Text>
+          <Text style={{ width: '7%', textAlign: 'right' }}>Qty</Text>
+          <Text style={{ width: '9%', textAlign: 'right' }}>Normal</Text>
+          <Text style={{ width: '32%' }}>Vendor quotes (variance)</Text>
+          <Text style={{ width: '13%' }}>Awarded to</Text>
+          <Text style={{ width: '9%', textAlign: 'right' }}>Tender price</Text>
+        </View>
+        {data.items.map(it => (
+          <View style={ev.tr} key={it.pos} wrap={false}>
+            <Text style={{ width: '4%' }}>{it.pos}</Text>
+            <Text style={{ width: '26%' }}>{it.name}</Text>
+            <Text style={{ width: '7%', textAlign: 'right' }}>{it.qty}{it.unit ? ` ${it.unit}` : ''}</Text>
+            <Text style={{ width: '9%', textAlign: 'right' }}>{it.normalUnitPrice != null ? it.normalUnitPrice.toFixed(2) : '—'}</Text>
+            <Text style={{ width: '32%' }}>
+              {it.quotes.map(q => `${q.supplierName}: ${q.quotedUnitPrice.toFixed(2)}${q.variancePct != null ? ` (${q.variancePct > 0 ? '+' : ''}${q.variancePct.toFixed(0)}%${q.flagged ? '⚠' : ''})` : ''}`).join('   ')}
+            </Text>
+            <Text style={{ width: '13%' }}>{it.awardedSupplierName ?? '—'}</Text>
+            <Text style={{ width: '9%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>{it.awardedUnitPrice != null ? it.awardedUnitPrice.toFixed(2) : '—'}</Text>
+          </View>
+        ))}
+        <Text style={ev.footer} fixed>Flexxo (KL) Sdn Bhd · Tender evaluation · Generated {fmt(new Date())}</Text>
+      </Page>
+    </Document>
+  )
+}
+
+export async function renderEvaluationPdf(data: EvalPdfData): Promise<Buffer> {
+  return renderToBuffer(<EvalDocument data={data} />)
+}
