@@ -74,6 +74,14 @@ function IconWarehouse() {
   )
 }
 
+function IconTenders() {
+  return (
+    <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+    </svg>
+  )
+}
+
 function IconReports() {
   return (
     <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
@@ -169,6 +177,7 @@ const NAV_ITEMS = [
   { href: '/activities', label: 'Activities', Icon: IconActivities,  roles: rolesForNav('/activities') },
   { href: '/quotations', label: 'Quotations', Icon: IconQuotations,  roles: rolesForNav('/quotations') },
   { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: rolesForNav('/orders') },
+  { href: '/tenders',    label: 'Tenders',    Icon: IconTenders,     roles: rolesForNav('/tenders') },
   { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: rolesForNav('/warehouse') },
   { href: '/reports',             label: 'Reports',       Icon: IconReports,      roles: rolesForNav('/reports') },
   { href: '/agents/sales',       label: 'Sales Agent',    Icon: IconSalesAgent,   roles: rolesForNav('/agents') },

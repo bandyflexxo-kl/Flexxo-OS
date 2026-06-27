@@ -1,5 +1,5 @@
-/**
- * T8-3: sitemap.xml — shop product pages only (CRM routes excluded).
+﻿/**
+ * T8-3: sitemap.xml — shop product pages only (CMS routes excluded).
  * Dynamically generated: pulls active, visible products from DB.
  * Revalidates every 12 hours (ISR-friendly).
  */

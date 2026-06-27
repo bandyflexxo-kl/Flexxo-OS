@@ -1,5 +1,5 @@
-/**
- * T8-4: robots.txt — allow shop pages, block internal CRM routes.
+﻿/**
+ * T8-4: robots.txt — allow shop pages, block internal CMS routes.
  * Generated via Next.js Metadata API (no static file needed).
  */
 import type { MetadataRoute } from 'next'
@@ -10,10 +10,10 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
-        // Block CRM (internal staff routes) from indexing
+        // Block CMS (internal staff routes) from indexing
         userAgent: '*',
         disallow: [
-          '/',              // CRM dashboard (default route)
+          '/',              // CMS dashboard (default route)
           '/companies',
           '/contacts',
           '/pipeline',

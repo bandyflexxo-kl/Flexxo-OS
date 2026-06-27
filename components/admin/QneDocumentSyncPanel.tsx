@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 
@@ -83,7 +83,7 @@ export default function QneDocumentSyncPanel() {
         <div>
           <h3 className="font-semibold text-gray-900">QNE Document Mirror</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Syncs Quotations, Sales Orders, Delivery Orders and Invoices from QNE into CRM mirror tables.
+            Syncs Quotations, Sales Orders, Delivery Orders and Invoices from QNE into CMS mirror tables.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

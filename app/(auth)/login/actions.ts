@@ -55,7 +55,7 @@ export async function loginAction(state: LoginState, formData: FormData): Promis
 
   // Pick the highest-priority active role (a user may hold multiple roles,
   // e.g. Director + legacy Salesperson; we always want the highest).
-  const ROLE_PRIORITY = ['Director', 'Manager', 'Admin', 'Salesperson', 'Warehouse', 'Viewer', 'B2B Client']
+  const ROLE_PRIORITY = ['SuperAdmin', 'Director', 'Manager', 'Admin', 'Purchaser', 'Salesperson', 'Warehouse', 'Viewer', 'B2B Client']
   const activeRoleNames = user.userRoles
     .filter(r => r.revokedAt === null)
     .map(r => r.role.name)

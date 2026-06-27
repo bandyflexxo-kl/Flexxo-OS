@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 
@@ -48,7 +48,7 @@ export default function QneQuotationSyncPanel() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">QNE Quotation Sync</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Pulls all quotations created directly in QNE (last 2 years) into the CRM.
+            Pulls all quotations created directly in QNE (last 2 years) into the CMS.
             Visible under each company's <span className="font-medium">Quotations</span> tab.
           </p>
         </div>
@@ -78,7 +78,7 @@ export default function QneQuotationSyncPanel() {
           <p>Quotations fetched from QNE: <span className="font-medium">{result.quotationsFetched}</span></p>
           <p>Quotations stored/updated:   <span className="font-medium">{result.quotationsUpserted}</span></p>
           <p>Line items stored:           <span className="font-medium">{result.itemsUpserted}</span></p>
-          <p>Linked to CRM companies:     <span className="font-medium">{result.companiesLinked}</span></p>
+          <p>Linked to CMS companies:     <span className="font-medium">{result.companiesLinked}</span></p>
           {result.errors.length > 0 && (
             <p className="text-red-600">Errors: {result.errors.length} (check server logs)</p>
           )}

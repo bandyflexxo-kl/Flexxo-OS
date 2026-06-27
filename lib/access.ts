@@ -17,7 +17,7 @@
  *   Viewer      — read-only basics.
  */
 
-export const CRM_ROLES = ['Director', 'Manager', 'Admin', 'Salesperson', 'Warehouse', 'Viewer'] as const
+export const CRM_ROLES = ['Director', 'SuperAdmin', 'Manager', 'Admin', 'Salesperson', 'Purchaser', 'Warehouse', 'Viewer'] as const
 export type CrmRole = (typeof CRM_ROLES)[number]
 
 /**
@@ -26,20 +26,43 @@ export type CrmRole = (typeof CRM_ROLES)[number]
  */
 const ACCESS: Record<string, string[]> = {
   Director: ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/admin'],
+             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
+  // SuperAdmin — top system role: everything Director sees, plus the right to
+  // break a tender price lock / manage tender settings (enforced in tenderAccess).
+  SuperAdmin: ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
+               '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
   Manager:  ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/admin'],
+             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
   Admin:    ['/', '/companies', '/contacts', '/pipeline', '/quotations',
-             '/orders', '/warehouse', '/market-scout', '/agents', '/admin'],
+             '/orders', '/warehouse', '/market-scout', '/agents', '/tenders', '/admin'],
   Salesperson: ['/', '/companies', '/contacts', '/pipeline', '/quotations',
-                '/orders', '/warehouse', '/market-scout', '/agents'],
+                '/orders', '/warehouse', '/market-scout', '/agents', '/tenders'],
+  // Purchaser — procurement only: tender Stages 4 & 5 (client PO + supplier PO).
+  Purchaser: ['/', '/tenders'],
   Warehouse: ['/warehouse'],
   Viewer:    ['/', '/companies', '/contacts'],
 }
 
 /** Landing page after login / when a route is denied. */
 export function homeFor(role: string): string {
-  return role === 'Warehouse' ? '/warehouse' : '/'
+  if (role === 'Warehouse') return '/warehouse'
+  if (role === 'Purchaser') return '/tenders'
+  return '/'
+}
+
+/**
+ * Display label per role. The stored role key stays stable (e.g. "Salesperson"),
+ * but the UI shows the tender-org label ("Sales Executive"). Reviving "Manager"
+ * as "Sales Manager". Falls back to the key itself.
+ */
+const ROLE_LABELS: Record<string, string> = {
+  Salesperson: 'Sales Executive',
+  Manager:     'Sales Manager',
+  SuperAdmin:  'Super Admin',
+  Warehouse:   'Receiver / Warehouse',
+}
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role
 }
 
 /** Whether `role` may visit a CRM `pathname` (page routes, not /api). */
@@ -62,5 +85,5 @@ export function rolesForNav(prefix: string): string[] {
 
 /** Top-management roles: full strategic visibility (reports, margins, team). */
 export function isExecutiveRole(role: string): boolean {
-  return role === 'Director' || role === 'Manager'
+  return role === 'Director' || role === 'Manager' || role === 'SuperAdmin'
 }

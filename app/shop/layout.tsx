@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
 import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import ShopNav from '@/components/shop/ShopNav'
@@ -8,7 +8,7 @@ import OfflineBanner from '@/components/shop/OfflineBanner'
 import WhatsAppButton from '@/components/shop/WhatsAppButton'
 import NavigationProgress from '@/components/shop/NavigationProgress'
 
-// T4-7: Override root metadata with shop-specific copy (never "Internal Sales CRM")
+// T4-7: Override root metadata with shop-specific copy (never "Internal Sales CMS")
 export const metadata: Metadata = {
   title: {
     template: '%s — Flexxo Shop',

@@ -1,7 +1,7 @@
-/**
+﻿/**
  * T8-9: Custom 404 page — on-brand, with useful recovery links.
  *
- * Covers both /shop/* and CRM routes.
+ * Covers both /shop/* and CMS routes.
  * G-3: explicit bg-white — never transparent.
  */
 import Link from 'next/link'

@@ -1,4 +1,4 @@
-import { verifySession } from '@/lib/session'
+﻿import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Topbar from '@/components/layout/Topbar'
 import Link from 'next/link'
@@ -179,7 +179,7 @@ export default async function AdminPage() {
                 {pendingCount} customer{pendingCount !== 1 ? 's' : ''} awaiting review
               </p>
               <p className="text-xs text-blue-600 mt-0.5">
-                QNE staging queue — promote to add them to the CRM
+                QNE staging queue — promote to add them to the CMS
               </p>
             </div>
             <span className="text-blue-400 group-hover:translate-x-0.5 transition-transform text-lg">→</span>

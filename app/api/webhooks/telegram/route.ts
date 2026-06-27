@@ -117,6 +117,40 @@ async function clearPending(chatId: number): Promise<void> {
   await redis.del(pendingKey(chatId))
 }
 
+// ── Redis conversation-history helpers ─────────────────────────────────────────
+// Gives the Telegram agent multi-turn memory so follow-up questions work
+// (e.g. "what's their outstanding balance?" right after asking about a company).
+// Without this, every message starts cold and follow-ups feel "stupid".
+// History is shared across the Sales/Admin/Operation agents so context carries
+// even when a follow-up routes to a different agent than the previous turn.
+
+type ChatTurn = { role: 'user' | 'assistant'; content: string }
+
+const HISTORY_TTL_SECS  = 30 * 60  // 30 min — covers an active working session
+const HISTORY_MAX_TURNS = 12       // keep last 12 messages (~6 exchanges) for token sanity
+
+function historyKey(chatId: number): string {
+  return `tg:history:${chatId}`
+}
+
+async function getHistory(chatId: number): Promise<ChatTurn[]> {
+  const redis = getRedis()
+  if (!redis) return []
+  return (await redis.get<ChatTurn[]>(historyKey(chatId))) ?? []
+}
+
+async function appendHistory(chatId: number, userText: string, assistantText: string): Promise<void> {
+  const redis = getRedis()
+  if (!redis) return
+  const prior = (await redis.get<ChatTurn[]>(historyKey(chatId))) ?? []
+  const next: ChatTurn[] = [
+    ...prior,
+    { role: 'user'      as const, content: userText },
+    { role: 'assistant' as const, content: assistantText },
+  ].slice(-HISTORY_MAX_TURNS)
+  await redis.set(historyKey(chatId), next, { ex: HISTORY_TTL_SECS })
+}
+
 // ── Resolve CRM user ──────────────────────────────────────────────────────────
 
 async function resolveCrmUser(telegramId: number) {
@@ -437,7 +471,9 @@ async function handleMessage(message: TelegramMessage): Promise<Response> {
 
     // Delivery (booking or listing) → Operation Agent
     if (intent.type === 'delivery_booking' || intent.type === 'delivery_list') {
-      const reply = await runOperationAgent([], text)
+      const history = await getHistory(chatId)
+      const reply   = await runOperationAgent(history, text)
+      await appendHistory(chatId, text, reply)
       await sendHtml(chatId, markdownToTelegramHtml(reply))
       return Response.json({ ok: true })
     }
@@ -494,13 +530,17 @@ async function handleMessage(message: TelegramMessage): Promise<Response> {
 
     // Admin query → Admin Agent (privileged only)
     if (intent.type === 'admin_query' && isPrivileged) {
-      const reply = await runAdminAgent([], text, approver)
+      const history = await getHistory(chatId)
+      const reply   = await runAdminAgent(history, text, approver)
+      await appendHistory(chatId, text, reply)
       await sendHtml(chatId, markdownToTelegramHtml(reply))
       return Response.json({ ok: true })
     }
 
     // General → Sales Agent (fallback for everything)
-    const reply = await runSalesAgent([], text, undefined, crmUser.id)
+    const history = await getHistory(chatId)
+    const reply   = await runSalesAgent(history, text, undefined, crmUser.id)
+    await appendHistory(chatId, text, reply)
     await sendHtml(chatId, markdownToTelegramHtml(reply))
   } catch (err) {
     console.error('[telegram-webhook] agent error:', err)

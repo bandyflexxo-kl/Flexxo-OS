@@ -1,4 +1,4 @@
-# QNE Write Integration — Implementation Brief
+﻿# QNE Write Integration — Implementation Brief
 
 > **Status:** Spec only. Researched 27 Jun 2026, not implemented.
 > **Scope:** Add the **write** side to QNE — (A) Stock Code Creation, (B) QT → SO → DO → Invoice chain.
@@ -12,7 +12,7 @@
 | Component | State |
 |-----------|-------|
 | `lib/qneClient.ts` | Has `qneLogin`, `qneHeaders`, `qneGet`. **No `qnePost` — must add (shared prerequisite §1).** |
-| `lib/qneQuotationSync.ts`, `qneSalesOrderSync.ts`, `qneDeliveryOrderSync.ts`, `qneInvoiceSync.ts` | All **READ-ONLY** (sync FROM QNE → CRM). The write functions in this brief are new and separate. |
+| `lib/qneQuotationSync.ts`, `qneSalesOrderSync.ts`, `qneDeliveryOrderSync.ts`, `qneInvoiceSync.ts` | All **READ-ONLY** (sync FROM QNE → CMS). The write functions in this brief are new and separate. |
 | Lalamove delivery (`lib/lalamoveClient.ts`) | Built — physical delivery. Distinct from QNE DeliveryOrder (accounting/stock-out doc). |
 | Multi-branch | Not built. **Every new function takes a `branchCode` param** (KL-only data for now; KK/Kuching later — see `project-multi-branch` memory). |
 
@@ -136,7 +136,7 @@ Short, unique, **no special symbols**, recommended to follow the supplier's stoc
 
 ## 3. PART B — QT → SO → DO → Invoice chain
 
-**Concept:** each document has its own POST. Each *line* links to its source line via a **`transferFrom`** object — that's how QNE tracks fulfilment and prevents double-invoicing. **Capture the QNE-returned doc `id` + each detail-line `id` and store them on the CRM rows**, because the next document references them.
+**Concept:** each document has its own POST. Each *line* links to its source line via a **`transferFrom`** object — that's how QNE tracks fulfilment and prevents double-invoicing. **Capture the QNE-returned doc `id` + each detail-line `id` and store them on the CMS rows**, because the next document references them.
 
 ```
 QT ──transferFrom.quotationDetailId──▶ SO
@@ -182,8 +182,8 @@ SHORTCUT (simple deals, skip SO/DO):
 }
 ```
 
-**CRM build:**
-- `lib/qneQuotationCreate.ts`, `qneSalesOrderCreate.ts`, `qneDeliveryOrderCreate.ts`, `qneInvoiceCreate.ts` — each `(branchCode, crmDocId)`: map CRM row → payload, POST, store returned `id` + line `id`s back on CRM rows.
+**CMS build:**
+- `lib/qneQuotationCreate.ts`, `qneSalesOrderCreate.ts`, `qneDeliveryOrderCreate.ts`, `qneInvoiceCreate.ts` — each `(branchCode, crmDocId)`: map CMS row → payload, POST, store returned `id` + line `id`s back on CMS rows.
 - DB: add `qneId` (doc) + `qneDetailId` (line) to `quotations`/`quotation_items`, `orders`/`order_items`, plus DO + invoice refs.
 - Email PDF via `/api/Reports/.../download`.
 - QNE DeliveryOrder records stock-out; physical delivery stays Lalamove (already built) — both may be needed.
@@ -192,9 +192,9 @@ SHORTCUT (simple deals, skip SO/DO):
 
 ## 4. Approval gates — when each QNE write is allowed (CLAUDE.md)
 
-| QNE write | CRM trigger |
+| QNE write | CMS trigger |
 |-----------|-------------|
-| `POST /api/Quotations` | CRM quotation `approved` → user clicks **Send** |
+| `POST /api/Quotations` | CMS quotation `approved` → user clicks **Send** |
 | `POST /api/SalesOrders` | Order `approved` with **DOUBLE human approval** (hard rule) |
 | `POST /api/DeliveryOrders` | Order `packed`/ready (records stock-out) |
 | `POST /api/SalesInvoices` / `QuotationToInvoice` | Order `delivered` / ready to bill |

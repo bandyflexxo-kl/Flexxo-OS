@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/agents/adminAgentCore.ts
  * Admin AI Agent — handles pending approvals, account requests, quotation review.
  * Used by the web chat UI (SSE) and Telegram webhook.
@@ -22,7 +22,7 @@ function buildAdminSystemPrompt(approver: ApproverCtx): string {
 ## Your role
 You help ${approver.name} (admin/director) manage:
 1. Pending quotation approvals — review, approve, or reject with a reason
-2. New B2B account requests — from salesperson name card scans; approve to create the company in CRM
+2. New B2B account requests — from salesperson name card scans; approve to create the company in CMS
 3. Overview of what needs attention today
 
 ## How to work
@@ -77,7 +77,7 @@ const ADMIN_TOOL_DEFS: Anthropic.Tool[] = [
   },
   {
     name:        'approve_account_request',
-    description: 'Approve a new B2B account request. Creates the company, address, PIC contact, and assignment in CRM. Notifies the salesperson.',
+    description: 'Approve a new B2B account request. Creates the company, address, PIC contact, and assignment in CMS. Notifies the salesperson.',
     input_schema: {
       type:       'object',
       properties: {

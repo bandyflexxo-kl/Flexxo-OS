@@ -1,7 +1,7 @@
-/**
+﻿/**
  * lib/agents/telegramQuotationBuilder.ts
  * Parses a /quote command from Telegram, fuzzy-matches products,
- * and creates a draft Quotation in the CRM.
+ * and creates a draft Quotation in the CMS.
  *
  * Command format (sent as a single Telegram message):
  *   /quote [company name]
@@ -24,7 +24,7 @@ export type QuotationBuildResult =
 
 export async function buildQuotationFromTelegram(
   rawText:   string,   // full message text after the /quote command
-  userId:    string,   // CRM user ID (createdById)
+  userId:    string,   // CMS user ID (createdById)
 ): Promise<QuotationBuildResult> {
 
   const lines = rawText.trim().split('\n').map(l => l.trim()).filter(Boolean)
@@ -171,7 +171,7 @@ export async function buildQuotationFromTelegram(
 
   if (mediumMatches.length > 0) {
     parts.push('')
-    parts.push(`⚠️ Items marked ⚠️ are low-confidence matches — please review in the CRM.`)
+    parts.push(`⚠️ Items marked ⚠️ are low-confidence matches — please review in the CMS.`)
   }
 
   parts.push('')

@@ -1,15 +1,15 @@
-# Flexxo Sales OS — Project Memory
+﻿# Flexxo Sales OS — Project Memory
 Last updated: 15 June 2026 (session 7)
 
 ## What this project is
-Internal B2B Sales CRM + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
+Internal B2B Sales CMS + B2B e-commerce portal for Flexxo (KL) Sdn Bhd,
 an office supply company in Malaysia (B2B, serving corporate clients).
 
 ## Business context
 - Flexxo sells: stationery, pantry, hygiene, furniture, printer consumables, batteries, thermal rolls, corporate gifts
 - Clients are companies (B2B), not individuals
 - Sales team uses WhatsApp heavily — system should eventually reduce WhatsApp dependency
-- QNE Optimum is the accounting system of record — CRM supports sales, QNE handles invoicing
+- QNE Optimum is the accounting system of record — CMS supports sales, QNE handles invoicing
 - Future goal: full B2B e-commerce portal + automated ordering
 
 ---
@@ -86,13 +86,13 @@ npx prisma studio
 
 ### Agent list — 10 agents in QNE
 JAVENN, BANDY, JUSTINE, TIMOTHY, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN, LING
-(LING exists in QNE but has no CRM account yet — may be new hire)
+(LING exists in QNE but has no CMS account yet — may be new hire)
 
 ### Agent email sync results (run 2 June 2026)
 - JAVENN: updated to sales1@kl.flexxo.com.my
 - TIMOTHY: updated to tim@flexxo.com.my
 - Remaining 7 agents: no email in QNE → update manually via /admin/users
-- mobileNo field exists on QNE agents — synced to users.mobile_no in CRM
+- mobileNo field exists on QNE agents — synced to users.mobile_no in CMS
 
 ### Customer data
 - 369 total customers in QNE
@@ -180,7 +180,7 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 
 ## What is already built
 
-### Phase 1A — CRM Foundation ✅ COMPLETE
+### Phase 1A — CMS Foundation ✅ COMPLETE
 - Login and authentication (NextAuth, email + password)
 - Dashboard with stats, follow-ups due, no-activity warnings
 - Companies list (searchable, filterable, sortable)
@@ -196,7 +196,7 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - QNE API connection working via Radmin VPN
 - runSync.ts — pulls 369 customers from QNE into staging table
 - Staging review screen at /admin/qne-review
-- Agent auto-assignment: 9 CRM users created, 333 company assignments backfilled
+- Agent auto-assignment: 9 CMS users created, 333 company assignments backfilled
 - Known junk records to reject: "customer testing" (700-C001), "Quotation" (700-Q001)
 
 ### Phase 1C — Supplier Price Database ✅ COMPLETE
@@ -234,7 +234,7 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - Portal welcome email sent on account creation (lib/portalWelcomeEmail.ts)
 - WABA order status alerts (Shipped/Delivered) via lib/wabaMessages.ts
 
-### Additional CRM Features ✅ COMPLETE
+### Additional CMS Features ✅ COMPLETE
 - **Smart Order** (`/quotations/[id]` → ✨ Smart Add tab): paste text, upload photo, OR upload PDF → AI extracts items → fuzzy-matches to catalogue → bulk-add to quotation. Uses Claude Vision for photos, Claude PDF document block for PDFs, token-Jaccard for text.
 - **Market Price Scout** (`/market-scout`): AI searches for cheapest supplier for any product. Uses Claude + web search.
 - **Reports** (`/reports`): Team Portfolio Intelligence — client count, outstanding balance, top items per salesperson. Admin/Manager only.
@@ -244,7 +244,7 @@ Emails: /admin/users → Edit button to update name/email/mobile for each user.
 - **Warehouse Portal** (`/warehouse`): Picking task board for warehouse workers.
 - **Order Fulfillment Pipeline**: Confirmed → Approved → Picking → Packed → Delivering → Delivered. Invoice, WarehouseTask, DeliveryBooking models.
 - **Lalamove Integration** ✅ LIVE (session 6, 15 Jun 2026): Full end-to-end delivery booking. Quote preview (price + pickup time + surge warning) before confirming. Smart time window avoids 12–2 PM lunch and after 5 PM. Surge detection flags >40% above baseline. Webhook auto-marks order Delivered. See Lalamove section below.
-- **Notification System**: Notification bell (top of CRM sidebar) + browser push notifications. Covers: overdue follow-ups, pending quotation approvals, pending account requests.
+- **Notification System**: Notification bell (top of CMS sidebar) + browser push notifications. Covers: overdue follow-ups, pending quotation approvals, pending account requests.
 - **Daily Digest**: Cron job emails Admin/Manager a daily summary of overdue follow-ups.
 - **Admin Stock Gaps page** (`/admin/stock-gaps`): Lists sub-categories with products that all show 0 stock after a sync — admin decides what to keep stocking.
 
@@ -343,7 +343,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 | runSync.ts | Pull QNE customers into staging | ✅ Working |
 | inspectQneFields.ts | Print full raw QNE response to find field names | ✅ Run |
 | fixAgentAssignment.ts | Create users from QNE agents + backfill assignments | ✅ Done — 9 users, 333 assignments |
-| syncAgentEmails.ts | Pull agent email + mobileNo from QNE → update CRM users | ✅ Run — 2 emails updated |
+| syncAgentEmails.ts | Pull agent email + mobileNo from QNE → update CMS users | ✅ Run — 2 emails updated |
 | syncQneProducts.ts | Sync QNE stock items → products table | ✅ Working |
 | syncQneStock.ts | Sync QNE available qty → products.qneAvailableQty (VPN required) | ✅ Working |
 | setupDemoAccount.ts | Create demo B2B client account for testing | ✅ Working |
@@ -379,7 +379,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - **Sub-category slugs**: prefix pattern (`os--`, `of--`, `ps--`, `ch--`, `sec--`, `om--`, `oe--`, `br--`, `jan--`, `sk--`) to avoid collisions with QNE-generated category slugs
 
 ### Director-as-salesperson: what was added (session 3, 13 Jun 2026)
-- `lib/access.ts` — Director has all CRM routes including `/activities`, `/reports`, `/market-scout`
+- `lib/access.ts` — Director has all CMS routes including `/activities`, `/reports`, `/market-scout`
 - `lib/authorization.ts` — Director in `PRIVILEGED_ROLES` (sees all companies, no scope filter)
 - `login/actions.ts` — `ROLE_PRIORITY` array ensures Director session wins over legacy Salesperson role
 - `TodoSection.tsx` — Director gets BOTH executive block (approvals) AND personal block (own follow-ups, stale drafts, quiet accounts)
@@ -493,7 +493,7 @@ UPSTASH_REDIS_REST_TOKEN=""
 ## Phases ahead
 | Phase | What | Status |
 |-------|------|--------|
-| 1A | CRM Foundation | ✅ Complete |
+| 1A | CMS Foundation | ✅ Complete |
 | 1B | QNE Customer Import | ✅ Complete |
 | 1C | Supplier price database | ✅ Complete |
 | 1D | User management + salesperson onboarding + RBAC | ✅ Complete |

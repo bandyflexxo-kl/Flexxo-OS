@@ -1,4 +1,4 @@
-import { sendGenericEmail } from '@/lib/email'
+﻿import { sendGenericEmail } from '@/lib/email'
 import { getNotificationsForUser, type NotificationItem } from '@/lib/notifications'
 
 const APP_URL = process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
@@ -65,7 +65,7 @@ export async function buildAndSendDigest(user: {
   const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
   <div style="background:#1d4ed8;padding:20px 28px;border-radius:8px 8px 0 0;">
-    <h1 style="color:#fff;margin:0;font-size:20px;">Flexxo CRM · Daily Actions</h1>
+    <h1 style="color:#fff;margin:0;font-size:20px;">Flexxo CMS · Daily Actions</h1>
     <p style="color:#bfdbfe;margin:4px 0 0;font-size:14px;">${today}</p>
   </div>
   <div style="background:#f9fafb;padding:24px 28px;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;">
@@ -80,7 +80,7 @@ export async function buildAndSendDigest(user: {
 
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;">
       <a href="${APP_URL}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;">
-        Open Flexxo CRM →
+        Open Flexxo CMS →
       </a>
     </div>
 
@@ -97,7 +97,7 @@ export async function buildAndSendDigest(user: {
   if (g.draft.length)    lines.push(`📝 DRAFT QUOTES (${g.draft.length})\n${g.draft.map(itemText).join('\n')}`)
   if (g.pending.length)  lines.push(`⏳ PENDING APPROVAL (${g.pending.length})\n${g.pending.map(itemText).join('\n')}`)
   if (g.inactive.length) lines.push(`😴 INACTIVE ACCOUNTS (${g.inactive.length})\n${g.inactive.map(itemText).join('\n')}`)
-  lines.push(`\nOpen CRM: ${APP_URL}`)
+  lines.push(`\nOpen CMS: ${APP_URL}`)
 
   await sendGenericEmail({ to: user.email, subject, text: lines.join('\n\n'), html })
   return true

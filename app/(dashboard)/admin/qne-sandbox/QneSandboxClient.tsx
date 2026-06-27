@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
 
@@ -108,7 +108,7 @@ export default function QneSandboxClient() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-1">
         <p className="font-semibold">📋 How this works</p>
         <ul className="list-disc list-inside space-y-0.5 text-blue-700">
-          <li>Every invoice created in this CRM is automatically staged here.</li>
+          <li>Every invoice created in this CMS is automatically staged here.</li>
           <li>At month-end, review each item and click <strong>Approve</strong> for ones to enter in QNE.</li>
           <li>Open QNE Optimum and enter the record manually — <strong>use the Original Date</strong>, not today&apos;s date.</li>
           <li>Reject items that were cancelled or not yet ready.</li>

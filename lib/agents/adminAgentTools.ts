@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/agents/adminAgentTools.ts
  * Prisma + business logic tool implementations for the Admin AI Agent.
  */
@@ -314,7 +314,7 @@ export async function approveAccountRequest(
   const normalised = req.companyName.trim().toLowerCase().replace(/\s+/g, ' ')
   const existing   = await prisma.company.findFirst({ where: { nameNormalized: normalised } })
   if (existing) {
-    return { error: `${req.companyName} already exists in CRM (ID: ${existing.id.slice(0, 8)}). Handle manually.` }
+    return { error: `${req.companyName} already exists in CMS (ID: ${existing.id.slice(0, 8)}). Handle manually.` }
   }
 
   await prisma.$executeRaw`SELECT set_config('app.current_user_id', ${approver.userId}, true)`
@@ -380,7 +380,7 @@ export async function approveAccountRequest(
   })
 
   if (req.salespersonChatId) {
-    sendHtml(Number(req.salespersonChatId), `✅ <b>Account Approved!</b>\n\n<b>${esc(req.companyName)}</b> has been created in the CRM.\nApproved by ${esc(approver.name)}.\n\nGo to Flexxo OS → Companies to view it.`)
+    sendHtml(Number(req.salespersonChatId), `✅ <b>Account Approved!</b>\n\n<b>${esc(req.companyName)}</b> has been created in the CMS.\nApproved by ${esc(approver.name)}.\n\nGo to Flexxo OS → Companies to view it.`)
       .catch(() => undefined)
   }
 

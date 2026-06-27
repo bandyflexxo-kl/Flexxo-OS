@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 /**
  * SmartOrderModal — "✨ Smart Add" panel inside QuotationBuilder.
@@ -7,7 +7,7 @@
  * the product catalogue, lets the salesperson review/adjust, then bulk-adds
  * confirmed items to the quotation.
  *
- * Access: CRM only (rendered inside QuotationBuilder, never in B2B portal).
+ * Access: CMS only (rendered inside QuotationBuilder, never in B2B portal).
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'

@@ -176,6 +176,25 @@ export async function getNotificationsForUser(
     }
   }
 
+  // ── 5b. Tender Gate 1 acknowledgements (gate keepers) ──────────────────────
+  if (role === 'Manager' || role === 'Director' || role === 'SuperAdmin') {
+    const gate1Tenders = await prisma.tender.findMany({
+      where:   { stage: 'creation', gate1ApprovalId: { not: null }, status: 'active' },
+      include: { createdBy: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+      take: 10,
+    })
+    for (const t of gate1Tenders) {
+      items.push({
+        type:      'pending_approval',
+        title:     `Acknowledge tender: ${t.refNo}`,
+        body:      `${t.name} · by ${t.createdBy.name} · awaiting Gate 1`,
+        url:       `/tenders/${t.id}`,
+        createdAt: t.createdAt,
+      })
+    }
+  }
+
   // ── 6. Pending contact edit requests (Admin / Manager only) ─────────────
   if (isPrivileged) {
     const pendingEdits = await prisma.contactEditRequest.findMany({

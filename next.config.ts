@@ -1,10 +1,15 @@
-import type { NextConfig } from "next";
+﻿import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow a separate build dir for a side-by-side verification dev server
+  // (avoids .next lock conflicts with another running `next dev`). Unset in
+  // normal use — defaults to .next.
+  ...(process.env.NEXT_DISTDIR ? { distDir: process.env.NEXT_DISTDIR } : {}),
+
   // Keep pdf-parse out of the webpack/turbopack bundle so Node.js loads its
   // CJS entry natively — prevents pdfjs-dist from crashing on missing browser
   // globals (DOMMatrix, ImageData, Path2D) that only exist in a browser context.
-  serverExternalPackages: ['pdf-parse'],
+  serverExternalPackages: ['pdf-parse', '@react-pdf/renderer'],
 
   // ── Security headers ──────────────────────────────────────────────────────
   // Applied to every response. CSP intentionally omitted — the shop page uses
@@ -56,7 +61,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'crm.flexxo.com.my',
+        hostname: 'cms.flexxo.com.my',
       },
       {
         protocol: 'http',

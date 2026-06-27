@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 
@@ -84,7 +84,7 @@ export default function QneProductSyncPanel() {
           <p className="text-sm text-gray-500 mt-1">
             Syncs full product catalogue from QNE, then updates live stock quantities.
             <br />
-            <span className="text-amber-600 font-medium">Deactivates CRM products not returned by QNE.</span>
+            <span className="text-amber-600 font-medium">Deactivates CMS products not returned by QNE.</span>
           </p>
         </div>
         <button

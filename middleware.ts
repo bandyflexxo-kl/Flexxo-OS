@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { decrypt, encrypt, sessionDurationMs, CRM_COOKIE, SHOP_COOKIE } from '@/lib/session'
 import { canAccessPath, homeFor } from '@/lib/access'
 
@@ -10,7 +10,7 @@ import { canAccessPath, homeFor } from '@/lib/access'
  *   Shop  →  http://shop.localhost:3000
  *
  * Production (two subdomains):
- *   CRM   →  https://crm.flexxo.com.my
+ *   CRM   →  https://cms.flexxo.com.my
  *   Shop  →  https://shop.flexxo.com.my
  *
  * Single-domain mode (Vercel platform subdomain, e.g. flexxo.vercel.app):

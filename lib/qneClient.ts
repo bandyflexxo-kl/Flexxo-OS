@@ -50,6 +50,32 @@ export async function qneGet<T>(path: string, token: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/**
+ * Typed POST helper for QNE writes. Throws QneUnavailableError if the host is
+ * unreachable (VPN off), or an Error carrying QNE's business message on non-OK.
+ * NOTE: QNE writes must be gated (tender.qne_writes_enabled) and double-approved.
+ */
+export async function qnePost<T>(path: string, token: string, body: unknown): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${QNE_API_URL}${path}`, {
+      method:  'POST',
+      headers: { ...qneHeaders(token), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    })
+  } catch (err) {
+    throw new QneUnavailableError(`QNE unreachable: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const text = await res.text()
+  if (!res.ok) {
+    // QNE returns { code, message } on validation errors — surface the message.
+    let msg = `QNE ${path} returned HTTP ${res.status}`
+    try { const j = JSON.parse(text); if (j?.message) msg = `QNE: ${j.message}` } catch { /* keep default */ }
+    throw new Error(msg)
+  }
+  return (text ? JSON.parse(text) : null) as T
+}
+
 /** Thrown when the QNE host is unreachable (VPN not active). */
 export class QneUnavailableError extends Error {
   readonly code = 'QNE_UNAVAILABLE' as const

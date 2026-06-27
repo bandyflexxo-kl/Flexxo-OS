@@ -64,6 +64,14 @@ model User {
   aliasesCreated            ProductAlias[]            @relation("AliasCreator")
   contactEditRequests       ContactEditRequest[]       @relation("ContactEditRequestedBy")
   contactEditApprovals      ContactEditRequest[]       @relation("ContactEditApprovedBy")
+  tendersCreated            Tender[]                   @relation("TenderCreatedBy")
+  tendersPricesLocked       Tender[]                   @relation("TenderPricesLockedBy")
+  tenderQuotesEntered       TenderVendorQuote[]        @relation("TenderQuoteEnteredBy")
+  clientPosRecorded         ClientPO[]                 @relation("ClientPoRecordedBy")
+  supplierPosIssued         SupplierPO[]               @relation("SupplierPoIssuedBy")
+  goodsReceiptsReceived     GoodsReceipt[]             @relation("GoodsReceivedBy")
+  tenderAmendmentsChanged   TenderAmendment[]          @relation("TenderAmendmentChangedBy")
+  tenderAmendmentsApproved  TenderAmendment[]          @relation("TenderAmendmentApprovedBy")
 
   @@map("users")
 }
@@ -145,6 +153,7 @@ model Company {
   qneSalesOrders           QneSalesOrder[]
   qneDeliveryOrders        QneDeliveryOrder[]
   telegramAccountRequests  TelegramAccountRequest[]  @relation("CompanyFromTelegramRequest")
+  tenders                  Tender[]                  @relation("TenderClientCompany")
 
   @@map("companies")
 }
@@ -386,6 +395,17 @@ model Product {
   // Times this item appeared in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts).
   // Used as popularity signal in Smart Order matching. More reliable than quotation count.
   qneInvoiceFreq       Int       @default(0) @map("qne_invoice_freq")
+  // Push state for stock codes CREATED in the CRM and written to QNE (Part A).
+  // synced     = exists in QNE (default — all imported products)
+  // local_only = saved in CRM, not yet sent to QNE
+  // pending    = save succeeded, QNE push queued / not yet confirmed
+  // failed     = QNE rejected the push (reason in qnePushError)
+  qnePushStatus        String    @default("synced") @map("qne_push_status")
+  qnePushError         String?   @db.Text @map("qne_push_error")
+  qnePushedAt          DateTime? @map("qne_pushed_at")
+  // Frozen NewStock payload for a CRM-created product awaiting/retrying its QNE
+  // push — lets the "Push to QNE" retry button re-send without re-entering the form.
+  qnePushPayload       Json?     @map("qne_push_payload")
   createdAt            DateTime  @default(now()) @map("created_at")
   createdById          String    @map("created_by")
 
@@ -401,6 +421,7 @@ model Product {
   qneSalesOrderItems    QneSalesOrderItem[]
   qneDeliveryOrderItems QneDeliveryOrderItem[]
   aliases            ProductAlias[]
+  tenderItems        TenderItem[]
 
   // Listing query: WHERE isActive=true AND isVisibleToCustomers=true ORDER BY name
   @@index([isActive, isVisibleToCustomers, name])
@@ -459,6 +480,12 @@ model Supplier {
   priceFiles      SupplierPriceFile[]
   priceVersions   SupplierPriceVersion[]
   supplierMatches ProductSupplierMatch[]
+  tenderVendors      TenderVendor[]
+  tenderQuotes       TenderVendorQuote[]
+  tenderItemsAwarded TenderItem[]         @relation("TenderItemAwardedSupplier")
+  supplierPos        SupplierPO[]
+  tenderDocuments    TenderDocument[]
+  performance        SupplierPerformance?
 
   @@map("suppliers")
 }
@@ -1225,4 +1252,284 @@ model TelegramAccountRequest {
 
   @@index([status, createdAt])
   @@map("telegram_account_requests")
+}
+
+// ============================================================
+// DOMAIN 15 — TENDER MANAGEMENT
+// 6-stage tender lifecycle (creation → rfq → evaluation →
+// client_po → supplier_po → receiving → closed) with 3 gates.
+// CRM is system of record; committed POs/GRNs mirror to QNE.
+// Price freezes at evaluation lock (awarded_unit_price).
+// ============================================================
+
+model Tender {
+  id                   String    @id @default(uuid())
+  refNo                String    @unique @map("ref_no")              // FLX-TDR-2026-0001
+  name                 String
+  category             String?
+  mode                 String    @default("multi")                  // single | multi
+  stage                String    @default("creation")               // creation|rfq|evaluation|client_po|supplier_po|receiving|closed
+  status               String    @default("active")                 // active|won|lost|cancelled|expired
+  periodStart          DateTime? @map("period_start")
+  periodEnd            DateTime? @map("period_end")
+  submissionExpiry     DateTime? @map("submission_expiry")
+  expectedClientPoDate DateTime? @map("expected_client_po_date")
+  estValue             Decimal?  @map("est_value") @db.Decimal(14, 2)
+  competitorNotes      String?   @map("competitor_notes") @db.Text
+  internalRemarks      String?   @map("internal_remarks") @db.Text
+  varianceThreshold    Decimal?  @map("variance_threshold") @db.Decimal(5, 2) // null = use global setting
+  minQuotesRequired    Int?      @map("min_quotes_required")
+  pricesLockedAt       DateTime? @map("prices_locked_at")
+  pricesLockedById     String?   @map("prices_locked_by")
+  qneProjectCode       String?   @map("qne_project_code")
+  gate1ApprovalId      String?   @map("gate1_approval_id")
+  gate2ApprovalId      String?   @map("gate2_approval_id")
+  gate3ApprovalId      String?   @map("gate3_approval_id")
+  clientCompanyId      String?   @map("client_company_id")
+  createdById          String    @map("created_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  createdBy      User             @relation("TenderCreatedBy", fields: [createdById], references: [id])
+  pricesLockedBy User?            @relation("TenderPricesLockedBy", fields: [pricesLockedById], references: [id])
+  clientCompany  Company?         @relation("TenderClientCompany", fields: [clientCompanyId], references: [id])
+  items          TenderItem[]
+  vendors        TenderVendor[]
+  clientPOs      ClientPO[]
+  supplierPOs    SupplierPO[]
+  amendments     TenderAmendment[]
+  documents      TenderDocument[]
+
+  @@index([stage, status])
+  @@index([createdById])
+  @@map("tenders")
+}
+
+model TenderItem {
+  id                   String   @id @default(uuid())
+  tenderId             String   @map("tender_id")
+  pos                  Int
+  name                 String
+  unit                 String?
+  qty                  Decimal  @db.Decimal(12, 3)
+  targetPrice          Decimal? @map("target_price") @db.Decimal(12, 4)        // client target (Stage 1)
+  normalUnitPrice      Decimal? @map("normal_unit_price") @db.Decimal(12, 4)   // Drive list snapshot (Stage 3)
+  normalPriceVersionId String?  @map("normal_price_version_id")                // → SupplierPriceVersion (plain ref)
+  awardedUnitPrice     Decimal? @map("awarded_unit_price") @db.Decimal(12, 4)  // tender price, FROZEN at lock
+  awardedSupplierId    String?  @map("awarded_supplier_id")
+  matchedProductId     String?  @map("matched_product_id")
+  qneStockCode         String?  @map("qne_stock_code")
+  aiConfidence         Float?   @map("ai_confidence")
+
+  tender          Tender              @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  awardedSupplier Supplier?           @relation("TenderItemAwardedSupplier", fields: [awardedSupplierId], references: [id])
+  matchedProduct  Product?            @relation(fields: [matchedProductId], references: [id])
+  quotes          TenderVendorQuote[]
+  clientPoItems   ClientPOItem[]
+  supplierPoItems SupplierPOItem[]
+
+  @@index([tenderId])
+  @@map("tender_items")
+}
+
+model TenderVendor {
+  id                String    @id @default(uuid())
+  tenderId          String    @map("tender_id")
+  supplierId        String    @map("supplier_id")
+  replyStatus       String    @default("sent") @map("reply_status")  // sent|acknowledged|price_received|no_response
+  rfqSentAt         DateTime? @map("rfq_sent_at")
+  acknowledgedAt    DateTime? @map("acknowledged_at")
+  priceReceivedAt   DateTime? @map("price_received_at")
+  quoteValidityDays Int?      @map("quote_validity_days")
+  quoteValidUntil   DateTime? @map("quote_valid_until")
+
+  tender   Tender              @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  quotes   TenderVendorQuote[]
+
+  @@unique([tenderId, supplierId])
+  @@index([tenderId])
+  @@map("tender_vendors")
+}
+
+model TenderVendorQuote {
+  id                   String   @id @default(uuid())
+  tenderItemId         String   @map("tender_item_id")
+  tenderVendorId       String   @map("tender_vendor_id")
+  supplierId           String   @map("supplier_id")
+  quotedUnitPrice      Decimal  @map("quoted_unit_price") @db.Decimal(12, 4)   // supplier price
+  variancePct          Decimal? @map("variance_pct") @db.Decimal(6, 2)         // vs normalUnitPrice
+  flaggedOverThreshold Boolean  @default(false) @map("flagged_over_threshold")
+  overrideReason       String?  @map("override_reason") @db.Text
+  isAwarded            Boolean  @default(false) @map("is_awarded")
+  enteredById          String   @map("entered_by")
+  enteredAt            DateTime @default(now()) @map("entered_at")
+
+  tenderItem   TenderItem   @relation(fields: [tenderItemId], references: [id], onDelete: Cascade)
+  tenderVendor TenderVendor @relation(fields: [tenderVendorId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id])
+  enteredBy    User         @relation("TenderQuoteEnteredBy", fields: [enteredById], references: [id])
+
+  @@unique([tenderItemId, tenderVendorId])
+  @@index([tenderItemId])
+  @@map("tender_vendor_quotes")
+}
+
+model ClientPO {
+  id                String   @id @default(uuid())
+  tenderId          String   @map("tender_id")
+  poNumber          String   @map("po_number")
+  dateReceived      DateTime @map("date_received")
+  value             Decimal  @db.Decimal(14, 2)
+  picName           String?  @map("pic_name")
+  picEmail          String?  @map("pic_email")
+  picPhone          String?  @map("pic_phone")
+  qneSalesOrderCode String?  @map("qne_sales_order_code")
+  recordedById      String   @map("recorded_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tender     Tender         @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  recordedBy User           @relation("ClientPoRecordedBy", fields: [recordedById], references: [id])
+  items      ClientPOItem[]
+
+  @@index([tenderId])
+  @@map("client_pos")
+}
+
+model ClientPOItem {
+  id           String  @id @default(uuid())
+  clientPoId   String  @map("client_po_id")
+  tenderItemId String  @map("tender_item_id")
+  qtyCovered   Decimal @map("qty_covered") @db.Decimal(12, 3)
+  value        Decimal @db.Decimal(14, 2)
+
+  clientPo   ClientPO   @relation(fields: [clientPoId], references: [id], onDelete: Cascade)
+  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id])
+
+  @@index([clientPoId])
+  @@map("client_po_items")
+}
+
+model SupplierPO {
+  id                String    @id @default(uuid())
+  tenderId          String    @map("tender_id")
+  supplierId        String    @map("supplier_id")
+  poNumber          String    @unique @map("po_number")
+  status            String    @default("issued")  // issued|acknowledged|partially_received|received|closed
+  deliveryDate      DateTime? @map("delivery_date")
+  deliveryLocation  String?   @map("delivery_location")
+  ackDate           DateTime? @map("ack_date")
+  supplierRef       String?   @map("supplier_ref")
+  priceValidityDate DateTime? @map("price_validity_date")  // = tender expiry
+  qnePoCode         String?   @map("qne_po_code")
+  issuedById        String    @map("issued_by")
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+
+  tender   Tender           @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  supplier Supplier         @relation(fields: [supplierId], references: [id])
+  issuedBy User             @relation("SupplierPoIssuedBy", fields: [issuedById], references: [id])
+  items    SupplierPOItem[]
+  grns     GoodsReceipt[]
+
+  @@index([tenderId])
+  @@map("supplier_pos")
+}
+
+model SupplierPOItem {
+  id           String  @id @default(uuid())
+  supplierPoId String  @map("supplier_po_id")
+  tenderItemId String  @map("tender_item_id")
+  qty          Decimal @db.Decimal(12, 3)
+  unitPrice    Decimal @map("unit_price") @db.Decimal(12, 4)   // from awardedUnitPrice — immutable
+
+  supplierPo SupplierPO @relation(fields: [supplierPoId], references: [id], onDelete: Cascade)
+  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id])
+  grnItems   GRNItem[]
+
+  @@index([supplierPoId])
+  @@map("supplier_po_items")
+}
+
+model GoodsReceipt {
+  id           String   @id @default(uuid())
+  supplierPoId String   @map("supplier_po_id")
+  grnNumber    String   @unique @map("grn_number")
+  receivedById String   @map("received_by")
+  receivedAt   DateTime @default(now()) @map("received_at")
+  photoUrl     String?  @map("photo_url")
+  closed       Boolean  @default(false)   // manual close only
+  qneGrnCode   String?  @map("qne_grn_code")
+
+  supplierPo SupplierPO @relation(fields: [supplierPoId], references: [id], onDelete: Cascade)
+  receivedBy User       @relation("GoodsReceivedBy", fields: [receivedById], references: [id])
+  items      GRNItem[]
+
+  @@index([supplierPoId])
+  @@map("goods_receipts")
+}
+
+model GRNItem {
+  id               String  @id @default(uuid())
+  grnId            String  @map("grn_id")
+  supplierPoItemId String  @map("supplier_po_item_id")
+  qtyReceived      Decimal @map("qty_received") @db.Decimal(12, 3)
+  rejectQty        Decimal @default(0) @map("reject_qty") @db.Decimal(12, 3)
+  rejectReason     String? @map("reject_reason") @db.Text
+
+  grn            GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  supplierPoItem SupplierPOItem @relation(fields: [supplierPoItemId], references: [id])
+
+  @@index([grnId])
+  @@map("grn_items")
+}
+
+model TenderAmendment {
+  id           String   @id @default(uuid())
+  tenderId     String   @map("tender_id")
+  field        String
+  beforeVal    String?  @map("before_val") @db.Text
+  afterVal     String?  @map("after_val") @db.Text
+  reason       String?  @db.Text
+  changedById  String   @map("changed_by")
+  approvedById String?  @map("approved_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tender     Tender @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  changedBy  User   @relation("TenderAmendmentChangedBy", fields: [changedById], references: [id])
+  approvedBy User?  @relation("TenderAmendmentApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([tenderId])
+  @@map("tender_amendments")
+}
+
+model TenderDocument {
+  id         String   @id @default(uuid())
+  tenderId   String   @map("tender_id")
+  docType    String   @map("doc_type")   // client_attachment|rfq_pdf|po_pdf|evaluation_pdf|grn_photo
+  fileName   String   @map("file_name")
+  storageUrl String   @map("storage_url")
+  supplierId String?  @map("supplier_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tender   Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@index([tenderId])
+  @@map("tender_documents")
+}
+
+model SupplierPerformance {
+  id                   String   @id @default(uuid())
+  supplierId           String   @unique @map("supplier_id")
+  avgReplyHours        Float?   @map("avg_reply_hours")
+  winRate              Float?   @map("win_rate")
+  priceCompetitiveness Float?   @map("price_competitiveness")
+  deliveryReliability  Float?   @map("delivery_reliability")
+  tendersInvited       Int      @default(0) @map("tenders_invited")
+  tendersWon           Int      @default(0) @map("tenders_won")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@map("supplier_performance")
 }

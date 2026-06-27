@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/agents/nameCardAgent.ts
  *
  * Handles the Telegram name-card → account-opening flow:
@@ -360,13 +360,13 @@ export async function approveRequest(shortId: string, adminChatId: number): Prom
     where:  { telegramChatId: String(adminChatId), isActive: true },
     select: { id: true, name: true },
   })
-  if (!adminUser) return '❌ Your Telegram account is not linked to a CRM user.'
+  if (!adminUser) return '❌ Your Telegram account is not linked to a CMS user.'
 
   // Duplicate check
   const normalised = req.companyName.trim().toLowerCase().replace(/\s+/g, ' ')
   const existing   = await prisma.company.findFirst({ where: { nameNormalized: normalised } })
   if (existing) {
-    return `⚠️ <b>${esc(req.companyName)}</b> already exists in the CRM (ID: <code>${existing.id.slice(0, 8)}</code>). Account not created — handle manually.`
+    return `⚠️ <b>${esc(req.companyName)}</b> already exists in the CMS (ID: <code>${existing.id.slice(0, 8)}</code>). Account not created — handle manually.`
   }
 
   // Set PostgreSQL user context for audit triggers
@@ -441,7 +441,7 @@ export async function approveRequest(shortId: string, adminChatId: number): Prom
   // Notify salesperson
   await sendHtml(Number(req.salespersonChatId), `✅ <b>Account Approved!</b>
 
-<b>${esc(req.companyName)}</b> has been created in the CRM.
+<b>${esc(req.companyName)}</b> has been created in the CMS.
 Approved by ${esc(adminUser.name ?? 'Admin')}.
 
 Go to Flexxo OS → Companies to view and manage it.`)

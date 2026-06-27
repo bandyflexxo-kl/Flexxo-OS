@@ -4,19 +4,19 @@ import { prisma } from '@/lib/prisma'
 import type { SessionPayload } from '@/lib/session'
 
 /** Roles that see all data — no company-scope restriction. */
-const PRIVILEGED_ROLES = ['Director', 'Admin', 'Manager'] as const
+const PRIVILEGED_ROLES = ['Director', 'SuperAdmin', 'Admin', 'Manager'] as const
 
 export function isPrivilegedRole(role: string): boolean {
   return (PRIVILEGED_ROLES as readonly string[]).includes(role)
 }
 
 /**
- * Top-management only (Director + Manager): strategic data — Reports,
- * margins, team performance, Activities feed. Admin (ops staff) is
+ * Top-management only (Director + Manager + SuperAdmin): strategic data —
+ * Reports, margins, team performance, Activities feed. Admin (ops staff) is
  * deliberately EXCLUDED from these.
  */
 export function isExecutiveRole(role: string): boolean {
-  return role === 'Director' || role === 'Manager'
+  return role === 'Director' || role === 'Manager' || role === 'SuperAdmin'
 }
 
 /**

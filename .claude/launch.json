@@ -2,11 +2,19 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "flexxo-dev",
+      "name": "Flexxo Sales OS",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "name": "Flexxo Verify 3100",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "-p", "3100"],
+      "port": 3100,
+      "autoPort": false,
+      "env": { "NEXT_DISTDIR": ".next-verify" }
     }
   ]
 }
