@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-verify/
 /out/
 
 # production
@@ -36,6 +37,9 @@ vercel-recovery-codes.txt
 
 # vercel
 .vercel
+
+# claude code worktrees (local scratch)
+.claude/worktrees/
 
 # netlify
 .netlify

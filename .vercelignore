@@ -1,0 +1,17 @@
+# Vercel builds from source — exclude all local build artifacts & scratch dirs.
+# (These ballooned the upload to 361MB and tripped the 100MB single-file limit.)
+
+# Local build outputs
+.next
+.next-verify
+out
+build
+
+# Claude Code worktrees / scratch
+.claude
+
+# Local data dumps & analysis files (used by scripts locally, never at build time)
+*.xlsx
+scripts/_*.json
+scripts/_*.csv
+scripts/_*.xlsx
