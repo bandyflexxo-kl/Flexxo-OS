@@ -106,21 +106,21 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL(loginUrl, req.url))
   }
 
-  // B2B Clients must NEVER hold a crm_session / access CMS pages.
-  // Exclude login pages so the redirect target is always reachable — otherwise a
-  // stale B2B crm_session on the CMS domain would bounce /login too, trapping the
-  // user (they could never reach the CMS login to sign in as staff).
-  if (session?.role === 'B2B Client' && !pathname.startsWith('/shop') && !isLoginPage) {
+  // B2B Clients must NEVER hold a crm_session / access CMS pages. A B2B-role
+  // crm_session on the CMS domain is invalid (e.g. a B2B account was entered on
+  // the CMS login) — clear it so it self-heals, rather than bouncing to the shop
+  // (which trapped the user: every CMS path, incl. /login, redirected away).
+  if (session?.role === 'B2B Client' && !pathname.startsWith('/shop')) {
     if (!SINGLE_DOMAIN && isCrmDomain) {
-      // A B2B Client should never have a crm_session on the CMS subdomain — it is
-      // invalid by definition (e.g. a B2B account was entered on the CMS login).
-      // Clear it and send them to the CMS login instead of bouncing to the shop,
-      // so the stale cookie self-heals and they aren't trapped.
-      const resp = NextResponse.redirect(new URL('/login', req.url))
+      // Already on the login page → clear the bad cookie and render it (one hop,
+      // no extra redirect). Anywhere else → clear and send to the CMS login.
+      const resp = isLoginPage
+        ? NextResponse.next()
+        : NextResponse.redirect(new URL('/login', req.url))
       resp.cookies.delete(CRM_COOKIE)
       return resp
     }
-    // Single-domain: shop + CMS share a host → bounce to shop catalogue
+    // Single-domain (local dev / *.vercel.app): shop + CMS share a host.
     return NextResponse.redirect(new URL('/shop/products', req.url))
   }
 
