@@ -798,6 +798,20 @@ function StatCardSkeleton({ label }: { label: string }) {
   )
 }
 
+// ── Stat card "temporarily unavailable" state ─────────────────────────────────
+// Shown when a customer's figures live only in QNE and QNE is unreachable.
+// Better than a misleading "MYR 0 / 0 orders" — makes clear the data couldn't
+// be loaded right now, rather than implying the customer has spent nothing.
+function StatCardUnavailable({ label }: { label: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+      <p className="text-xs text-gray-400 font-medium">{label}</p>
+      <p className="text-lg font-bold text-gray-300 mt-1">—</p>
+      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">Temporarily unavailable</p>
+    </div>
+  )
+}
+
 /** Total Spent card — shows QNE invoice total when CRM is zero */
 async function TotalSpentCard({
   crmTotal,
@@ -808,14 +822,19 @@ async function TotalSpentCard({
 }) {
   let qneTotal: number | null = null
   let isQne = false
+  let qneFailed = false
 
   if (crmTotal === 0 && qneCustomerCode) {
     try {
       const fin  = await fetchQneFinancialDataCached(qneCustomerCode)
       qneTotal   = fin.invoiceStats.totalAmount
       isQne      = true
-    } catch { /* fallback to CRM */ }
+    } catch { qneFailed = true }
   }
+
+  // CRM has no portal orders AND QNE is unreachable → show an honest
+  // "temporarily unavailable" state rather than a misleading "MYR 0".
+  if (qneFailed) return <StatCardUnavailable label="Total Spent" />
 
   const amount = isQne ? (qneTotal ?? 0) : crmTotal
 
@@ -848,14 +867,18 @@ async function OrdersCard({
 }) {
   let qneCount: number | null = null
   let isQne = false
+  let qneFailed = false
 
   if (crmCount === 0 && qneCustomerCode) {
     try {
       const fin = await fetchQneFinancialDataCached(qneCustomerCode)
       qneCount  = fin.invoiceStats.count
       isQne     = true
-    } catch { /* fallback to CRM */ }
+    } catch { qneFailed = true }
   }
+
+  // CRM has no portal orders AND QNE is unreachable → honest unavailable state.
+  if (qneFailed) return <StatCardUnavailable label="Orders Placed" />
 
   const count = isQne ? (qneCount ?? 0) : crmCount
 

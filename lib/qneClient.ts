@@ -9,6 +9,15 @@ export const QNE_DB_CODE = process.env.QNE_DB_CODE ?? 'FKLSB'
 const QNE_USERNAME = process.env.QNE_USERNAME ?? 'SALES 6'
 const QNE_PASSWORD = process.env.QNE_PASSWORD ?? '12345'
 
+// Request timeouts — without these, a connected-but-stalled VPN makes fetch()
+// hang indefinitely, leaving the caller (e.g. a Suspense-wrapped dashboard card)
+// stuck forever. A timeout converts a hang into a prompt QneUnavailableError so
+// callers can fall back. Login is tiny (short timeout); GETs default generous so
+// large sync list-fetches still complete, with a shorter override for the
+// latency-sensitive dashboard.
+const QNE_LOGIN_TIMEOUT_MS   = 10_000
+const QNE_GET_TIMEOUT_MS     = 30_000
+
 /** Fetches a fresh bearer token from QNE. Token is not cached — call once per operation. */
 export async function qneLogin(): Promise<string> {
   let res: Response
@@ -17,6 +26,7 @@ export async function qneLogin(): Promise<string> {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ dbCode: QNE_DB_CODE, userName: QNE_USERNAME, password: QNE_PASSWORD }),
+      signal:  AbortSignal.timeout(QNE_LOGIN_TIMEOUT_MS),
     })
   } catch (err) {
     throw new QneUnavailableError(`QNE unreachable: ${err instanceof Error ? err.message : String(err)}`)
@@ -36,13 +46,21 @@ export function qneHeaders(token: string): Record<string, string> {
 }
 
 /**
- * Typed GET helper — throws QneUnavailableError if the network is unreachable,
- * or a plain Error for non-OK HTTP responses.
+ * Typed GET helper — throws QneUnavailableError if the network is unreachable
+ * or the request times out, or a plain Error for non-OK HTTP responses.
+ *
+ * @param timeoutMs  Per-request timeout. Defaults to 30s (safe for large sync
+ *                   list-fetches). Latency-sensitive callers (e.g. the client
+ *                   dashboard) should pass a shorter value so a slow VPN fails
+ *                   fast and falls back instead of hanging.
  */
-export async function qneGet<T>(path: string, token: string): Promise<T> {
+export async function qneGet<T>(path: string, token: string, timeoutMs: number = QNE_GET_TIMEOUT_MS): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`${QNE_API_URL}${path}`, { headers: qneHeaders(token) })
+    res = await fetch(`${QNE_API_URL}${path}`, {
+      headers: qneHeaders(token),
+      signal:  AbortSignal.timeout(timeoutMs),
+    })
   } catch (err) {
     throw new QneUnavailableError(`QNE unreachable: ${err instanceof Error ? err.message : String(err)}`)
   }
