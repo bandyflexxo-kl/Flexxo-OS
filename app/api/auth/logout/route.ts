@@ -14,12 +14,14 @@ export async function POST(request: Request) {
 
   const dest = isShopLogout ? '/shop/login' : '/login'
   const url  = new URL(dest, request.url)
-  return NextResponse.redirect(url)
+  // 303 See Other → the browser follows with GET. Without it, redirect() defaults
+  // to 307 which PRESERVES the POST method, re-POSTing to the login page → 405.
+  return NextResponse.redirect(url, 303)
 }
 
 // Handle direct browser navigation to /api/auth/logout (GET)
 export async function GET(request: Request) {
   await deleteSession()
   await deleteShopSession()
-  return NextResponse.redirect(new URL('/login', request.url))
+  return NextResponse.redirect(new URL('/login', request.url), 303)
 }
