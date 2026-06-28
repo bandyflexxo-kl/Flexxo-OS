@@ -94,9 +94,16 @@ function calcDueDate(invoiceDate: string | null | undefined, term: string | null
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+// Latency budget for the client dashboard — a slow VPN should fail fast and let
+// the page fall back, rather than hanging on the Suspense skeleton.
+const QNE_DASH_TIMEOUT_MS = 15_000
+
 /**
  * Fetches live financial data for a customer from QNE.
- * Throws QneUnavailableError if QNE (Radmin VPN) is not reachable.
+ * Throws QneUnavailableError if QNE (Radmin VPN) is not reachable, OR if either
+ * critical fetch (customer balance / invoices) fails — so a transient sub-fetch
+ * failure is NOT cached as a misleading empty result (would otherwise show
+ * "MYR 0 / 0 orders" for the full cache TTL even after QNE recovers).
  *
  * Data sources:
  *  - Outstanding balance + payment term: GET /Customers (filter by companyCode)
@@ -106,6 +113,12 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
   const token = await qneLogin().catch(err => {
     throw new QneUnavailableError(`Cannot reach QNE: ${err instanceof Error ? err.message : String(err)}`)
   })
+
+  // Track whether the two critical fetches succeeded. A successful-but-empty
+  // result (genuine: customer has no recent invoices) is fine to cache; a
+  // *failed* fetch must NOT be cached, so we throw at the end if either failed.
+  let customerOk = false
+  let invoicesOk = false
 
   // ── 1. Fetch customer details (balance + term) ────────────────────────────
   let customerInfo: QneCustomerFinancials = {
@@ -118,7 +131,7 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
   try {
     // Fetch ALL customers and find matching one by companyCode
     // QNE doesn't support filtering by companyCode on the list endpoint
-    const raw = await qneGet<unknown>('/Customers', token)
+    const raw = await qneGet<unknown>('/Customers', token, QNE_DASH_TIMEOUT_MS)
     const all: RawCustomer[] = Array.isArray(raw)
       ? (raw as RawCustomer[])
       : ((raw as { value?: RawCustomer[] })?.value ?? [])
@@ -132,8 +145,9 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
         currentBalance: Number(match.currentBalance ?? 0),
       }
     }
+    customerOk = true   // fetch succeeded (a missing match is a legit "not found")
   } catch {
-    // Non-fatal — continue without customer detail
+    // Fetch failed — leave customerOk false so we don't cache a zero balance.
   }
 
   // ── 2. Fetch recent invoices ──────────────────────────────────────────────
@@ -154,6 +168,7 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
       const rawCust = await qneGet<unknown>(
         `/SalesInvoices?customer=${encodeURIComponent(qneCustomerCode)}&$top=500&$orderby=invoiceDate desc`,
         token,
+        QNE_DASH_TIMEOUT_MS,
       )
       const custArr: RawInvoice[] = Array.isArray(rawCust)
         ? (rawCust as RawInvoice[])
@@ -165,7 +180,7 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
 
     if (allCustomerInvoices.length === 0) {
       // Fallback: fetch larger global batch and filter client-side
-      const rawGlob = await qneGet<unknown>(`/SalesInvoices?$top=1000&$orderby=invoiceDate desc`, token)
+      const rawGlob = await qneGet<unknown>(`/SalesInvoices?$top=1000&$orderby=invoiceDate desc`, token, QNE_DASH_TIMEOUT_MS)
       const globArr: RawInvoice[] = Array.isArray(rawGlob)
         ? (rawGlob as RawInvoice[])
         : ((rawGlob as { value?: RawInvoice[] })?.value ?? [])
@@ -197,15 +212,16 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
         invoiceTotal  += Number(inv.totalAmount ?? 0)
       }
     }
+    invoicesOk = true   // fetch succeeded (an empty list is a legit "no invoices")
   } catch {
-    // Non-fatal — show empty invoice list
+    // Fetch failed — leave invoicesOk false so we don't cache empty invoiceStats.
   }
 
   // ── 3. Fetch aging summary ────────────────────────────────────────────────
   let aging: QneAgingSummary | null = null
 
   try {
-    const raw = await qneGet<unknown>('/Customers/AgingSummary', token)
+    const raw = await qneGet<unknown>('/Customers/AgingSummary', token, QNE_DASH_TIMEOUT_MS)
     const all: RawAgingSummary[] = Array.isArray(raw)
       ? (raw as RawAgingSummary[])
       : ((raw as { value?: RawAgingSummary[] })?.value ?? [])
@@ -227,6 +243,19 @@ export async function fetchQneFinancialData(qneCustomerCode: string): Promise<Qn
     }
   } catch {
     // Non-fatal — aging section simply won't render
+  }
+
+  // ── Critical-fetch guard ──────────────────────────────────────────────────
+  // If the balance or invoice fetch failed (transient QNE/VPN hiccup or timeout),
+  // throw instead of returning a misleading empty result. This is what prevents
+  // a one-off failure from being cached for the full TTL — the caller falls back
+  // to the DB-stored balance (Outstanding) or an "unavailable" state (Total Spent
+  // / Orders), and the NEXT request retries QNE live.
+  if (!customerOk || !invoicesOk) {
+    throw new QneUnavailableError(
+      `QNE financial fetch incomplete for ${qneCustomerCode} ` +
+      `(customer=${customerOk ? 'ok' : 'failed'}, invoices=${invoicesOk ? 'ok' : 'failed'})`,
+    )
   }
 
   // If the invoice fetch failed, build an empty 6-month array as fallback
