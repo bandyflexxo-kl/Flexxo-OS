@@ -1185,6 +1185,30 @@ model QnePendingAction {
   @@map("qne_pending_actions")
 }
 
+// Records each CRM document that has been (or is being) pushed to QNE as part of
+// the QT→SO→DO→Invoice chain. Stores the QNE doc id + code, and a per-line
+// detail-id map (lineMap: { crmItemId: qneDetailId }) that the NEXT document in
+// the chain reads to populate its `transferFrom` links. One row per (docType, crmId).
+model QneDocLink {
+  id         String    @id @default(uuid())
+  docType    String    @map("doc_type")    // quotation | sales_order | delivery_order | invoice
+  crmId      String    @map("crm_id")       // CRM quotation.id (quotation) or order.id (SO/DO/invoice)
+  branchCode String    @default("KL") @map("branch_code")
+  qneId      String?   @map("qne_id")       // QNE document UUID (for QuotationToInvoice + idempotency)
+  qneCode    String?   @map("qne_code")     // QNE document code, e.g. "QT KL2606/0079"
+  status     String    @default("pending")  // pending | synced | failed
+  error      String?   @db.Text
+  lineMap    Json?     @map("line_map")     // { crmItemId: qneDetailId } → downstream transferFrom
+  pushedAt   DateTime? @map("pushed_at")
+  pushedById String?   @map("pushed_by")    // plain ref (audit_log trigger captures the real audit)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@unique([docType, crmId])
+  @@index([crmId])
+  @@map("qne_doc_links")
+}
+
 // ============================================================
 // DOMAIN 13 — B2B SHOP ACCOUNT REQUESTS
 // Prospective buyers who click "Request Business Account"

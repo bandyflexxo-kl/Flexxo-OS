@@ -4,6 +4,7 @@ import Topbar from '@/components/layout/Topbar'
 import Link from 'next/link'
 import ProductCatalogTable from '@/components/admin/ProductCatalogTable'
 import PhotoReviewTab from '@/components/admin/PhotoReviewTab'
+import NewProductButton from '@/components/admin/NewProductButton'
 import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 
 type SearchParams = Promise<{ tab?: string }>
@@ -37,9 +38,10 @@ export default async function AdminProductsPage({
   let photoFolderSetting: { value: string } | null = null
   let adminUser: { name: string } | null = null
   let drivePhotoCount                   = 0
+  let shopSubcats: { id: string; name: string; parentName: string | null }[] = []
 
   if (tab === 'products') {
-    const [products, globalSetting, folderSetting, admin] = await Promise.all([
+    const [products, globalSetting, folderSetting, admin, subcats] = await Promise.all([
       prisma.product.findMany({
         where:   { isActive: true },
         orderBy: { name: 'asc' },
@@ -63,12 +65,18 @@ export default async function AdminProductsPage({
         },
         select: { name: true },
       }),
+      prisma.productCategory.findMany({
+        where:   { parentCategoryId: { not: null }, isActive: true },
+        select:  { id: true, name: true, parentCategory: { select: { name: true } } },
+        orderBy: { name: 'asc' },
+      }),
     ])
 
     globalMargin       = globalSetting?.value ?? '30'
     photoFolderSetting = folderSetting as { value: string } | null
     adminUser          = admin
     drivePhotoCount    = products.filter(p => p.googleDrivePhotoId).length
+    shopSubcats        = subcats.map(c => ({ id: c.id, name: c.name, parentName: c.parentCategory?.name ?? null }))
 
     rows = products.map(p => {
       const costPrice = p.priceVersions[0]?.costPrice ?? null
@@ -185,6 +193,10 @@ export default async function AdminProductsPage({
                 </div>
               )
             })()}
+
+            <div className="flex justify-end">
+              <NewProductButton shopCategories={shopSubcats} />
+            </div>
 
             <ProductCatalogTable products={rows} globalMargin={globalMargin} />
           </>

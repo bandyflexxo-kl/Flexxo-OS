@@ -6,6 +6,7 @@ import { assertCompanyAccess } from '@/lib/authorization'
 import Topbar from '@/components/layout/Topbar'
 import OrderDetail from '@/components/orders/OrderDetail'
 import type { OrderDetailProps } from '@/components/orders/OrderDetail'
+import QnePushPanel from '@/components/qne/QnePushPanel'
 
 export default async function OrderDetailPage({
   params,
@@ -127,6 +128,11 @@ export default async function OrderDetailPage({
           ← All Orders
         </Link>
         <OrderDetail initial={initial} />
+        {['Admin', 'Director'].includes(session.role) && (
+          <div className="mt-6">
+            <QnePushPanel mode="order" id={order.id} />
+          </div>
+        )}
       </div>
     </div>
   )

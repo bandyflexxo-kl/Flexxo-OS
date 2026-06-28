@@ -94,6 +94,30 @@ export async function qnePost<T>(path: string, token: string, body: unknown): Pr
   return (text ? JSON.parse(text) : null) as T
 }
 
+/**
+ * Typed PUT helper for QNE updates (e.g. adding multi-UOM rows to a stock item
+ * via StockDto.uoMs[]). Same shape as qnePost; tolerates an empty response body.
+ */
+export async function qnePut<T>(path: string, token: string, body: unknown): Promise<T | null> {
+  let res: Response
+  try {
+    res = await fetch(`${QNE_API_URL}${path}`, {
+      method:  'PUT',
+      headers: { ...qneHeaders(token), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    })
+  } catch (err) {
+    throw new QneUnavailableError(`QNE unreachable: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = `QNE ${path} returned HTTP ${res.status}`
+    try { const j = JSON.parse(text); if (j?.message) msg = `QNE: ${j.message}` } catch { /* keep default */ }
+    throw new Error(msg)
+  }
+  return (text ? JSON.parse(text) : null) as T
+}
+
 /** Thrown when the QNE host is unreachable (VPN not active). */
 export class QneUnavailableError extends Error {
   readonly code = 'QNE_UNAVAILABLE' as const
