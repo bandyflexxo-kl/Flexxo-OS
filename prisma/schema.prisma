@@ -474,6 +474,8 @@ model Supplier {
   paymentTerm    String?   @map("payment_term")
   currency       String    @default("MYR")
   isActive       Boolean   @default(true) @map("is_active")
+  qneSupplierCode String?  @unique @map("qne_supplier_code")   // QNE company code (e.g. 800-R003) — read-only sync
+  qneSyncedAt     DateTime? @map("qne_synced_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   contacts        SupplierContact[]
@@ -1404,7 +1406,7 @@ model ClientPOItem {
   value        Decimal @db.Decimal(14, 2)
 
   clientPo   ClientPO   @relation(fields: [clientPoId], references: [id], onDelete: Cascade)
-  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id])
+  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id], onDelete: Cascade)
 
   @@index([clientPoId])
   @@map("client_po_items")
@@ -1443,7 +1445,7 @@ model SupplierPOItem {
   unitPrice    Decimal @map("unit_price") @db.Decimal(12, 4)   // from awardedUnitPrice — immutable
 
   supplierPo SupplierPO @relation(fields: [supplierPoId], references: [id], onDelete: Cascade)
-  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id])
+  tenderItem TenderItem @relation(fields: [tenderItemId], references: [id], onDelete: Cascade)
   grnItems   GRNItem[]
 
   @@index([supplierPoId])
@@ -1477,7 +1479,7 @@ model GRNItem {
   rejectReason     String? @map("reject_reason") @db.Text
 
   grn            GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  supplierPoItem SupplierPOItem @relation(fields: [supplierPoItemId], references: [id])
+  supplierPoItem SupplierPOItem @relation(fields: [supplierPoItemId], references: [id], onDelete: Cascade)
 
   @@index([grnId])
   @@map("grn_items")

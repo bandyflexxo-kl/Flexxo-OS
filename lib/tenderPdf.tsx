@@ -197,3 +197,90 @@ function EvalDocument({ data }: { data: EvalPdfData }) {
 export async function renderEvaluationPdf(data: EvalPdfData): Promise<Buffer> {
   return renderToBuffer(<EvalDocument data={data} />)
 }
+
+// ── Purchase Order ──────────────────────────────────────────────────────────
+
+export type PoPdfData = {
+  poNumber:          string
+  tenderRef:         string
+  supplierName:      string
+  priceValidityDate: Date | null
+  deliveryDate:      Date | null
+  deliveryLocation:  string | null
+  items:             { item: string; unit: string | null; qty: number; unitPrice: number }[]
+}
+
+function PoDocument({ data }: { data: PoPdfData }) {
+  const logo = getLogo()
+  const total = data.items.reduce((s, it) => s + it.qty * it.unitPrice, 0)
+  return (
+    <Document title={`PO ${data.poNumber}`}>
+      <Page size="A4" style={styles.page}>
+        <View style={styles.headerRow}>
+          <View>
+            {logo ? <Image style={styles.logo} src={logo} /> : <Text style={{ fontSize: 18, fontFamily: 'Helvetica-Bold', color: GREEN }}>Flexxo®</Text>}
+            <Text style={styles.brandText}>Flexxo® — Your 1stop Office Partner</Text>
+          </View>
+          <Text style={styles.docTitle}>PURCHASE{'\n'}ORDER</Text>
+        </View>
+        <View style={styles.rule} />
+
+        <View style={styles.metaRow}>
+          <View style={styles.metaCol}>
+            <Text style={styles.metaLabel}>TO (SUPPLIER)</Text>
+            <Text style={styles.metaValue}>{data.supplierName}</Text>
+            <Text style={styles.metaLabel}>DELIVER TO</Text>
+            <Text style={styles.metaValue}>{data.deliveryLocation ?? 'Flexxo Warehouse, Shah Alam'}</Text>
+          </View>
+          <View style={styles.metaCol}>
+            <Text style={styles.metaLabel}>PO NUMBER</Text>
+            <Text style={styles.metaValue}>{data.poNumber}</Text>
+            <Text style={styles.metaLabel}>TENDER REF</Text>
+            <Text style={styles.metaValue}>{data.tenderRef}</Text>
+            <Text style={styles.metaLabel}>PRICE VALIDITY</Text>
+            <Text style={styles.metaValue}>{fmt(data.priceValidityDate)}</Text>
+            <Text style={styles.metaLabel}>REQUIRED BY</Text>
+            <Text style={styles.metaValue}>{fmt(data.deliveryDate)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.th}>
+          <Text style={styles.cNo}>No</Text>
+          <Text style={styles.cItem}>Item</Text>
+          <Text style={styles.cUnit}>Unit</Text>
+          <Text style={styles.cQty}>Qty</Text>
+          <Text style={styles.cPrice}>Unit Price</Text>
+          <Text style={styles.cAmt}>Amount</Text>
+        </View>
+        {data.items.map((it, i) => (
+          <View style={styles.tr} key={i} wrap={false}>
+            <Text style={styles.cNo}>{i + 1}</Text>
+            <Text style={styles.cItem}>{it.item}</Text>
+            <Text style={styles.cUnit}>{it.unit ?? ''}</Text>
+            <Text style={styles.cQty}>{it.qty}</Text>
+            <Text style={styles.cPrice}>{it.unitPrice.toFixed(2)}</Text>
+            <Text style={styles.cAmt}>{(it.qty * it.unitPrice).toFixed(2)}</Text>
+          </View>
+        ))}
+        <View style={[styles.tr, { borderBottomWidth: 0 }]}>
+          <Text style={styles.cNo}> </Text><Text style={styles.cItem}> </Text><Text style={styles.cUnit}> </Text>
+          <Text style={styles.cQty}> </Text>
+          <Text style={[styles.cPrice, { fontFamily: 'Helvetica-Bold' }]}>Total</Text>
+          <Text style={[styles.cAmt, { fontFamily: 'Helvetica-Bold' }]}>RM {total.toFixed(2)}</Text>
+        </View>
+
+        <Text style={styles.note}>
+          Prices are fixed per the awarded tender and valid through the price-validity date above. Please acknowledge this PO
+          with your reference number and confirm the delivery date.
+        </Text>
+        <Text style={styles.footer} fixed>
+          Flexxo (KL) Sdn Bhd · Lot 2772F, Jalan Industri 12, Kampung Baru Sungai Buloh, 47000 Shah Alam, Selangor · Generated {fmt(new Date())}
+        </Text>
+      </Page>
+    </Document>
+  )
+}
+
+export async function renderPoPdf(data: PoPdfData): Promise<Buffer> {
+  return renderToBuffer(<PoDocument data={data} />)
+}

@@ -59,6 +59,9 @@ export default async function TendersPage() {
   const activeCount     = tenders.filter(t => t.status === 'active').length
   const awaitingGate1   = tenders.filter(t => t.stage === 'creation' && t.gate1ApprovalId).length
   const totalEstValue   = tenders.reduce((s, t) => s + Number(t.estValue ?? 0), 0)
+  const in3 = Date.now() + 3 * 86400000
+  const expiringSoon = tenders.filter(t => t.status === 'active' && ['creation', 'rfq'].includes(t.stage) && t.submissionExpiry && t.submissionExpiry.getTime() <= in3 && t.submissionExpiry.getTime() >= Date.now()).length
+  const stageCounts = ['rfq', 'evaluation', 'client_po', 'supplier_po', 'receiving'].map(s => ({ s, c: tenders.filter(t => t.stage === s && t.status === 'active').length })).filter(x => x.c > 0)
 
   return (
     <div>
@@ -93,6 +96,12 @@ export default async function TendersPage() {
               <p className="text-xs text-yellow-600 mt-0.5">Awaiting Gate 1</p>
             </div>
           )}
+          {expiringSoon > 0 && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 text-center min-w-[110px]">
+              <p className="text-2xl font-bold text-orange-700">{expiringSoon}</p>
+              <p className="text-xs text-orange-600 mt-0.5">Closing ≤ 3 days</p>
+            </div>
+          )}
           <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 text-center min-w-[140px]">
             <p className="text-2xl font-bold text-gray-900">
               RM {totalEstValue.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
@@ -100,6 +109,17 @@ export default async function TendersPage() {
             <p className="text-xs text-gray-400 mt-0.5">Est. pipeline value</p>
           </div>
         </div>
+
+        {/* Active stage breakdown */}
+        {stageCounts.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {stageCounts.map(({ s, c }) => (
+              <span key={s} className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full px-3 py-1 text-gray-600">
+                {STAGE_LABELS[s as TenderStage]} <span className="font-semibold text-gray-900">{c}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Table */}
         {tenders.length === 0 ? (

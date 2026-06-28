@@ -75,7 +75,10 @@ export default function TenderEvalPanel({
   }
 
   function setAward(itemId: string, patch: Partial<{ supplierId: string; price: string; reason: string }>) {
-    setAwards(prev => ({ ...prev, [itemId]: { supplierId: '', price: '', reason: '', ...prev[itemId], ...patch } }))
+    setAwards(prev => {
+      const cur = prev[itemId] ?? { supplierId: '', price: '', reason: '' }
+      return { ...prev, [itemId]: { ...cur, ...patch } }
+    })
   }
 
   async function lockPrices() {

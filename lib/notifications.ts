@@ -195,6 +195,49 @@ export async function getNotificationsForUser(
     }
   }
 
+  // ── 5c. Tender submission expiry (creator) ─────────────────────────────────
+  {
+    const in3Days = new Date(Date.now() + 3 * 86400000)
+    const expiring = await prisma.tender.findMany({
+      where: {
+        createdById: userId,
+        stage: { in: ['creation', 'rfq'] },
+        status: 'active',
+        submissionExpiry: { gte: todayStart, lte: in3Days },
+      },
+      orderBy: { submissionExpiry: 'asc' },
+      take: 10,
+    })
+    for (const t of expiring) {
+      const days = Math.ceil(((t.submissionExpiry?.getTime() ?? 0) - Date.now()) / 86400000)
+      items.push({
+        type: 'overdue_followup',
+        title: `Tender closing soon: ${t.refNo}`,
+        body: `${t.name} — submission in ${days <= 0 ? 'today' : `${days} day${days !== 1 ? 's' : ''}`}`,
+        url: `/tenders/${t.id}`,
+        createdAt: t.submissionExpiry ?? t.createdAt,
+      })
+    }
+  }
+
+  // ── 5d. Overdue client PO (Purchaser / gate keepers) ───────────────────────
+  if (role === 'Purchaser' || role === 'Manager' || role === 'Director' || role === 'SuperAdmin' || role === 'Admin') {
+    const overduePo = await prisma.tender.findMany({
+      where: { stage: 'client_po', status: 'active', expectedClientPoDate: { lt: todayStart } },
+      orderBy: { expectedClientPoDate: 'asc' },
+      take: 10,
+    })
+    for (const t of overduePo) {
+      items.push({
+        type: 'overdue_followup',
+        title: `Client PO overdue: ${t.refNo}`,
+        body: `${t.name} — expected client PO date has passed`,
+        url: `/tenders/${t.id}`,
+        createdAt: t.expectedClientPoDate ?? t.createdAt,
+      })
+    }
+  }
+
   // ── 6. Pending contact edit requests (Admin / Manager only) ─────────────
   if (isPrivileged) {
     const pendingEdits = await prisma.contactEditRequest.findMany({
