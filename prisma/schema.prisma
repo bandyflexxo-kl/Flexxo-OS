@@ -386,6 +386,17 @@ model Product {
   // Times this item appeared in confirmed QNE Sales Invoices (synced by syncQneInvoiceFreq.ts).
   // Used as popularity signal in Smart Order matching. More reliable than quotation count.
   qneInvoiceFreq       Int       @default(0) @map("qne_invoice_freq")
+  // Push state for stock codes CREATED in the CRM and written to QNE (Part A).
+  // synced     = exists in QNE (default — all imported products)
+  // local_only = saved in CRM, not yet sent to QNE
+  // pending    = save succeeded, QNE push queued / not yet confirmed
+  // failed     = QNE rejected the push (reason in qnePushError)
+  qnePushStatus        String    @default("synced") @map("qne_push_status")
+  qnePushError         String?   @db.Text @map("qne_push_error")
+  qnePushedAt          DateTime? @map("qne_pushed_at")
+  // Frozen NewStock payload for a CRM-created product awaiting/retrying its QNE
+  // push — lets the "Push to QNE" retry button re-send without re-entering the form.
+  qnePushPayload       Json?     @map("qne_push_payload")
   createdAt            DateTime  @default(now()) @map("created_at")
   createdById          String    @map("created_by")
 
@@ -1154,6 +1165,30 @@ model QnePendingAction {
 
   @@index([status, createdAt])
   @@map("qne_pending_actions")
+}
+
+// Records each CRM document that has been (or is being) pushed to QNE as part of
+// the QT→SO→DO→Invoice chain. Stores the QNE doc id + code, and a per-line
+// detail-id map (lineMap: { crmItemId: qneDetailId }) that the NEXT document in
+// the chain reads to populate its `transferFrom` links. One row per (docType, crmId).
+model QneDocLink {
+  id         String    @id @default(uuid())
+  docType    String    @map("doc_type")    // quotation | sales_order | delivery_order | invoice
+  crmId      String    @map("crm_id")       // CRM quotation.id (quotation) or order.id (SO/DO/invoice)
+  branchCode String    @default("KL") @map("branch_code")
+  qneId      String?   @map("qne_id")       // QNE document UUID (for QuotationToInvoice + idempotency)
+  qneCode    String?   @map("qne_code")     // QNE document code, e.g. "QT KL2606/0079"
+  status     String    @default("pending")  // pending | synced | failed
+  error      String?   @db.Text
+  lineMap    Json?     @map("line_map")     // { crmItemId: qneDetailId } → downstream transferFrom
+  pushedAt   DateTime? @map("pushed_at")
+  pushedById String?   @map("pushed_by")    // plain ref (audit_log trigger captures the real audit)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@unique([docType, crmId])
+  @@index([crmId])
+  @@map("qne_doc_links")
 }
 
 // ============================================================

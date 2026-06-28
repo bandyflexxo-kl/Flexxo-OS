@@ -6,6 +6,7 @@ import { assertCompanyAccess } from '@/lib/authorization'
 import Topbar from '@/components/layout/Topbar'
 import QuotationBuilder from '@/components/quotations/QuotationBuilder'
 import type { QuotationBuilderProps } from '@/components/quotations/QuotationBuilder'
+import QnePushPanel from '@/components/qne/QnePushPanel'
 
 export default async function QuotationDetailPage({
   params,
@@ -104,6 +105,11 @@ export default async function QuotationDetailPage({
           ← All Quotations
         </Link>
         <QuotationBuilder initial={initial} />
+        {['Admin', 'Director'].includes(session.role) && (
+          <div className="mt-6">
+            <QnePushPanel mode="quotation" id={quotation.id} />
+          </div>
+        )}
       </div>
     </div>
   )
