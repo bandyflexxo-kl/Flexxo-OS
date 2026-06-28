@@ -123,8 +123,10 @@ a misleading "MYR 0" *before* the tank is built:
   `synced` (+store QNE id) or `failed` (keep, with reason). Product is never lost if QNE rejects. Add a
   "Push pending to QNE" retry button.
 - **UI:** guided "New Product" modal on `/admin/products`.
-- *Note:* the write-brief marked this "deferred (KL uses QNE desktop)", but it is now prioritized for go-live —
-  the SOP-aligned design is ready to build.
+- *Note:* **prioritized for go-live** — the write-brief + memory are now updated to match (no longer "deferred").
+  SOP-aligned design is ready to build. **Branch-aware:** `createQneStockCode(branchCode, payload)` resolves to KL
+  creds for now (multi-branch-ready). **QNE account:** test on the `SALES 6` account — if it lacks stock-write
+  permission the product stays `pending`/`failed` and the retry button re-pushes once a proper admin account is set.
 
 ---
 

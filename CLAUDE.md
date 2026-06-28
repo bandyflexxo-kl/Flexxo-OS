@@ -100,9 +100,9 @@ JAVENN, BANDY, JUSTINE, TIMOTHY, LAI, VOON, CHAN KUN SHEN, ANGEL, HU YUN CHIN, L
 - 36 have no salesPerson (unassigned)
 
 ## QNE read-only rule
-We NEVER write to QNE except these approved endpoints (with double human approval):
+We NEVER write to QNE except these approved endpoints (each gated by human approval — see Core Rule 13):
 - POST /api/Quotations (Phase 2)
-- POST /api/SalesOrders (Phase 4)
+- POST /api/SalesOrders (Phase 4 — single human approval as of 28 Jun 2026; was double)
 - POST /api/SalesTransfer/QuotationToInvoice (Phase 4)
 
 ## Key QNE endpoints
@@ -135,7 +135,7 @@ We NEVER write to QNE except these approved endpoints (with double human approva
 - GET /api/PurchaseInvoices — purchase history from suppliers
 - GET /api/GLReports/PnL — P&L for owner dashboard (Phase 5)
 - POST /api/Quotations — create quotation in QNE (Phase 2, human approval required)
-- POST /api/SalesOrders — create SO in QNE (Phase 4, double approval required)
+- POST /api/SalesOrders — create SO in QNE (Phase 4, single human approval — see rule 13; relaxed from double 28 Jun 2026)
 - POST /api/SalesTransfer/QuotationToInvoice — convert QT to invoice (Phase 4)
 
 ---
@@ -402,7 +402,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 10. Never use `any` in TypeScript
 11. Never skip Zod validation on API routes
 12. Never hardcode credentials — always use .env.local
-13. Never write to QNE SalesOrders without double human approval
+13. QNE SalesOrder push requires SINGLE human approval (one click) — relaxed from double approval on 28 Jun 2026 for real-flow testing. Re-tighten to double approval, or add rules-based auto-approve, before production scale.
 14. Quotation items freeze unit_cost at draft time — never auto-recalculate after approval
 15. DO NOT PUSH to Vercel without user cross-check (unless user explicitly asks to deploy)
 
@@ -443,7 +443,7 @@ Run all scripts with: `npx tsx scripts/[scriptname].ts`
 - Do not auto-update quotation costs when supplier prices change
 - Do not let AI write is_current:true on supplier_price_versions
 - Do not send quotations without human clicking send
-- Do not create Sales Orders in QNE without double human approval
+- Do not create Sales Orders in QNE without human approval (single approval as of 28 Jun 2026 — see rule 13; was double)
 - Do not auto-sync QNE prices — admin must trigger manually (VPN required)
 
 ---

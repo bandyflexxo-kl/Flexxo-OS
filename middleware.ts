@@ -106,17 +106,21 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL(loginUrl, req.url))
   }
 
-  // B2B Clients must NEVER access CRM pages
-  // Guard: only trigger if they are NOT already on a shop path (prevents loop)
-  if (session?.role === 'B2B Client' && !pathname.startsWith('/shop')) {
+  // B2B Clients must NEVER hold a crm_session / access CMS pages.
+  // Exclude login pages so the redirect target is always reachable — otherwise a
+  // stale B2B crm_session on the CMS domain would bounce /login too, trapping the
+  // user (they could never reach the CMS login to sign in as staff).
+  if (session?.role === 'B2B Client' && !pathname.startsWith('/shop') && !isLoginPage) {
     if (!SINGLE_DOMAIN && isCrmDomain) {
-      // Redirect to shop subdomain
-      const url    = new URL(req.url)
-      url.hostname = SHOP_HOST
-      url.pathname = '/shop/products'
-      return NextResponse.redirect(url)
+      // A B2B Client should never have a crm_session on the CMS subdomain — it is
+      // invalid by definition (e.g. a B2B account was entered on the CMS login).
+      // Clear it and send them to the CMS login instead of bouncing to the shop,
+      // so the stale cookie self-heals and they aren't trapped.
+      const resp = NextResponse.redirect(new URL('/login', req.url))
+      resp.cookies.delete(CRM_COOKIE)
+      return resp
     }
-    // Single-domain: redirect within same host
+    // Single-domain: shop + CMS share a host → bounce to shop catalogue
     return NextResponse.redirect(new URL('/shop/products', req.url))
   }
 

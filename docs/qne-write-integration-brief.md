@@ -1,6 +1,6 @@
 ﻿# QNE Write Integration — Implementation Brief
 
-> **Status:** Spec only. Researched 27 Jun 2026, not implemented.
+> **Status:** Spec ready. Researched 27 Jun 2026; aligned 28 Jun 2026 with `docs/qne-data-architecture-brief.md` (the broader DB-first + sync companion). Not yet implemented.
 > **Scope:** Add the **write** side to QNE — (A) Stock Code Creation, (B) QT → SO → DO → Invoice chain.
 > **Companion file:** [`docs/stock-code-creation-sop.pdf`](stock-code-creation-sop.pdf) — the official Stock Code Creation SOP. Its rules are already transcribed into Part A below, so this brief is self-contained; the PDF is the canonical reference + shows the QNE form screenshot.
 > **Before coding:** read `CLAUDE.md` and obey its Core Rules. Radmin VPN (network `Flexxokl`) must be active to reach QNE at `http://26.255.19.220:82/api`.
@@ -57,6 +57,7 @@ export async function qnePost<T>(path: string, body: unknown, token: string): Pr
 - Brand becomes a managed master: dropdown from `GET /api/StockClasses`; "add new" → `POST /api/StockClasses` (`{ classCode, description }`).
 - Categories/groups: `GET/POST /api/StockCategories` (`{ categoryCode, description }`), `GET/POST /api/StockGroups` (`{ groupCode, description }`).
 - Same category/group drives **B2C + B2B website display** → must map 1:1 to the shop category tree.
+- **Admin MANUALLY selects all three on every product** (Category → Sub-category → Brand, from dropdowns) — no auto-classification. **Brand is mandatory: block submit if empty** (it drives report-by-brand listing).
 
 ### A2. Guided stock-NAME builder (assemble, don't free-type)
 
@@ -67,8 +68,8 @@ e.g.  APLUS / A4-80 / Copier Paper / Premium / A4 210x297mm / White / 5rim/ctn
 ```
 Size hint: `A4/A3/A1` or `L x W x H mm`. Packing hint: `12pcs/pkt, 12pkt/ctn`.
 
-### A3. Stock code rules
-Short, unique, **no special symbols**, recommended to follow the supplier's stock code. `autoCode: 0` (manual).
+### A3. Stock code rules — follow the **real QNE house format**
+`autoCode: 0` (manual — we assign the code; it lands in QNE beside ~7,500 existing codes, so it must match house style). Sampled from the live QNE DB, the real format is: **UPPERCASE**, brand- or product-type-led (often brand+model concatenated), avg ~13 chars (range 3–38). ~Half contain **spaces**; **dashes, dots, slashes, `()`, `&`** also appear because codes **follow the supplier's code**. So: uppercase, unique, follow the supplier code, allow `- / . ( ) &` + spaces; avoid only genuinely confusing junk. Real examples: `HP CE505A`, `APLUSLF65`, `STABILOPEN3480.7BL`, `FD-CFC-A1(4D)`, `M&GAPM21372BL`.
 
 ### A4. Prices
 | QNE field | SOP meaning | Required |
@@ -98,7 +99,7 @@ Short, unique, **no special symbols**, recommended to follow the supplier's stoc
 3. Show matches → human confirms it's new. **Never auto-merge** (CLAUDE.md rule 5).
 
 ### A7. Validation (Zod + form) — encodes the SOP "DON'Ts"
-- Reject special symbols in stock code; enforce short length.
+- Stock code: auto-**UPPERCASE**; allow `A–Z 0–9`, space, and `- / . ( ) &`; enforce **uniqueness**; *warn* (don't hard-block) if unusually long. Do **not** blanket-reject symbols — real + supplier codes use them.
 - Reject names containing `test`/`testing`.
 - Require: category, group, class (brand), base UOM, sales price, purchase price.
 - Exactly one category per item.
@@ -107,7 +108,7 @@ Short, unique, **no special symbols**, recommended to follow the supplier's stoc
 ### A8. Persistence, status, branch-awareness
 - DB: `products.qnePushStatus` enum → `synced | pending | failed | local_only`.
 - `lib/qneProductCreate.ts` → `createQneStockCode(branchCode, payload)`.
-- API: `app/api/admin/products/route.ts` (POST) → Zod-validate → **save to `products` first (`pending`)** → push to QNE → on success `synced` + store QNE id; on failure keep `pending` + log reason. Product never lost if QNE rejects.
+- API: `app/api/admin/products/route.ts` (POST) → Zod-validate → **save to `products` first (`pending`)** → push to QNE → on success `synced` + store QNE id; on failure set `failed` + log reason. Retry button re-pushes `pending` **and** `failed`. Product never lost if QNE rejects.
 - UI: guided "New Product" modal on `/admin/products` + "Push pending to QNE" retry button.
 - "Further Description" image → link to existing Supabase product-photo pipeline; spec text → `remark1..5`.
 
@@ -118,9 +119,9 @@ Short, unique, **no special symbols**, recommended to follow the supplier's stoc
   "stockCode": "A4-80",
   "stockName": "APLUS / A4-80 / Copier Paper / Premium / A4 210x297mm / White / 5rim/ctn",
   "baseUOM": "RIM",
-  "category": "OS",        // Main
-  "group": "os--paper",    // Sub-category
-  "class": "APLUS",        // Brand  (MUST)
+  "category": "ST",        // Main — REAL QNE category code (GET /api/StockCategories), mapped from shop parent
+  "group": "PAPER",        // Sub  — REAL QNE group code (GET /api/StockGroups); NOT the shop slug e.g. "os--paper"
+  "class": "APLUS",        // Brand (MUST) — REAL QNE class code (GET /api/StockClasses)
   "listPrice": 12.50,      // selling (MUST)
   "purchasePrice": 8.00,   // standard purchase (MUST)
   "minPrice": 10.00,       // lowest selling
@@ -130,7 +131,7 @@ Short, unique, **no special symbols**, recommended to follow the supplier's stoc
 }
 ```
 
-> **Decision:** building this in the CMS is **deferred** until KK/Kuching onboarding (KL admin uses QNE desktop for now). Design is SOP-ready. Note: a guided CMS form makes the SOP structurally enforceable — value applies to KL today if priorities change.
+> **Decision (updated 28 Jun 2026):** **prioritized for go-live** — build it now (previously deferred to KK/Kuching onboarding). Stock codes are foundational — they must exist before you can quote/order them — and the guided CMS form makes the SOP structurally enforceable for KL today. Build order: `docs/qne-data-architecture-brief.md` §9. QNE account: test on `SALES 6`; the `pending`/`failed` + retry model absorbs any write-permission gap until a proper admin account is set.
 
 ---
 
@@ -195,7 +196,7 @@ SHORTCUT (simple deals, skip SO/DO):
 | QNE write | CMS trigger |
 |-----------|-------------|
 | `POST /api/Quotations` | CMS quotation `approved` → user clicks **Send** |
-| `POST /api/SalesOrders` | Order `approved` with **DOUBLE human approval** (hard rule) |
+| `POST /api/SalesOrders` | Order `approved` + **single human approval** (Core Rule 13 — relaxed from double 28 Jun 2026; re-tighten before production scale) |
 | `POST /api/DeliveryOrders` | Order `packed`/ready (records stock-out) |
 | `POST /api/SalesInvoices` / `QuotationToInvoice` | Order `delivered` / ready to bill |
 

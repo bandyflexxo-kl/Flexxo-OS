@@ -60,6 +60,14 @@ export async function loginAction(state: LoginState, formData: FormData): Promis
     .filter(r => r.revokedAt === null)
     .map(r => r.role.name)
   const role = ROLE_PRIORITY.find(r => activeRoleNames.includes(r)) ?? 'Viewer'
+
+  // B2B Client accounts belong to the shop portal, not the CMS. Refuse them here
+  // so they never receive a crm_session — otherwise the middleware B2B guard
+  // bounces every CMS path (including /login) to the shop and traps them.
+  if (role === 'B2B Client') {
+    return { message: 'This is a B2B client account. Please sign in at shop.flexxo.com.my.' }
+  }
+
   await createSession({
     userId: user.id,
     name: user.name,
