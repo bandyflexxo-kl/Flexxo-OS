@@ -577,21 +577,36 @@ export default function ProductsClientPage({
   }
 
   // ── Filtered product grid ─────────────────────────────────────────
+  // Token-based RANKED search: a multi-word query (typed, or from photo/voice)
+  // surfaces the closest products as recommendations instead of dead-ending on a
+  // strict full-phrase match. Exact phrase ranks top, then by # tokens matched.
   const filtered = useMemo(() => {
     if (!allProducts) return []
     const q = searchQuery.trim().toLowerCase()
-    // Parent category active → match the parent itself + all its subcategories
     const catSet = activeCategory
       ? new Set(idsUnderParent.get(activeCategory) ?? [activeCategory])
       : null
-    return allProducts.filter(p => {
-      const matchCat = !catSet || catSet.has(p.category.id)
-      const matchQ   = !q ||
-        p.name.toLowerCase().includes(q) ||
-        (p.brand ?? '').toLowerCase().includes(q) ||
-        (p.qneItemCode ?? '').toLowerCase().includes(q)
-      return matchCat && matchQ
-    })
+    const inCat = (cid: string) => !catSet || catSet.has(cid)
+
+    if (!q) return allProducts.filter(p => inCat(p.category.id))
+
+    const tokens = [...new Set(q.split(/\s+/).filter(t => t.length >= 2))]
+    const scored: { p: ApiProduct; score: number }[] = []
+    for (const p of allProducts) {
+      if (!inCat(p.category.id)) continue
+      const hay = `${p.name} ${p.brand ?? ''} ${p.qneItemCode ?? ''}`.toLowerCase()
+      let score = 0
+      if (hay.includes(q)) score += 1000                       // full-phrase → top
+      let hits = 0
+      for (const t of tokens) if (hay.includes(t)) hits++
+      if (hits === 0 && score === 0) continue                  // no signal → drop
+      score += hits * 10
+      if (hits === tokens.length) score += 50                  // matched every word
+      if (p.name.toLowerCase().startsWith(tokens[0] ?? '')) score += 5
+      scored.push({ p, score })
+    }
+    scored.sort((a, b) => b.score - a.score)
+    return scored.map(s => s.p)
   }, [allProducts, activeCategory, searchQuery, idsUnderParent])
 
   const countByCategory = useMemo(() => {
@@ -1091,7 +1106,7 @@ export default function ProductsClientPage({
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
             </svg>
-            <span>AI identified: <strong>{photoDetectedQuery}</strong></span>
+            <span>Detected <strong>{photoDetectedQuery}</strong> — showing closest matches below</span>
             <button
               type="button"
               onClick={() => setPhotoDetectedQuery(null)}
@@ -1109,7 +1124,7 @@ export default function ProductsClientPage({
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
             </svg>
-            <span>Barcode <strong>{barcodeNotFound}</strong> not found in catalogue. Try searching by product name.</span>
+            <span>Barcode <strong>{barcodeNotFound}</strong> isn&apos;t linked to a product yet. Try the 📷 photo search, or search by product name.</span>
             <button
               type="button"
               onClick={() => setBarcodeNotFound(null)}
