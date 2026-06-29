@@ -6,6 +6,7 @@ import { newStockSchema } from '@/lib/qneProductValidation'
 import { checkStockDuplicates } from '@/lib/qneProductValidation'
 import type { NewStockInput } from '@/lib/qneProductCreate'
 import { QneUnavailableError } from '@/lib/qneClient'
+import { nextStockCode, assembleStockName } from '@/lib/stockCodeGen'
 
 export async function GET() {
   const session = await verifySession().catch(() => null)
@@ -86,10 +87,23 @@ export async function POST(request: Request) {
   if (!shopCategory)
     return Response.json({ error: { shopCategoryId: ['Shop sub-category not found'] } }, { status: 400 })
 
+  // SOP: the stock code is SYSTEM-GENERATED (brand-led, [BRAND]-####), never typed.
+  // The product name is then assembled here in SOP order.
+  const stockCode = await nextStockCode(d.brand)
+  const stockName = assembleStockName({
+    brand:       d.brand,
+    code:        stockCode,
+    description: d.nameDescription,
+    identity:    d.nameIdentity,
+    size:        d.nameSize,
+    color:       d.nameColor,
+    packing:     d.namePacking,
+  })
+
   // Duplicate gate (SOP §A6) — hard-block an exact CRM code collision; for an
   // exact QNE-code match require explicit human acknowledgement.
   try {
-    const dup = await checkStockDuplicates(d.stockCode, d.stockName)
+    const dup = await checkStockDuplicates(stockCode, stockName)
     if (dup.codeInCrm)
       return Response.json({ error: { stockCode: ['This code already exists in the CRM catalogue'] } }, { status: 409 })
     if (dup.codeInQne && !acknowledgeDuplicate)
@@ -102,8 +116,8 @@ export async function POST(request: Request) {
 
   // Freeze the exact payload the QNE push will send (lets the retry button re-send).
   const pushPayload: NewStockInput = {
-    stockCode:     d.stockCode,
-    stockName:     d.stockName,
+    stockCode,
+    stockName,
     baseUOM:       d.baseUOM,
     category:      d.category,
     group:         d.group,
@@ -122,10 +136,10 @@ export async function POST(request: Request) {
 
   const product = await prisma.product.create({
     data: {
-      name:                 d.stockName,
+      name:                 stockName,
       brand:                d.brand,
       unit:                 d.baseUOM,
-      qneItemCode:          d.stockCode,
+      qneItemCode:          stockCode,
       barcode:              d.barcode ?? null,
       catalogDescription:   d.description ?? null,
       categoryId:           d.shopCategoryId,

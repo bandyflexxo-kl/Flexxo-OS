@@ -33,7 +33,7 @@ export default function NewProductModal({
   const [loadingMasters,setLoadingMasters]= useState(true)
 
   // ── form state ─────────────────────────────────────────────────
-  const [stockCode,  setStockCode]  = useState('')
+  const [autoCode,   setAutoCode]   = useState('')   // SYSTEM-generated (SOP) — read-only
   const [brand,      setBrand]      = useState('')   // QNE classCode
   const [category,   setCategory]   = useState('')   // QNE categoryCode
   const [group,      setGroup]      = useState('')   // QNE groupCode
@@ -64,16 +64,28 @@ export default function NewProductModal({
   const [formError,  setFormError]  = useState<string | null>(null)
   const [saving,     setSaving]     = useState(false)
   const [savedId,    setSavedId]    = useState<string | null>(null)
+  const [savedCode,  setSavedCode]  = useState<string>('')
   const [pushing,    setPushing]    = useState(false)
   const [pushMsg,    setPushMsg]    = useState<string | null>(null)
   const [pushDone,   setPushDone]   = useState(false)
 
   // assembled QNE stock name (SOP order)
   const stockName = useMemo(() =>
-    [brand, stockCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking]
+    [brand, autoCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking]
       .map(s => s.trim()).filter(Boolean).join(' / '),
-    [brand, stockCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking],
+    [brand, autoCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking],
   )
+
+  // SOP: the stock code is system-generated per brand — fetch a live preview.
+  useEffect(() => {
+    if (!brand) { setAutoCode(''); return }
+    let alive = true
+    fetch(`/api/admin/products/next-code?brand=${encodeURIComponent(brand)}`)
+      .then(r => r.json())
+      .then(b => { if (alive) setAutoCode(b.code ?? '') })
+      .catch(() => { /* preview only */ })
+    return () => { alive = false }
+  }, [brand])
 
   useEffect(() => {
     let alive = true
@@ -93,12 +105,12 @@ export default function NewProductModal({
   const dupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (savedId) return
-    if (stockCode.trim().length < 1 && stockName.trim().length < 3) { setDup(null); return }
+    if (autoCode.trim().length < 1 && stockName.trim().length < 3) { setDup(null); return }
     if (dupTimer.current) clearTimeout(dupTimer.current)
     dupTimer.current = setTimeout(async () => {
       setCheckingDup(true)
       try {
-        const qs = new URLSearchParams({ code: stockCode.trim(), name: stockName.trim() })
+        const qs = new URLSearchParams({ code: autoCode.trim(), name: stockName.trim() })
         const r = await fetch(`/api/admin/products/check-duplicate?${qs}`)
         const body = await r.json()
         if (r.ok) setDup(body as DuplicateReport)
@@ -106,7 +118,7 @@ export default function NewProductModal({
       finally { setCheckingDup(false) }
     }, 500)
     return () => { if (dupTimer.current) clearTimeout(dupTimer.current) }
-  }, [stockCode, stockName, savedId])
+  }, [autoCode, stockName, savedId])
 
   const addMaster = useCallback(async (type: 'brand' | 'category' | 'group') => {
     const code = window.prompt(`New QNE ${type} code (this WRITES to QNE):`)?.trim()
@@ -142,8 +154,11 @@ export default function NewProductModal({
   async function handleSave(acknowledgeDuplicate = false) {
     setErrors({}); setFormError(null); setSaving(true)
     const payload = {
-      stockCode: stockCode.trim(),
-      stockName,
+      nameDescription: nbDesc.trim(),
+      ...(nbIdentity.trim() ? { nameIdentity: nbIdentity.trim() } : {}),
+      ...(nbSize.trim()     ? { nameSize:     nbSize.trim() } : {}),
+      ...(nbColor.trim()    ? { nameColor:    nbColor.trim() } : {}),
+      ...(nbPacking.trim()  ? { namePacking:  nbPacking.trim() } : {}),
       baseUOM: baseUOM.trim(),
       category, group, brand,
       shopCategoryId: shopCatId,
@@ -169,7 +184,7 @@ export default function NewProductModal({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       const body = await r.json()
-      if (r.status === 201) { setSavedId(body.product.id); onCreated(); return }
+      if (r.status === 201) { setSavedId(body.product.id); setSavedCode(body.product.qneItemCode ?? ''); onCreated(); return }
       if (r.status === 409 && body.error === 'CODE_EXISTS_IN_QNE') {
         setDup(body.duplicate as DuplicateReport)
         setFormError('This code already exists in QNE. Review the match below, then confirm it is genuinely new to continue.')
@@ -219,7 +234,7 @@ export default function NewProductModal({
             /* ── post-save: push step ── */
             <div className="space-y-4">
               <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
-                ✓ Saved to CRM as <strong>{stockCode}</strong> (status: local only). It is not in QNE yet.
+                ✓ Saved to CRM as <strong>{savedCode}</strong> (status: local only). It is not in QNE yet.
               </div>
               <p className="text-sm text-gray-600">
                 The next step writes this item to QNE’s accounting system. This is the approval gate —
@@ -245,12 +260,12 @@ export default function NewProductModal({
           ) : (
             /* ── creation form ── */
             <>
-              {/* Stock code + dup check */}
+              {/* Stock code — SYSTEM-GENERATED (read-only, SOP) */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stock code <span className="text-red-500">*</span></label>
-                <input value={stockCode} onChange={e => setStockCode(e.target.value.toUpperCase())} placeholder="e.g. A4-80"
-                  className={field} />
-                {err('stockCode') && <p className="text-xs text-red-600 mt-1">{err('stockCode')}</p>}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Stock code <span className="text-xs font-normal text-gray-400">· auto-generated (cannot be edited)</span></label>
+                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-mono text-gray-900">
+                  {autoCode || <span className="text-gray-400 font-sans">— select a brand to generate the code —</span>}
+                </div>
                 {checkingDup && <p className="text-xs text-gray-400 mt-1">Checking for duplicates…</p>}
                 {dup && (dup.codeInCrm || dup.codeInQne || dup.similarNames.length > 0) && (
                   <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 space-y-1">
@@ -272,16 +287,16 @@ export default function NewProductModal({
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Product name builder (SOP order)</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={nbDesc}     onChange={e => setNbDesc(e.target.value)}     placeholder="Description (search keyword)" className={field} />
+                  <input value={nbDesc}     onChange={e => setNbDesc(e.target.value)}     placeholder="Description * (search keyword)" className={field} />
                   <input value={nbIdentity} onChange={e => setNbIdentity(e.target.value)} placeholder="Identity (e.g. Premium)"     className={field} />
                   <input value={nbSize}     onChange={e => setNbSize(e.target.value)}     placeholder="Size (A4 / L×W×H mm)"        className={field} />
                   <input value={nbColor}    onChange={e => setNbColor(e.target.value)}    placeholder="Color"                       className={field} />
                   <input value={nbPacking}  onChange={e => setNbPacking(e.target.value)}  placeholder="Packing (5rim/ctn)"          className={`${field} col-span-2`} />
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600">
-                  Preview: <span className="font-mono text-gray-900">{stockName || '— fill brand, code & description —'}</span>
+                  Preview: <span className="font-mono text-gray-900">{stockName || '— pick a brand & type a description —'}</span>
                 </div>
-                {err('stockName') && <p className="text-xs text-red-600">{err('stockName')}</p>}
+                {err('nameDescription') && <p className="text-xs text-red-600">{err('nameDescription')}</p>}
               </div>
 
               {/* Taxonomy: brand / QNE category / QNE group */}

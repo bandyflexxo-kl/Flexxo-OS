@@ -25,19 +25,19 @@ const uomRowSchema = z.object({
 
 export const newStockSchema = z
   .object({
-    stockCode: z
+    // Stock code is SYSTEM-GENERATED (lib/stockCodeGen) — never user-entered (SOP).
+    // The product name is assembled server-side in SOP order from these parts:
+    //   Brand / [auto-code] / Description / Identity / Size / Colour / Packing
+    nameDescription: z
       .string()
       .trim()
-      .min(1, 'Stock code is required')
-      .max(30, 'Stock code is too long (max 30)')
-      .regex(/^[A-Za-z0-9._-]+$/, 'Stock code: only letters, numbers, dot, dash, underscore — no spaces or symbols')
-      .refine(NO_TEST, 'Stock code must not contain "test"'),
-    stockName: z
-      .string()
-      .trim()
-      .min(3, 'Product name is too short')
-      .max(200, 'Product name is too long (max 200)')
-      .refine(NO_TEST, 'Product name must not contain "test" / "testing"'),
+      .min(2, 'Description (search keyword) is required')
+      .max(120, 'Description is too long')
+      .refine(NO_TEST, 'Name must not contain "test" / "testing"'),
+    nameIdentity: z.string().trim().max(60).optional(),
+    nameSize:     z.string().trim().max(60).optional(),
+    nameColor:    z.string().trim().max(40).optional(),
+    namePacking:  z.string().trim().max(60).optional(),
     baseUOM:        z.string().trim().min(1, 'Base UOM is required').max(20),
     category:       z.string().trim().min(1, 'QNE category is required'),  // QNE categoryCode
     group:          z.string().trim().min(1, 'QNE group is required'),     // QNE groupCode
