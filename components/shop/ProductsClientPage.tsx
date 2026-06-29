@@ -87,6 +87,18 @@ async function loadAllProducts(cacheKey: string, apiUrl: string): Promise<ApiPro
 const RECENT_KEY = 'flexxo_recent_searches'
 const MAX_RECENT = 6
 
+// Connector/filler words stripped from a search query before ranking. Colours and
+// product nouns are deliberately NOT here — IDF weighting already discounts a word
+// by how common it is, so "brown" still works when a user types it on its own.
+const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'of', 'in', 'to', 'by', 'on', 'or', 'a', 'an'])
+
+// A matched product must clear this fraction of the query's total IDF mass (every
+// query word, including distinctive ones we don't stock). Tuned against the live
+// catalogue: 0.3 keeps real brand+product searches ("staedtler highlighter" →
+// highlighters) while a query for something absent ("safety work boots") clears
+// nothing and honestly shows "no close match".
+const RELEVANCE_FLOOR = 0.3
+
 function getRecentSearches(): string[] {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as string[] }
   catch { return [] }
@@ -576,10 +588,26 @@ export default function ProductsClientPage({
     setBarcodeNotFound(code)
   }
 
+  // Document frequency over the whole catalogue (token → # of products containing
+  // it). Drives IDF weighting below so a rare word ("boots", "stapler") counts far
+  // more than a common one ("brown", "safety", "set"). Recomputed only when the
+  // catalogue changes.
+  const docFreq = useMemo(() => {
+    const df = new Map<string, number>()
+    if (!allProducts) return df
+    for (const p of allProducts) {
+      const seen = new Set(`${p.name} ${p.brand ?? ''}`.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+      for (const t of seen) if (t.length >= 2) df.set(t, (df.get(t) ?? 0) + 1)
+    }
+    return df
+  }, [allProducts])
+
   // ── Filtered product grid ─────────────────────────────────────────
-  // Token-based RANKED search: a multi-word query (typed, or from photo/voice)
-  // surfaces the closest products as recommendations instead of dead-ending on a
-  // strict full-phrase match. Exact phrase ranks top, then by # tokens matched.
+  // IDF-weighted RANKED search. A multi-word query (typed, or from a photo caption
+  // like "Hammer King's Safety Work Boots Brown") is scored by the RARITY of the
+  // words it matches, and a relevance floor drops products that only matched common
+  // words — so an item we don't stock returns an honest "no close match" instead of
+  // every brown chair/marker. An exact phrase still ranks top.
   const filtered = useMemo(() => {
     if (!allProducts) return []
     const q = searchQuery.trim().toLowerCase()
@@ -590,24 +618,52 @@ export default function ProductsClientPage({
 
     if (!q) return allProducts.filter(p => inCat(p.category.id))
 
-    const tokens = [...new Set(q.split(/\s+/).filter(t => t.length >= 2))]
+    const N = allProducts.length
+    const idf = (t: string) => Math.log((N + 1) / ((docFreq.get(t) ?? 0) + 1)) + 1
+    const tokens = [...new Set(q.match(/[a-z0-9]+/g) ?? [])]
+      .filter(t => t.length >= 2 && !STOPWORDS.has(t))
+    if (tokens.length === 0) return allProducts.filter(p => inCat(p.category.id))
+
+    // A token is an "anchor" — a real catalogue word, not an incidentally-rare one
+    // ("work" appears in just 2 products) — when it occurs in at least this many
+    // products (scaled to catalogue size). A match must land on an anchor to qualify.
+    const anchorDf = Math.max(6, N * 0.0015)
+    const weighted = tokens.map(t => {
+      const d = docFreq.get(t) ?? 0
+      return { t, w: idf(t), known: d > 0, anchor: d >= anchorDf, re: new RegExp(`\\b${t}\\b`) }
+    })
+    // Relevance bar = a fraction of the WHOLE query's IDF mass, deliberately
+    // INCLUDING distinctive words we don't stock ("boots", "hammer"). Their absence
+    // raises the bar, so a search for something we don't carry can't squeak through
+    // on a weak modifier ("work" → printing permits) — it honestly returns no close
+    // match. A query whose product we DO stock ("safety helmet") still clears it.
+    const ideal = weighted.reduce((s, x) => s + x.w, 0)
+    const floor = RELEVANCE_FLOOR * ideal
+
     const scored: { p: ApiProduct; score: number }[] = []
     for (const p of allProducts) {
       if (!inCat(p.category.id)) continue
       const hay = `${p.name} ${p.brand ?? ''} ${p.qneItemCode ?? ''}`.toLowerCase()
-      let score = 0
-      if (hay.includes(q)) score += 1000                       // full-phrase → top
-      let hits = 0
-      for (const t of tokens) if (hay.includes(t)) hits++
-      if (hits === 0 && score === 0) continue                  // no signal → drop
-      score += hits * 10
-      if (hits === tokens.length) score += 50                  // matched every word
-      if (p.name.toLowerCase().startsWith(tokens[0] ?? '')) score += 5
+      const phrase = hay.includes(q)
+      let score = phrase ? 1000 : 0
+      let matched = 0
+      let hitAnchor = false
+      for (const x of weighted) {
+        if (!x.known) continue
+        if (x.re.test(hay))         { score += x.w; matched++; if (x.anchor) hitAnchor = true }  // whole word → full
+        else if (hay.includes(x.t)) { score += x.w * 0.35; matched++ }                            // substring ("work" in "workstation") → partial
+      }
+      if (!phrase) {
+        if (matched === 0) continue                    // no signal at all
+        if (!hitAnchor && matched < 2) continue        // only an incidentally-rare word matched ("work" → printing permits) → skip
+        if (ideal > 0 && score < floor) continue       // below the relevance bar
+      }
+      if (matched === tokens.length) score += 1       // tiny all-words tie-breaker
       scored.push({ p, score })
     }
     scored.sort((a, b) => b.score - a.score)
     return scored.map(s => s.p)
-  }, [allProducts, activeCategory, searchQuery, idsUnderParent])
+  }, [allProducts, activeCategory, searchQuery, idsUnderParent, docFreq])
 
   const countByCategory = useMemo(() => {
     if (!allProducts) return new Map<string, number>()
@@ -1102,11 +1158,20 @@ export default function ProductsClientPage({
 
         {/* AI-detected query banner */}
         {photoDetectedQuery && (
-          <div className="flex items-center gap-2 text-xs bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-lg -mt-2">
+          <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg -mt-2 border ${
+            filtered.length === 0
+              ? 'bg-amber-50 border-amber-200 text-amber-700'
+              : 'bg-green-50 border-green-200 text-green-700'
+          }`}>
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
             </svg>
-            <span>Detected <strong>{photoDetectedQuery}</strong> — showing closest matches below</span>
+            <span>
+              Detected <strong>{photoDetectedQuery}</strong>
+              {filtered.length === 0
+                ? ' — no close match in our catalogue. Try a category or a simpler search.'
+                : ' — showing closest matches below'}
+            </span>
             <button
               type="button"
               onClick={() => setPhotoDetectedQuery(null)}
