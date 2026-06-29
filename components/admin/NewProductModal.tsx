@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { buildStockCode } from '@/lib/stockCodeGen'
 
 export type ShopCategoryOption = { id: string; name: string; parentName: string | null }
 
@@ -33,7 +34,7 @@ export default function NewProductModal({
   const [loadingMasters,setLoadingMasters]= useState(true)
 
   // ── form state ─────────────────────────────────────────────────
-  const [autoCode,   setAutoCode]   = useState('')   // SYSTEM-generated (SOP) — read-only
+  const [supplierModel, setSupplierModel] = useState('')  // admin-typed; code = [BRAND]-[model]
   const [brand,      setBrand]      = useState('')   // QNE classCode
   const [category,   setCategory]   = useState('')   // QNE categoryCode
   const [group,      setGroup]      = useState('')   // QNE groupCode
@@ -69,23 +70,18 @@ export default function NewProductModal({
   const [pushMsg,    setPushMsg]    = useState<string | null>(null)
   const [pushDone,   setPushDone]   = useState(false)
 
+  // Code = [BRAND]-[supplier model], built live (same helper the server uses).
+  const autoCode = useMemo(
+    () => (brand && supplierModel.trim() ? buildStockCode(brand, supplierModel) : ''),
+    [brand, supplierModel],
+  )
+
   // assembled QNE stock name (SOP order)
   const stockName = useMemo(() =>
     [brand, autoCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking]
       .map(s => s.trim()).filter(Boolean).join(' / '),
     [brand, autoCode, nbDesc, nbIdentity, nbSize, nbColor, nbPacking],
   )
-
-  // SOP: the stock code is system-generated per brand — fetch a live preview.
-  useEffect(() => {
-    if (!brand) { setAutoCode(''); return }
-    let alive = true
-    fetch(`/api/admin/products/next-code?brand=${encodeURIComponent(brand)}`)
-      .then(r => r.json())
-      .then(b => { if (alive) setAutoCode(b.code ?? '') })
-      .catch(() => { /* preview only */ })
-    return () => { alive = false }
-  }, [brand])
 
   useEffect(() => {
     let alive = true
@@ -154,6 +150,7 @@ export default function NewProductModal({
   async function handleSave(acknowledgeDuplicate = false) {
     setErrors({}); setFormError(null); setSaving(true)
     const payload = {
+      supplierModel: supplierModel.trim(),
       nameDescription: nbDesc.trim(),
       ...(nbIdentity.trim() ? { nameIdentity: nbIdentity.trim() } : {}),
       ...(nbSize.trim()     ? { nameSize:     nbSize.trim() } : {}),
@@ -260,11 +257,18 @@ export default function NewProductModal({
           ) : (
             /* ── creation form ── */
             <>
-              {/* Stock code — SYSTEM-GENERATED (read-only, SOP) */}
+              {/* Supplier model → builds the code [BRAND]-[model] (SOP) */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stock code <span className="text-xs font-normal text-gray-400">· auto-generated (cannot be edited)</span></label>
-                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-mono text-gray-900">
-                  {autoCode || <span className="text-gray-400 font-sans">— select a brand to generate the code —</span>}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier model code <span className="text-red-500">*</span></label>
+                <input value={supplierModel} onChange={e => setSupplierModel(e.target.value.toUpperCase())}
+                  placeholder="e.g. CE320A" className={field} />
+                {err('supplierModel') && <p className="text-xs text-red-600 mt-1">{err('supplierModel')}</p>}
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className="text-gray-500">Stock code:</span>
+                  <span className="font-mono font-semibold text-gray-900">
+                    {autoCode || <span className="text-gray-400 font-sans font-normal">— pick a brand &amp; type the model —</span>}
+                  </span>
+                  <span className="text-xs text-gray-400">(auto: brand + model)</span>
                 </div>
                 {checkingDup && <p className="text-xs text-gray-400 mt-1">Checking for duplicates…</p>}
                 {dup && (dup.codeInCrm || dup.codeInQne || dup.similarNames.length > 0) && (

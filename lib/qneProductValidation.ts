@@ -25,9 +25,15 @@ const uomRowSchema = z.object({
 
 export const newStockSchema = z
   .object({
-    // Stock code is SYSTEM-GENERATED (lib/stockCodeGen) — never user-entered (SOP).
-    // The product name is assembled server-side in SOP order from these parts:
-    //   Brand / [auto-code] / Description / Identity / Size / Colour / Packing
+    // Stock code = [BRAND]-[supplierModel], assembled server-side (lib/stockCodeGen).
+    // The admin types the supplier model; the system enforces the brand prefix +
+    // assembles the SOP-order name. No free-form code entry.
+    supplierModel: z
+      .string()
+      .trim()
+      .min(1, 'Supplier model code is required')
+      .max(30, 'Supplier model is too long')
+      .refine(NO_TEST, 'Supplier model must not contain "test"'),
     nameDescription: z
       .string()
       .trim()

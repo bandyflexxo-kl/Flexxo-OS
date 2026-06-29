@@ -6,7 +6,7 @@ import { newStockSchema } from '@/lib/qneProductValidation'
 import { checkStockDuplicates } from '@/lib/qneProductValidation'
 import type { NewStockInput } from '@/lib/qneProductCreate'
 import { QneUnavailableError } from '@/lib/qneClient'
-import { nextStockCode, assembleStockName } from '@/lib/stockCodeGen'
+import { buildStockCode, assembleStockName } from '@/lib/stockCodeGen'
 
 export async function GET() {
   const session = await verifySession().catch(() => null)
@@ -87,9 +87,9 @@ export async function POST(request: Request) {
   if (!shopCategory)
     return Response.json({ error: { shopCategoryId: ['Shop sub-category not found'] } }, { status: 400 })
 
-  // SOP: the stock code is SYSTEM-GENERATED (brand-led, [BRAND]-####), never typed.
-  // The product name is then assembled here in SOP order.
-  const stockCode = await nextStockCode(d.brand)
+  // SOP: stock code = [BRAND]-[supplierModel], system-assembled (brand prefix
+  // enforced, uppercased, symbols stripped). The product name follows in SOP order.
+  const stockCode = buildStockCode(d.brand, d.supplierModel)
   const stockName = assembleStockName({
     brand:       d.brand,
     code:        stockCode,

@@ -1,38 +1,28 @@
 /**
- * Standardised stock-code generation (SOP-enforced).
+ * Standardised stock-code building (SOP-enforced).
  *
- * Users no longer type stock codes manually. The system generates a short,
- * unique, brand-led code in the SOP's house format: `[BRAND]-[####]` per brand
- * (e.g. APLUS-0001, 3M-0001). The brand prefix is the QNE classCode. The running
- * number is the next free sequence for that brand among CRM-created codes.
+ * The code is NOT free-typed. House format: `[BRAND]-[SUPPLIER MODEL]`
+ * (e.g. HP-CE320A, NISO-BP-838BL) — the brand prefix is the QNE classCode, the
+ * model is the supplier's own model code (the one descriptive field the admin
+ * enters). The system enforces the prefix, uppercases, strips spaces/symbols.
  *
  * The product NAME is then assembled in SOP order:
  *   Brand / Code / Description / Identity / Size / Colour / Packing
+ *
+ * Pure functions only (no DB) so both the form (client) and the API (server)
+ * build identical codes.
  */
 
-import { prisma } from '@/lib/prisma'
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** Uppercase, drop spaces, keep only letters/digits/dash (no symbols — SOP). */
+export function sanitizeCodePart(s: string): string {
+  return s.toUpperCase().trim().replace(/\s+/g, '').replace(/[^A-Z0-9-]/g, '')
 }
 
-/** Next `[BRAND]-####` code for a brand, based on existing CRM-generated codes. */
-export async function nextStockCode(brandCode: string): Promise<string> {
-  const prefix = brandCode.trim().toUpperCase()
-  if (!prefix) throw new Error('Brand is required to generate a stock code')
-
-  const rows = await prisma.product.findMany({
-    where:  { qneItemCode: { startsWith: `${prefix}-` } },
-    select: { qneItemCode: true },
-  })
-
-  const re = new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`, 'i')
-  let max = 0
-  for (const r of rows) {
-    const m = r.qneItemCode?.match(re)
-    if (m) { const n = parseInt(m[1], 10); if (Number.isFinite(n) && n > max) max = n }
-  }
-  return `${prefix}-${String(max + 1).padStart(4, '0')}`
+/** Builds `[BRAND]-[MODEL]` (e.g. HP-CE320A). Brand prefix is alphanumeric-only. */
+export function buildStockCode(brand: string, supplierModel: string): string {
+  const b = brand.toUpperCase().trim().replace(/[^A-Z0-9]/g, '')
+  const m = sanitizeCodePart(supplierModel)
+  return m ? `${b}-${m}` : b
 }
 
 export type NameParts = {
