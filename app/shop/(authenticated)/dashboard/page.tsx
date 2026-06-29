@@ -300,7 +300,25 @@ export default async function DashboardPage() {
   const totalOrders = orders.filter(o => completedStatuses.has(o.status)).length
   const activeOrders = orders.filter(o => activeStatuses.has(o.status)).length
 
-  const partnerTier    = getPartnerTier(totalSpent)
+  // Cached QNE invoice totals (synced into our DB). These are the dashboard's
+  // fallback for Total Spent / Orders Placed when live QNE is unreachable — which
+  // it always is from Vercel/localhost (no Radmin VPN). Fast DB aggregate.
+  let dbInvoiceTotal = 0
+  let dbInvoiceCount = 0
+  if (company) {
+    const [cnt, sum] = await Promise.all([
+      prisma.qneInvoice.count({ where: { companyId: company.id } }),
+      prisma.qneInvoice.aggregate({ where: { companyId: company.id }, _sum: { totalAmount: true } }),
+    ])
+    dbInvoiceCount = cnt
+    dbInvoiceTotal = Number(sum._sum.totalAmount ?? 0)
+  }
+
+  // Effective spend prefers real portal orders, else the cached QNE history —
+  // so the partner tier / loyalty bar reflect a customer's true volume.
+  const effectiveSpent = totalSpent > 0 ? totalSpent : dbInvoiceTotal
+
+  const partnerTier    = getPartnerTier(effectiveSpent)
   const smartReorders  = computeSmartReorders(orders)
   const frequentItems  = computeFrequentItems(orders)
   const categoryBreak  = computeCategoryBreakdown(orders)
@@ -368,6 +386,7 @@ export default async function DashboardPage() {
             <TotalSpentCard
               crmTotal={totalSpent}
               qneCustomerCode={company?.qneCustomerCode}
+              fallbackTotal={dbInvoiceTotal}
             />
           </Suspense>
 
@@ -376,6 +395,7 @@ export default async function DashboardPage() {
             <OrdersCard
               crmCount={totalOrders}
               qneCustomerCode={company?.qneCustomerCode}
+              fallbackCount={dbInvoiceCount}
             />
           </Suspense>
 
@@ -407,7 +427,7 @@ export default async function DashboardPage() {
         )}
 
         {/* ── Loyalty progress bar (if has spend) ───────────────────── */}
-        {totalSpent > 0 && partnerTier.nextTier && partnerTier.nextAt && (
+        {effectiveSpent > 0 && partnerTier.nextTier && partnerTier.nextAt && (
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-gray-700">
@@ -420,11 +440,11 @@ export default async function DashboardPage() {
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all"
-                style={{ width: `${Math.min(100, (totalSpent / partnerTier.nextAt) * 100).toFixed(1)}%` }}
+                style={{ width: `${Math.min(100, (effectiveSpent / partnerTier.nextAt) * 100).toFixed(1)}%` }}
               />
             </div>
             <p className="text-[10px] text-gray-400 mt-1">
-              MYR {(partnerTier.nextAt - totalSpent).toLocaleString('en-MY', { maximumFractionDigits: 0 })} more to reach {partnerTier.nextTier} Partner
+              MYR {(partnerTier.nextAt - effectiveSpent).toLocaleString('en-MY', { maximumFractionDigits: 0 })} more to reach {partnerTier.nextTier} Partner
             </p>
           </div>
         )}
@@ -816,9 +836,11 @@ function StatCardUnavailable({ label }: { label: string }) {
 async function TotalSpentCard({
   crmTotal,
   qneCustomerCode,
+  fallbackTotal,
 }: {
   crmTotal:         number
   qneCustomerCode:  string | null | undefined
+  fallbackTotal:    number
 }) {
   let qneTotal: number | null = null
   let isQne = false
@@ -832,19 +854,21 @@ async function TotalSpentCard({
     } catch { qneFailed = true }
   }
 
-  // CRM has no portal orders AND QNE is unreachable → show an honest
-  // "temporarily unavailable" state rather than a misleading "MYR 0".
-  if (qneFailed) return <StatCardUnavailable label="Total Spent" />
+  // Live QNE unreachable (Vercel/localhost have no Radmin VPN) → fall back to the
+  // QNE invoice total already synced into our DB, instead of a dead "unavailable".
+  const useCached = qneFailed && fallbackTotal > 0
+  if (qneFailed && fallbackTotal === 0) return <StatCardUnavailable label="Total Spent" />
 
-  const amount = isQne ? (qneTotal ?? 0) : crmTotal
+  const amount = useCached ? fallbackTotal : isQne ? (qneTotal ?? 0) : crmTotal
 
-  // Date range label for the 6-month window
   const now   = new Date()
   const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
-  const rangeLabel = isQne
-    ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
-    : 'lifetime (portal orders)'
+  const rangeLabel = useCached
+    ? '⚠ cached · QNE invoice history'
+    : isQne
+      ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
+      : 'lifetime (portal orders)'
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
@@ -861,9 +885,11 @@ async function TotalSpentCard({
 async function OrdersCard({
   crmCount,
   qneCustomerCode,
+  fallbackCount,
 }: {
   crmCount:         number
   qneCustomerCode:  string | null | undefined
+  fallbackCount:    number
 }) {
   let qneCount: number | null = null
   let isQne = false
@@ -877,21 +903,25 @@ async function OrdersCard({
     } catch { qneFailed = true }
   }
 
-  // CRM has no portal orders AND QNE is unreachable → honest unavailable state.
-  if (qneFailed) return <StatCardUnavailable label="Orders Placed" />
+  // Live QNE unreachable → fall back to the cached QNE invoice count in our DB.
+  const useCached = qneFailed && fallbackCount > 0
+  if (qneFailed && fallbackCount === 0) return <StatCardUnavailable label="Orders Placed" />
 
-  const count = isQne ? (qneCount ?? 0) : crmCount
+  const count      = useCached ? fallbackCount : isQne ? (qneCount ?? 0) : crmCount
+  const isInvoices = isQne || useCached
 
   const now   = new Date()
   const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
-  const rangeLabel = isQne
-    ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
-    : 'all time (portal orders)'
+  const rangeLabel = useCached
+    ? '⚠ cached · QNE invoices'
+    : isQne
+      ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
+      : 'all time (portal orders)'
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-      <p className="text-xs text-gray-400 font-medium">{isQne ? 'Invoices' : 'Orders Placed'}</p>
+      <p className="text-xs text-gray-400 font-medium">{isInvoices ? 'Invoices' : 'Orders Placed'}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{count}</p>
       <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p>
     </div>
