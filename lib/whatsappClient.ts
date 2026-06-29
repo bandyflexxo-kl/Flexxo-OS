@@ -99,3 +99,31 @@ export async function sendWhatsApp(
     return { ok: false, error: msg }
   }
 }
+
+/**
+ * Send a message to a WhatsApp GROUP from a CRM user's session. Passes the full group
+ * JID (e.g. "120363012345678901@g.us") as the recipient — bridges that only append
+ * "@s.whatsapp.net" when no "@" is present will route this straight to the group. If
+ * your bridge needs a dedicated group route, add a `/send-group` endpoint there and
+ * point this at it. Fire-and-forget safe — never throws.
+ */
+export async function sendWhatsAppToGroup(
+  fromUserId: string,
+  groupJid:   string,
+  message:    string,
+): Promise<BridgeSendResult> {
+  if (!isBridgeConfigured()) return { ok: false, error: 'Bridge not configured' }
+  const jid = groupJid.includes('@') ? groupJid : `${groupJid}@g.us`
+  try {
+    const res = await fetch(`${BRIDGE_URL}/send`, {
+      method:  'POST',
+      headers: bridgeHeaders(),
+      body:    JSON.stringify({ userId: fromUserId, toPhone: jid, message }),
+    })
+    return await res.json() as BridgeSendResult
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[wa-bridge] sendWhatsAppToGroup error:', msg)
+    return { ok: false, error: msg }
+  }
+}

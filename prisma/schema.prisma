@@ -59,6 +59,7 @@ model User {
   pushSubscriptions         PushSubscription[]
   invoicesIssued            Invoice[]                 @relation("InvoiceIssuedBy")
   warehouseTasksCompleted   WarehouseTask[]           @relation("WarehouseTaskCompleted")
+  deliveryRunsCreated       DeliveryRun[]             @relation("DeliveryRunCreated")
   qnePendingActionsApproved QnePendingAction[]        @relation("QnePendingActionApprovedBy")
   telegramAccountRequests   TelegramAccountRequest[]  @relation("TelegramAccountRequests")
   aliasesCreated            ProductAlias[]            @relation("AliasCreator")
@@ -748,10 +749,11 @@ model Order {
   company         Company          @relation(fields: [companyId], references: [id])
   quotation       Quotation?       @relation(fields: [quotationId], references: [id])
   createdBy       User             @relation(fields: [createdById], references: [id])
-  items           OrderItem[]
-  invoice         Invoice?
-  deliveryBooking DeliveryBooking?
-  warehouseTask   WarehouseTask?
+  items            OrderItem[]
+  invoice          Invoice?
+  deliveryBooking  DeliveryBooking?
+  warehouseTask    WarehouseTask?
+  deliveryRunStops DeliveryRunStop[]
 
   @@map("orders")
 }
@@ -1158,6 +1160,51 @@ model WarehouseTask {
   completedBy User? @relation("WarehouseTaskCompleted", fields: [completedById], references: [id])
 
   @@map("warehouse_tasks")
+}
+
+// ============================================================
+// DOMAIN 11B — PRIVATE-PARTNER DELIVERY RUNS
+// Compounds several packed orders into one WhatsApp job for the
+// private delivery partner. Priced by the farthest stop (Decision B):
+// trip distance = max(stop km), quantity = sum of boxes/pallets.
+// ============================================================
+
+model DeliveryRun {
+  id          String    @id @default(uuid())
+  mode        String    @default("parcel")          // 'parcel' | 'pallet'
+  status      String    @default("draft")           // draft | dispatched | completed | cancelled
+  maxKm       Int       @default(0) @map("max_km")  // farthest stop — drives the trip price
+  totalQty    Int       @default(0) @map("total_qty") // total boxes or pallets across stops
+  priceMyr    Decimal?  @map("price_myr") @db.Decimal(10, 2)
+  partnerJid  String?   @map("partner_jid")         // WhatsApp group JID the job was sent to
+  messageText String?   @map("message_text") @db.Text
+  notes       String?   @db.Text
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdById String    @map("created_by")
+
+  createdBy User              @relation("DeliveryRunCreated", fields: [createdById], references: [id])
+  stops     DeliveryRunStop[]
+
+  @@map("delivery_runs")
+}
+
+model DeliveryRunStop {
+  id           String  @id @default(uuid())
+  runId        String  @map("run_id")
+  orderId      String  @map("order_id")
+  sequence     Int     @default(0)
+  zone         String?                              // confirmed zone label
+  km           Int     @default(0)                  // confirmed distance for this stop
+  qty          Int     @default(0)                  // boxes or pallets for this stop
+  address      String? @db.Text                     // confirmed address snapshot (admin-edited)
+  contactName  String? @map("contact_name")
+  contactPhone String? @map("contact_phone")
+
+  run   DeliveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  order Order       @relation(fields: [orderId], references: [id])
+
+  @@map("delivery_run_stops")
 }
 
 // ============================================================

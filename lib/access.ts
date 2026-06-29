@@ -26,15 +26,15 @@ export type CrmRole = (typeof CRM_ROLES)[number]
  */
 const ACCESS: Record<string, string[]> = {
   Director: ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
+             '/orders', '/warehouse', '/delivery-runs', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
   // SuperAdmin — top system role: everything Director sees, plus the right to
   // break a tender price lock / manage tender settings (enforced in tenderAccess).
   SuperAdmin: ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-               '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
+               '/orders', '/warehouse', '/delivery-runs', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
   Manager:  ['/', '/companies', '/contacts', '/pipeline', '/activities', '/quotations',
-             '/orders', '/warehouse', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
+             '/orders', '/warehouse', '/delivery-runs', '/reports', '/market-scout', '/agents', '/tenders', '/admin'],
   Admin:    ['/', '/companies', '/contacts', '/pipeline', '/quotations',
-             '/orders', '/warehouse', '/market-scout', '/agents', '/tenders', '/admin'],
+             '/orders', '/warehouse', '/delivery-runs', '/market-scout', '/agents', '/tenders', '/admin'],
   Salesperson: ['/', '/companies', '/contacts', '/pipeline', '/quotations',
                 '/orders', '/warehouse', '/market-scout', '/agents', '/tenders'],
   // Purchaser — procurement only: tender Stages 4 & 5 (client PO + supplier PO).

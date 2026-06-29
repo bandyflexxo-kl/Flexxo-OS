@@ -74,6 +74,14 @@ function IconWarehouse() {
   )
 }
 
+function IconDeliveryRun() {
+  return (
+    <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 6h11v11H3V6zm11 4h4l3 3v4h-7v-7z"/>
+    </svg>
+  )
+}
+
 function IconTenders() {
   return (
     <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
@@ -179,6 +187,7 @@ const NAV_ITEMS = [
   { href: '/orders',     label: 'Orders',     Icon: IconOrders,      roles: rolesForNav('/orders') },
   { href: '/tenders',    label: 'Tenders',    Icon: IconTenders,     roles: rolesForNav('/tenders') },
   { href: '/warehouse',  label: 'Warehouse',  Icon: IconWarehouse,   roles: rolesForNav('/warehouse') },
+  { href: '/delivery-runs', label: 'Delivery Runs', Icon: IconDeliveryRun, roles: rolesForNav('/delivery-runs') },
   { href: '/reports',             label: 'Reports',       Icon: IconReports,      roles: rolesForNav('/reports') },
   { href: '/agents/sales',       label: 'Sales Agent',    Icon: IconSalesAgent,   roles: rolesForNav('/agents') },
   { href: '/agents/admin',       label: 'Admin Agent',    Icon: IconAdminAgent,   roles: ['Admin', 'Director', 'Manager'] },
