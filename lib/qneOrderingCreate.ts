@@ -128,7 +128,8 @@ export async function qneQuotationCreate(
     quotationDate:  (q.sentAt ?? q.createdAt).toISOString(),
     customer:       q.company.qneCustomerCode,
     customerName:   q.company.name,
-    salesPerson:    q.createdBy?.name ?? '',
+    // salesPerson omitted — QNE wants the agent CODE (e.g. SALES 1), not the CRM
+    // user name. TODO: map CRM user → QNE agent code before re-enabling.
     referenceNo:    q.referenceNo,
     currencyRate:   1,
     isTaxInclusive: false,
@@ -214,7 +215,7 @@ export async function qneSalesOrderCreate(
     customer:       order.company.qneCustomerCode,
     customerName:   order.company.name,
     orderDate:      order.createdAt.toISOString(),
-    salesPerson:    order.createdBy?.name ?? '',
+    // salesPerson omitted — QNE wants the agent CODE, not the CRM user name (see TODO above).
     referenceNo:    order.referenceNo ?? undefined,
     currencyRate:   1,
     isTaxInclusive: false,
@@ -259,7 +260,7 @@ export async function qneDeliveryOrderCreate(
     customer:       order.company.qneCustomerCode,
     customerName:   order.company.name,
     doDate:         new Date().toISOString(),
-    salesPerson:    order.createdBy?.name ?? '',
+    // salesPerson omitted — QNE wants the agent CODE, not the CRM user name (see TODO above).
     referenceNo:    order.referenceNo ?? undefined,
     currencyRate:   1,
     isTaxInclusive: false,
@@ -305,7 +306,7 @@ export async function qneInvoiceCreate(
     customer:       order.company.qneCustomerCode,
     customerName:   order.company.name,
     invoiceDate:    new Date().toISOString(),
-    salesPerson:    order.createdBy?.name ?? '',
+    // salesPerson omitted — QNE wants the agent CODE, not the CRM user name (see TODO above).
     referenceNo:    order.referenceNo ?? undefined,
     currencyRate:   1,
     isTaxInclusive: false,
