@@ -113,7 +113,9 @@ type QneStock = {
   category:      string | null
   class:         string | null   // brand
   group:         string | null
-  // Barcode/EAN — field name varies by QNE version; capture any that exist
+  // Barcode/EAN — QNE returns this as `barCode` (capital C). The other names are
+  // defensive fallbacks for older QNE builds.
+  barCode?:      string | null
   barcode?:      string | null
   ean?:          string | null
   barcodeNo?:    string | null
@@ -232,8 +234,8 @@ async function main() {
       const catId        = catMap[subSlug] ?? catMap['os--general'] ?? catMap['other']
       const brand    = stock.class?.trim() || null
       const unit     = stock.baseUOM?.trim() || null
-      // Capture barcode/EAN from whichever field QNE uses
-      const barcode  = (stock.barcode ?? stock.ean ?? stock.barcodeNo ?? stock.eanCode ?? stock.upc)?.trim() || null
+      // Capture barcode/EAN — QNE uses `barCode` (capital C); rest are fallbacks
+      const barcode  = (stock.barCode ?? stock.barcode ?? stock.ean ?? stock.barcodeNo ?? stock.eanCode ?? stock.upc)?.trim() || null
 
       // Cost price: prefer purchasePrice, fallback to listPrice * 0.75
       const rawCost  = stock.purchasePrice > 0
