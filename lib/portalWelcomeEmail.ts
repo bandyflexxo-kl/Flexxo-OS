@@ -1,8 +1,9 @@
 import { sendGenericEmail } from '@/lib/email'
 
-const APP_URL = process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
+// Customer welcome email — links + logo point at the public shop domain.
+const APP_URL = process.env.PORTAL_URL ?? 'https://shop.flexxo.com.my'
 // Email images must be a publicly-reachable URL — never localhost.
-const LOGO_URL = `${APP_URL.includes('localhost') ? 'https://flexxo-os.vercel.app' : APP_URL}/flexxo-logo.png`
+const LOGO_URL = `${APP_URL.includes('localhost') ? 'https://shop.flexxo.com.my' : APP_URL}/flexxo-logo.png`
 
 export async function sendPortalWelcomeEmail(params: {
   to:          string

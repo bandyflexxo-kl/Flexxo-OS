@@ -1,10 +1,9 @@
 import { sendGenericEmail } from '@/lib/email'
 
 // PORTAL_URL is the publicly-accessible base URL used in emails sent to customers.
-// Must be set to the live domain (e.g. https://flexxo-os.vercel.app) so that
-// email links work for recipients outside the office network.
-// Falls back to NEXTAUTH_URL for local dev (links won't be clickable externally).
-const PORTAL_URL = process.env.PORTAL_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+// It must be the public SHOP domain (shop.flexxo.com.my) — not NEXTAUTH_URL (the
+// CMS/auth host). Override with PORTAL_URL only for local testing.
+const PORTAL_URL = process.env.PORTAL_URL ?? 'https://shop.flexxo.com.my'
 
 export async function sendQuotationEmail(params: {
   to:              string | string[]   // one or many recipients (company + contacts)

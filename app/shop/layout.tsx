@@ -19,10 +19,10 @@ export const metadata: Metadata = {
     siteName:    'Flexxo Shop',
     title:       'Flexxo Shop — Your 1-Stop Office Partner',
     description: 'Browse 3,700+ office products for Malaysian businesses. B2B pricing, fast KL delivery.',
-    url:         'https://flexxo-os.vercel.app/shop',
+    url:         'https://shop.flexxo.com.my/shop',
     type:        'website',
     images: [{
-      url:    'https://flexxo-os.vercel.app/flexxo-logo.png',
+      url:    'https://shop.flexxo.com.my/flexxo-logo.png',
       width:  400,
       height: 200,
       alt:    'Flexxo — Your 1-Stop Office Partner',

@@ -720,64 +720,8 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
         </div>
       )}
 
-      {/* ── Meta fields (terms / notes / expiry) ── */}
-      {canEdit && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700">Details</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Discount %</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number" min="0" max="100" step="0.5"
-                  placeholder="0"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  value={discountPct}
-                  onChange={e => setDiscountPct(e.target.value)}
-                  onBlur={saveDiscount}
-                />
-                <span className="text-sm text-gray-400 flex-shrink-0">%</span>
-              </div>
-              {discountAmount && Number(discountAmount) > 0 && (
-                <p className="text-xs text-green-600 mt-1">−{initial.currency} {Number(discountAmount).toFixed(2)}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Expires At</label>
-              <input
-                type="date"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={expiresAt}
-                onChange={e => setExpiresAt(e.target.value)}
-                onBlur={saveMeta}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Terms &amp; Conditions</label>
-              <textarea
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
-                value={terms}
-                onChange={e => setTerms(e.target.value)}
-                onBlur={saveMeta}
-                placeholder="Payment terms, delivery conditions…"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Internal Notes</label>
-              <textarea
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                onBlur={saveMeta}
-                placeholder="Notes not visible to customer…"
-              />
-            </div>
-          </div>
-          {savingMeta && <p className="text-xs text-gray-400">Saving…</p>}
-        </div>
-      )}
+      {/* Details section (Discount % / Expires At / Terms / Internal Notes)
+          removed per request — kept read-only terms/notes display below. */}
 
       {/* ── Terms / notes (read-only) ── */}
       {!canEdit && (initial.termsConditions || initial.internalNotes) && (

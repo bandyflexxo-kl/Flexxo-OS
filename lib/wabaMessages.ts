@@ -13,8 +13,10 @@ import { sendWabaTemplate, type WabaTemplateComponent, type WabaSendResult } fro
 //     Body: "Hi {{1}}, your Flexxo order {{2}} status has been updated to: {{3}}"
 //
 
-// PORTAL_URL: publicly-accessible shop URL used in WhatsApp links (same as email)
-const PORTAL_URL = process.env.PORTAL_URL ?? process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
+// PORTAL_URL: publicly-accessible shop URL used in WhatsApp links (same as email).
+// Customer links must point at the public shop domain — NOT NEXTAUTH_URL (the
+// CMS/auth host, which is flexxo-os.vercel.app in prod). Override only for local.
+const PORTAL_URL = process.env.PORTAL_URL ?? 'https://shop.flexxo.com.my'
 
 // ── Quotation sent ────────────────────────────────────────────────────────────
 

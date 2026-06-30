@@ -2,7 +2,6 @@ import { prisma }                 from '@/lib/prisma'
 import { getOptionalShopSession } from '@/lib/session'
 import { fetchProductsCached }    from '@/lib/products-api'
 import ProductsClientPage         from '@/components/shop/ProductsClientPage'
-import HeroSection                from '@/components/shop/HeroSection'
 
 /**
  * ShopProductsPage — server wrapper.
@@ -36,7 +35,6 @@ export default async function ShopProductsPage({
 
   return (
     <>
-      <HeroSection isB2B={isB2B} />
       <ProductsClientPage
         categories={categories}
         initialProducts={initialProducts}

@@ -38,8 +38,12 @@ export default async function QuotationPrintPage({
     <>
       {/* Auto-trigger print on load */}
       <script dangerouslySetInnerHTML={{ __html: 'window.onload = function(){ window.print() }' }} />
+      {/* @page margin:0 makes the browser drop its own header/footer (the page
+          URL + date) which otherwise prints as a "link watermark" at the bottom
+          of the PDF. Inner print:p-12 restores a clean page margin. */}
+      <style dangerouslySetInnerHTML={{ __html: '@media print { @page { margin: 0 } }' }} />
 
-      <div className="max-w-3xl mx-auto p-8 print:p-0 font-sans text-gray-900 text-sm">
+      <div className="max-w-3xl mx-auto p-8 print:p-12 font-sans text-gray-900 text-sm">
         {/* Header */}
         <div className="flex justify-between items-start mb-8 print:mb-6">
           <div>
