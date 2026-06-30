@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import FlexxoSpinner from '@/components/shop/FlexxoSpinner'
 import TrustBadge from '@/components/shop/TrustBadge'
+import DeliveryAddressPicker from '@/components/shop/DeliveryAddressPicker'
 
 type CartItem = {
   id:          string
@@ -31,6 +32,7 @@ export default function CartPage() {
   const [error,      setError]      = useState<string | null>(null)
   const [poNumber,   setPoNumber]   = useState('')
   const [costCentre, setCostCentre] = useState('')
+  const [deliveryAddressId, setDeliveryAddressId] = useState<string | null>(null)
   const router = useRouter()
 
   const loadCart = useCallback(async () => {
@@ -75,8 +77,9 @@ export default function CartPage() {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          poNumber:   poNumber.trim()   || null,
-          costCentre: costCentre.trim() || null,
+          poNumber:          poNumber.trim()   || null,
+          costCentre:        costCentre.trim() || null,
+          deliveryAddressId: deliveryAddressId,
         }),
       })
       const data = await res.json() as { quotationId?: string; error?: string }
@@ -254,6 +257,11 @@ export default function CartPage() {
             <p className="text-xs text-gray-400 -mt-2 leading-relaxed">
               Final pricing will be confirmed by your Flexxo sales representative before the order is processed.
             </p>
+
+            {/* Delivery address — pick a saved one or add new (lat/lng captured at booking) */}
+            <div className="border-t border-gray-100 pt-4">
+              <DeliveryAddressPicker value={deliveryAddressId} onChange={setDeliveryAddressId} />
+            </div>
 
             {/* PO Number + Cost Centre — optional procurement fields */}
             <div className="space-y-2 border-t border-gray-100 pt-4">

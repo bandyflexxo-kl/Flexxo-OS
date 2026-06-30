@@ -216,6 +216,7 @@ model CompanyAddress {
   state       String?
   postcode    String?
   country     String   @default("Malaysia")
+  phone       String?                              // delivery contact phone (for the driver)
   isDefault   Boolean  @default(false) @map("is_default")
   isActive    Boolean  @default(true) @map("is_active")
   lat         String?
@@ -223,6 +224,7 @@ model CompanyAddress {
   createdAt   DateTime @default(now()) @map("created_at")
 
   company     Company  @relation(fields: [companyId], references: [id])
+  quotations  Quotation[]
 
   @@map("company_addresses")
 }
@@ -667,6 +669,7 @@ model Quotation {
   deliveryAddress   String?   @map("delivery_address") @db.Text
   deliveryRecipient String?   @map("delivery_recipient") @db.VarChar(200)
   deliveryPhone     String?   @map("delivery_phone") @db.VarChar(50)
+  deliveryAddressId String?   @map("delivery_address_id")  // saved CompanyAddress chosen at checkout
   sentAt            DateTime? @map("sent_at")
   expiresAt         DateTime? @map("expires_at")
   clientAmended     Boolean   @default(false) @map("client_amended")
@@ -676,6 +679,7 @@ model Quotation {
 
   company          Company                  @relation(fields: [companyId], references: [id])
   contact          Contact?                 @relation(fields: [contactId], references: [id])
+  deliveryAddressRef CompanyAddress?         @relation(fields: [deliveryAddressId], references: [id])
   createdBy        User                     @relation("QuotationCreatedBy", fields: [createdById], references: [id])
   approvedBy       User?                    @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
   parentQuotation  Quotation?               @relation("QuotationRevision", fields: [parentQuotationId], references: [id])
