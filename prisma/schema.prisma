@@ -224,11 +224,18 @@ model CompanyAddress {
   isActive    Boolean  @default(true) @map("is_active")
   lat         String?
   lng         String?
+  // QNE branch link (Phase 1 sync). source: 'qne' = synced from QNE Branches and
+  // refreshable; 'manual' = customer-added OR a synced row the customer edited
+  // (edits win — the sync never overwrites a 'manual' row).
+  qneBranchId   String?  @map("qne_branch_id")     // QNE Branches.id — dedupe key on re-sync
+  qneBranchCode String?  @map("qne_branch_code")   // QNE branchCode e.g. "MV" — matches invoice doBranchCode (Phase 5)
+  source        String   @default("manual")
   createdAt   DateTime @default(now()) @map("created_at")
 
   company     Company  @relation(fields: [companyId], references: [id])
   quotations  Quotation[]
 
+  @@index([companyId, qneBranchId])
   @@map("company_addresses")
 }
 

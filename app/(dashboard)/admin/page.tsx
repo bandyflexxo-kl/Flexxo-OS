@@ -6,6 +6,7 @@ import QneSyncPanel from '@/components/admin/QneSyncPanel'
 import QnePriceSyncPanel from '@/components/admin/QnePriceSyncPanel'
 import QneProductSyncPanel from '@/components/admin/QneProductSyncPanel'
 import QneMasterSyncPanel from '@/components/admin/QneMasterSyncPanel'
+import QneBranchSyncPanel from '@/components/admin/QneBranchSyncPanel'
 import QneDocumentSyncPanel from '@/components/admin/QneDocumentSyncPanel'
 
 export default async function AdminPage() {
@@ -199,6 +200,7 @@ export default async function AdminPage() {
         <QnePriceSyncPanel />
         <QneProductSyncPanel />
         <QneMasterSyncPanel />
+        <QneBranchSyncPanel />
         <QneDocumentSyncPanel />
       </div>
     </div>
