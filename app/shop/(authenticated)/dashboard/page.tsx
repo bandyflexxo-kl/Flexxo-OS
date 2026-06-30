@@ -303,13 +303,18 @@ export default async function DashboardPage() {
   // it always is from Vercel/localhost (no Radmin VPN). Fast DB aggregate.
   let dbInvoiceTotal = 0
   let dbInvoiceCount = 0
+  let spendFrom: Date | null = null
+  let spendTo:   Date | null = null
   if (company) {
-    const [cnt, sum] = await Promise.all([
+    const [cnt, sum, range] = await Promise.all([
       prisma.qneInvoice.count({ where: { companyId: company.id } }),
       prisma.qneInvoice.aggregate({ where: { companyId: company.id }, _sum: { totalAmount: true } }),
+      prisma.qneInvoice.aggregate({ where: { companyId: company.id }, _min: { docDate: true }, _max: { docDate: true } }),
     ])
     dbInvoiceCount = cnt
     dbInvoiceTotal = Number(sum._sum.totalAmount ?? 0)
+    spendFrom = range._min.docDate
+    spendTo   = range._max.docDate
   }
 
   // Effective spend prefers real portal orders, else the cached QNE history —
@@ -325,6 +330,12 @@ export default async function DashboardPage() {
   const dashCount           = totalOrders > 0 ? totalOrders : dbInvoiceCount
   const dashCountIsInvoices = totalOrders === 0 && dbInvoiceCount > 0
   const dashOutstanding     = company?.outstandingBalance != null ? Number(company.outstandingBalance) : null
+
+  // "From when to when" label for Total Spent — the span of the synced invoices.
+  const fmtMonthYear   = (d: Date) => new Date(d).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })
+  const spendRangeLabel = dashTotalIsInvoices && spendFrom && spendTo
+    ? `${fmtMonthYear(spendFrom)} – ${fmtMonthYear(spendTo)}`
+    : totalSpent > 0 ? 'lifetime (portal orders)' : null
 
   const partnerTier    = getPartnerTier(effectiveSpent)
   const smartReorders  = computeSmartReorders(orders)
@@ -389,16 +400,25 @@ export default async function DashboardPage() {
       <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
-          {/* Total Spent — instant from DB (portal orders, else synced QNE invoices) */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-400 font-medium">Total Spent</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
-              {effectiveSpent > 0 ? `MYR ${(effectiveSpent / 1000).toFixed(1)}k` : 'MYR 0'}
-            </p>
-            {!dashTotalIsInvoices && totalSpent > 0
-              ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">lifetime (portal orders)</p>
-              : null}
-          </div>
+          {/* Total Spent — instant from DB; links to monthly breakdown when invoice data exists */}
+          {dbInvoiceCount > 0 ? (
+            <Link href="/shop/spending" className="block bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:border-green-200 hover:shadow transition-colors">
+              <p className="text-xs text-gray-400 font-medium">Total Spent</p>
+              <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
+                {effectiveSpent > 0 ? `MYR ${(effectiveSpent / 1000).toFixed(1)}k` : 'MYR 0'}
+              </p>
+              {spendRangeLabel && <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{spendRangeLabel}</p>}
+              <p className="text-[11px] font-semibold text-green-600 mt-1">View breakdown →</p>
+            </Link>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+              <p className="text-xs text-gray-400 font-medium">Total Spent</p>
+              <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
+                {effectiveSpent > 0 ? `MYR ${(effectiveSpent / 1000).toFixed(1)}k` : 'MYR 0'}
+              </p>
+              {spendRangeLabel && <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{spendRangeLabel}</p>}
+            </div>
+          )}
 
           {/* Orders / Invoices — instant from DB */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
