@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 
 type Addr = {
-  id: string; label: string | null; line1: string; line2: string | null
+  id: string; branchName: string | null; contactPerson: string | null
+  label: string | null; line1: string; line2: string | null
   city: string | null; state: string | null; postcode: string | null
   phone: string | null; isDefault: boolean
 }
 
-const EMPTY = { label: '', line1: '', line2: '', city: '', postcode: '', state: '', phone: '' }
+const EMPTY = { branchName: '', contactPerson: '', label: '', line1: '', line2: '', city: '', postcode: '', state: '', phone: '' }
 
 /** Pick a saved company delivery address, or add a new one (lat/lng captured later). */
 export default function DeliveryAddressPicker({
@@ -64,10 +65,10 @@ export default function DeliveryAddressPicker({
                 onChange={() => onChange(a.id)} className="mt-0.5 accent-green-600" />
               <span className="min-w-0">
                 <span className="text-sm font-medium text-gray-900">
-                  {a.label || 'Delivery address'}{a.isDefault && <span className="ml-1.5 text-[10px] text-green-600 font-semibold">DEFAULT</span>}
+                  {a.branchName || a.label || 'Delivery address'}{a.isDefault && <span className="ml-1.5 text-[10px] text-green-600 font-semibold">DEFAULT</span>}
                 </span>
                 <span className="block text-xs text-gray-500">{fmt(a)}</span>
-                {a.phone && <span className="block text-xs text-gray-400">☎ {a.phone}</span>}
+                {(a.contactPerson || a.phone) && <span className="block text-xs text-gray-400">{[a.contactPerson, a.phone].filter(Boolean).join(' · ')}</span>}
               </span>
             </label>
           ))}
@@ -83,7 +84,10 @@ export default function DeliveryAddressPicker({
 
       {showForm && (
         <div className="mt-3 rounded-lg border border-gray-200 p-3 space-y-2 bg-gray-50/50">
-          <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Label / recipient (e.g. HQ Store, Mr Lee)" className={inputCls} />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={form.branchName} onChange={e => setForm(f => ({ ...f, branchName: e.target.value }))} placeholder="Branch name (e.g. Flexxo KL)" className={inputCls} />
+            <input value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} placeholder="Contact person" className={inputCls} />
+          </div>
           <input value={form.line1} onChange={e => setForm(f => ({ ...f, line1: e.target.value }))} placeholder="Address line 1 *" className={inputCls} />
           <input value={form.line2} onChange={e => setForm(f => ({ ...f, line2: e.target.value }))} placeholder="Address line 2" className={inputCls} />
           <div className="grid grid-cols-2 gap-2">

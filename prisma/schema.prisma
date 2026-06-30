@@ -206,17 +206,19 @@ model ContactEditRequest {
 }
 
 model CompanyAddress {
-  id          String   @id @default(uuid())
-  companyId   String   @map("company_id")
-  addressType String   @map("address_type")
-  label       String?
-  line1       String?
-  line2       String?
-  city        String?
-  state       String?
-  postcode    String?
-  country     String   @default("Malaysia")
-  phone       String?                              // delivery contact phone (for the driver)
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  addressType   String   @map("address_type")
+  label         String?
+  branchName    String?  @map("branch_name")       // e.g. "Flexxo KL", "HQ Store"
+  contactPerson String?  @map("contact_person")    // delivery PIC name
+  line1         String?
+  line2         String?
+  city          String?
+  state         String?
+  postcode      String?
+  country       String   @default("Malaysia")
+  phone         String?                            // delivery contact phone (for the driver)
   isDefault   Boolean  @default(false) @map("is_default")
   isActive    Boolean  @default(true) @map("is_active")
   lat         String?

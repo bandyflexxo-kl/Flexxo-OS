@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import AddressManager from '@/components/shop/AddressManager'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,6 +360,7 @@ export default function AccountPage() {
       )}
 
       <SpendingHistoryCard />
+      <AddressManager />
       <ChangePasswordForm />
       <SignOutCard />
     </div>
