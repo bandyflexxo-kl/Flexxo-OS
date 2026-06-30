@@ -878,6 +878,7 @@ model QneInvoice {
   companyId      String?  @map("company_id")
   totalAmount    Decimal  @default(0) @map("total_amount") @db.Decimal(14, 4)
   status         String?
+  branchCode     String?  @map("branch_code")   // QNE doBranchCode — which branch this invoice delivered to (Phase 5)
   syncedAt       DateTime @default(now()) @map("synced_at")
 
   company  Company?         @relation(fields: [companyId], references: [id])
@@ -886,6 +887,7 @@ model QneInvoice {
   @@index([customerCode])
   @@index([docDate])
   @@index([companyId])
+  @@index([companyId, branchCode])
   @@map("qne_invoices")
 }
 

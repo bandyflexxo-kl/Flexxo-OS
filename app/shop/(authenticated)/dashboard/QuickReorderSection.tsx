@@ -33,11 +33,9 @@ type ItemState = {
 export default function QuickReorderSection({
   frequentItems,
   branchOptions = [],
-  itemsByBranch,
 }: {
   frequentItems: FrequentItem[]
   branchOptions?: { id: string; name: string }[]
-  itemsByBranch?: Record<string, FrequentItem[]>
 }) {
   const router = useRouter()
 
@@ -47,10 +45,13 @@ export default function QuickReorderSection({
   const [busy,  setBusy]  = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done,  setDone]  = useState(false)
-  const [branch, setBranch] = useState('all')   // A3: which branch's history to view
+  const [branch, setBranch] = useState('all')                              // which branch's history
+  const [fetchedItems, setFetchedItems]   = useState<FrequentItem[] | null>(null)  // on-demand history
+  const [loadingBranch, setLoadingBranch] = useState(false)
 
-  // The active item source = the selected branch's history (falls back to all).
-  const activeItems = (itemsByBranch?.[branch] ?? frequentItems)
+  // Active source: the on-demand branch history (incl. QNE invoices) once fetched,
+  // else the instant portal-order list passed from the server.
+  const activeItems = fetchedItems ?? frequentItems
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -62,17 +63,30 @@ export default function QuickReorderSection({
     })))
   }
 
+  // Fetch the full purchase history for a branch ('all' = whole company) — merges
+  // QNE invoice history (by branch) with portal orders. Server route does the work.
+  async function fetchBranch(id: string) {
+    setLoadingBranch(true)
+    try {
+      const r = await fetch(`/api/portal/reorder/by-branch?branchId=${encodeURIComponent(id)}`)
+        .then(x => x.json()).catch(() => ({ items: [] }))
+      const list = (r.items ?? []) as FrequentItem[]
+      setFetchedItems(list)
+      seedItems(list)
+    } finally {
+      setLoadingBranch(false)
+    }
+  }
+
   function openDrawer() {
-    seedItems(activeItems)
-    setSearch('')
-    setError(null)
-    setDone(false)
-    setOpen(true)
+    seedItems(activeItems)     // show something instantly
+    setSearch(''); setError(null); setDone(false); setOpen(true)
+    void fetchBranch(branch)   // then enrich with the full (QNE-inclusive) history
   }
 
   function changeBranch(id: string) {
     setBranch(id)
-    seedItems(itemsByBranch?.[id] ?? frequentItems)
+    void fetchBranch(id)
   }
 
   function closeDrawer() {
@@ -235,11 +249,14 @@ export default function QuickReorderSection({
         <div className="px-4 py-3 border-b border-gray-100 space-y-2.5 shrink-0 bg-white">
           {branchOptions.length > 0 && (
             <div>
-              <label className="block text-[11px] font-medium text-gray-500 mb-1">Branch order history</label>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">
+                Branch order history {loadingBranch && <span className="text-gray-400">· loading…</span>}
+              </label>
               <select
                 value={branch}
                 onChange={e => changeBranch(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100"
+                disabled={loadingBranch}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100 disabled:opacity-60"
               >
                 <option value="all">All branches</option>
                 {branchOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}

@@ -51,10 +51,12 @@ type RawInvoiceHeader = {
   customer?:     string | null   // = companyCode
   totalAmount?:  number | null
   isCancelled?:  boolean
+  doBranchCode?: string | null   // which branch this invoice delivered to (Phase 5)
   [key: string]: unknown
 }
 
 type RawInvoiceItem = {
+  stock?:           string | null   // ← actual QNE stock-code field on an invoice line
   itemCode?:        string | null
   description?:     string | null
   itemName?:        string | null
@@ -171,6 +173,8 @@ export async function syncQneInvoices(
 
       const rawItems: RawInvoiceItem[] = detail?.items ?? detail?.details ?? []
 
+      const branchCode = h.doBranchCode?.trim() || null   // Phase 5: branch this invoice delivered to
+
       // Upsert invoice header
       const invoice = await prisma.qneInvoice.upsert({
         where:  { docNo },
@@ -182,12 +186,14 @@ export async function syncQneInvoices(
           companyId,
           totalAmount:  new Prisma.Decimal(totalAmount.toFixed(4)),
           status:       'posted',
+          branchCode,
         },
         update: {
           docDate:      invoiceDate,
           customerName,
           companyId,
           totalAmount:  new Prisma.Decimal(totalAmount.toFixed(4)),
+          branchCode,
           syncedAt:     new Date(),
         },
       })
@@ -199,7 +205,7 @@ export async function syncQneInvoices(
         await prisma.qneInvoiceItem.deleteMany({ where: { invoiceId: invoice.id } })
 
         for (const item of rawItems) {
-          const stockCode  = item.itemCode?.trim() ?? null
+          const stockCode  = (item.stock ?? item.itemCode)?.trim() ?? null
           // SVC/service lines carry "." — real text is RTF in `note`.
           const rawDesc    = (item.description ?? '').trim()
           const description = (rawDesc && rawDesc !== '.')
