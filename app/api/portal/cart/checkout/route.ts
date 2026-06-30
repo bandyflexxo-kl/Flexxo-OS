@@ -1,7 +1,13 @@
 import { getOptionalShopSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { sendPushToUser } from '@/lib/webpush'
+import { Prisma } from '@/generated/prisma/client'
 import { z } from 'zod'
+
+// B5: orders below this subtotal auto-include a flat delivery charge (QNE stock
+// code DELIVERYFEE) so small orders cover their delivery cost.
+const DELIVERY_FREE_THRESHOLD = 300
+const DELIVERY_FEE_AMOUNT     = 25
 
 const BodySchema = z.object({
   poNumber:          z.string().max(100).nullable().optional(),
@@ -59,11 +65,41 @@ export async function POST(request: Request) {
   const refNo    = `QT-${year}-${String(count + 1).padStart(4, '0')}`
 
   const quotation = await prisma.$transaction(async tx => {
+    // B5: add a flat RM25 delivery charge when the items subtotal is below RM300.
+    const cartItems = await tx.quotationItem.findMany({ where: { quotationId: cart.id }, select: { lineTotal: true, productId: true } })
+    let subtotal = cartItems.reduce((s, i) => s.plus(i.lineTotal), new Prisma.Decimal(0))
+
+    const deliveryProduct = await tx.product.findFirst({
+      where:  { qneItemCode: { equals: 'DELIVERYFEE', mode: 'insensitive' } },
+      select: { id: true, name: true, brand: true, unit: true },
+    })
+    const alreadyHasFee = deliveryProduct ? cartItems.some(i => i.productId === deliveryProduct.id) : false
+
+    if (deliveryProduct && !alreadyHasFee && subtotal.lessThan(DELIVERY_FREE_THRESHOLD)) {
+      await tx.quotationItem.create({
+        data: {
+          quotationId: cart.id,
+          productId:   deliveryProduct.id,
+          description: deliveryProduct.name,
+          brand:       deliveryProduct.brand ?? undefined,
+          unit:        deliveryProduct.unit  ?? undefined,
+          qty:         new Prisma.Decimal(1),
+          unitCost:    new Prisma.Decimal(DELIVERY_FEE_AMOUNT),
+          unitPrice:   new Prisma.Decimal(DELIVERY_FEE_AMOUNT),
+          marginPct:   new Prisma.Decimal(0),
+          lineTotal:   new Prisma.Decimal(DELIVERY_FEE_AMOUNT),
+          sortOrder:   cartItems.length,
+        },
+      })
+      subtotal = subtotal.plus(DELIVERY_FEE_AMOUNT)
+    }
+
     const updated = await tx.quotation.update({
       where: { id: cart.id },
       data:  {
         status: 'pending_review', referenceNo: refNo, poNumber, costCentre,
         deliveryAddressId, deliveryAddress, deliveryRecipient, deliveryPhone,
+        subtotal, totalAmount: subtotal,
       },
     })
     await tx.quotationStatusHistory.create({
