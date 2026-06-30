@@ -129,6 +129,7 @@ export async function PATCH(request: Request) {
       phone:         d.phone ?? null,
       lat:           d.lat ?? null,
       lng:           d.lng ?? null,
+      source:        'manual',   // a customer edit wins — the QNE branch sync will never overwrite it
       ...(d.makeDefault === true ? { isDefault: true } : {}),
     },
     select: SELECT,
