@@ -34,13 +34,15 @@ export const STAGE_LABELS: Record<TenderStage, string> = {
 }
 
 /** Who may take action on each stage (create/edit within that stage). */
+// Director is top management — included on EVERY actionable stage so it can do
+// anything any other role can (procurement + receiving included).
 const STAGE_ACTORS: Record<TenderStage, string[]> = {
   creation:    ['Salesperson', 'Manager', 'Director', 'SuperAdmin', 'Admin'],
   rfq:         ['Salesperson', 'Manager', 'Director', 'SuperAdmin', 'Admin'],
   evaluation:  ['Manager', 'Director', 'SuperAdmin'],
-  client_po:   ['Purchaser', 'SuperAdmin', 'Admin'],
-  supplier_po: ['Purchaser', 'SuperAdmin', 'Admin'],
-  receiving:   ['Warehouse', 'Purchaser', 'SuperAdmin', 'Admin'],
+  client_po:   ['Purchaser', 'Director', 'SuperAdmin', 'Admin'],
+  supplier_po: ['Purchaser', 'Director', 'SuperAdmin', 'Admin'],
+  receiving:   ['Warehouse', 'Purchaser', 'Director', 'SuperAdmin', 'Admin'],
   closed:      [],
 }
 
@@ -67,14 +69,14 @@ export function canManageGate(role: string): boolean {
   return role === 'Manager' || role === 'Director' || role === 'SuperAdmin'
 }
 
-/** Only Super Admin may break a locked tender price (via amendment + reason). */
+/** Super Admin and Director may break a locked tender price (via amendment + reason). */
 export function canOverrideLock(role: string): boolean {
-  return role === 'SuperAdmin'
+  return role === 'SuperAdmin' || role === 'Director'
 }
 
 /** Who may change the global variance threshold / tender settings. */
 export function canEditTenderSettings(role: string): boolean {
-  return role === 'SuperAdmin' || role === 'Admin'
+  return role === 'SuperAdmin' || role === 'Admin' || role === 'Director'
 }
 
 /** Next stage in the linear lifecycle, or null at the end. */

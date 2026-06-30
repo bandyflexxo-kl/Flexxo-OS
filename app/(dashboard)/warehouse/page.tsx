@@ -7,7 +7,7 @@ import WarehouseTaskList from '@/components/warehouse/WarehouseTaskList'
 export default async function WarehousePage() {
   const session = await verifySession()
 
-  const allowed = ['Admin', 'Manager', 'Warehouse'].includes(session.role)
+  const allowed = ['Admin', 'Manager', 'Director', 'SuperAdmin', 'Warehouse'].includes(session.role)
   if (!allowed) redirect('/')
 
   const tasks = await prisma.warehouseTask.findMany({

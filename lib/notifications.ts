@@ -57,7 +57,7 @@ export async function getNotificationsForUser(
   role:   string,
 ): Promise<NotificationResult> {
   const { todayStart, todayEnd, thirtyDaysAgo } = getMalaysiaDateBounds()
-  const isPrivileged = role === 'Admin' || role === 'Manager'
+  const isPrivileged = role === 'Admin' || role === 'Manager' || role === 'Director' || role === 'SuperAdmin'
 
   const items: NotificationItem[] = []
 
