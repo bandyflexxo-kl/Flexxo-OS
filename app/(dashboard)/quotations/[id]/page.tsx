@@ -7,6 +7,7 @@ import Topbar from '@/components/layout/Topbar'
 import QuotationBuilder from '@/components/quotations/QuotationBuilder'
 import type { QuotationBuilderProps } from '@/components/quotations/QuotationBuilder'
 import QnePushPanel from '@/components/qne/QnePushPanel'
+import { getQuotationRecipients } from '@/lib/quotationRecipients'
 
 export default async function QuotationDetailPage({
   params,
@@ -43,6 +44,10 @@ export default async function QuotationDetailPage({
   const denied = await assertCompanyAccess(quotation.companyId, session)
   if (denied) redirect('/quotations')
 
+  // Selectable email recipients (company email + contact emails) for the
+  // send / resend multi-select.
+  const recipients = await getQuotationRecipients(quotation.id)
+
   const initial: QuotationBuilderProps = {
     id:              quotation.id,
     referenceNo:     quotation.referenceNo,
@@ -61,6 +66,7 @@ export default async function QuotationDetailPage({
     createdBy:       quotation.createdBy,
     approvedBy:      quotation.approvedBy,
     userRole:        session.role,
+    recipients,
     items: quotation.items.map(i => ({
       id:          i.id,
       description: i.description,

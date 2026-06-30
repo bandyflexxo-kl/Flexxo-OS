@@ -7,7 +7,7 @@ import { sendGenericEmail } from '@/lib/email'
 const PORTAL_URL = process.env.PORTAL_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
 
 export async function sendQuotationEmail(params: {
-  to:              string
+  to:              string | string[]   // one or many recipients (company + contacts)
   contactName:     string | null
   salespersonName: string
   companyName:     string

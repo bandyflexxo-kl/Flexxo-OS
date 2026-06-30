@@ -3,15 +3,21 @@ import { prisma } from '@/lib/prisma'
 import { assertCompanyAccess } from '@/lib/authorization'
 import { sendQuotationEmail } from '@/lib/quotationEmail'
 import { sendQuotationWhatsApp } from '@/lib/wabaMessages'
+import { getQuotationRecipients, resolveRecipients } from '@/lib/quotationRecipients'
+import { z } from 'zod'
+
+const BodySchema = z.object({ emails: z.array(z.string().email()).optional() })
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await verifySession().catch(() => null)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
+  const parsed = BodySchema.safeParse(await request.json().catch(() => ({})))
+  const requestedEmails = parsed.success ? parsed.data.emails : undefined
 
   const quotation = await prisma.quotation.findUnique({
     where:  { id },
@@ -33,19 +39,23 @@ export async function POST(
   const denied = await assertCompanyAccess(quotation.companyId, session)
   if (denied) return denied
 
-  const recipientEmail = quotation.contact?.email ?? quotation.company.generalEmail
+  // Resolve recipient email(s) from the sender's multi-select, validated against
+  // the company-email + contact-email allow-list (falls back to the default).
+  const allRecipients = await getQuotationRecipients(id)
+  const recipientEmails = resolveRecipients(allRecipients, requestedEmails)
 
-  if (!recipientEmail) {
+  if (recipientEmails.length === 0) {
     return Response.json(
       { error: 'No email address on file for this contact or company. Add an email before sending.' },
       { status: 400 },
     )
   }
+  const recipientEmail = recipientEmails.join(', ')
 
   // Attempt email — fail fast with a clear error if SMTP is broken
   try {
     await sendQuotationEmail({
-      to:              recipientEmail,
+      to:              recipientEmails,
       contactName:     quotation.contact?.name ?? null,
       salespersonName: quotation.createdBy.name,
       companyName:     quotation.company.name,

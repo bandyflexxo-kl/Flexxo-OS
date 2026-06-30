@@ -43,7 +43,7 @@ Flexxo (KL) Sdn Bhd`,
 }
 
 export async function sendGenericEmail(params: {
-  to: string
+  to: string | string[]   // nodemailer accepts an array (or comma-separated) for multiple recipients
   subject: string
   text: string
   html?: string

@@ -48,6 +48,14 @@ export type QuotationBuilderProps = {
   items:           QuotationItem[]
   statusHistory:   StatusHistory[]
   userRole:        string
+  recipients:      QuotationRecipient[]
+}
+
+export type QuotationRecipient = {
+  email:     string
+  label:     string
+  kind:      'company' | 'contact'
+  isDefault: boolean
 }
 
 type ProductSuggestion = {
@@ -127,6 +135,15 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   const [rejectNotes,     setRejectNotes]      = useState('')
   const [showRejectForm,  setShowRejectForm]   = useState(false)
   const [actionError,     setActionError]      = useState<string | null>(null)
+
+  // Recipient multi-select — which emails (company + contacts) to send to.
+  // Pre-checked with the historical default(s); the sender can add/remove.
+  const [selectedEmails,  setSelectedEmails]   = useState<string[]>(
+    () => initial.recipients.filter(r => r.isDefault).map(r => r.email),
+  )
+  function toggleEmail(email: string) {
+    setSelectedEmails(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email])
+  }
 
   // Director / SuperAdmin are top management — they approve too (the approve API
   // already allows them via isPrivilegedRole; this is the UI button gate).
@@ -264,9 +281,14 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
 
   async function sendQuotation() {
     setSendError(null)
+    if (selectedEmails.length === 0) { setSendError('Select at least one email recipient.'); return }
     setSending(true)
     try {
-      const res  = await fetch(`/api/quotations/${initial.id}/send`, { method: 'POST' })
+      const res  = await fetch(`/api/quotations/${initial.id}/send`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ emails: selectedEmails }),
+      })
       const data = await res.json() as { ok?: boolean; status?: string; error?: string }
       if (!res.ok) { setSendError(data.error ?? 'Failed'); return }
       setStatus('sent')
@@ -281,9 +303,14 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   async function resendQuotation() {
     setResendError(null)
     setResendOk(null)
+    if (selectedEmails.length === 0) { setResendError('Select at least one email recipient.'); return }
     setResending(true)
     try {
-      const res  = await fetch(`/api/quotations/${initial.id}/resend`, { method: 'POST' })
+      const res  = await fetch(`/api/quotations/${initial.id}/resend`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ emails: selectedEmails }),
+      })
       const data = await res.json() as { ok?: boolean; sentTo?: string; waba?: { ok: boolean; detail: string }; error?: string }
       if (!res.ok) { setResendError(data.error ?? 'Resend failed'); return }
       const wabaStatus = data.waba?.ok ? 'WhatsApp sent ✓' : `WhatsApp: ${data.waba?.detail ?? 'not sent'}`
@@ -817,12 +844,13 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
           {/* Approved → Send to Customer */}
           {canSend && (
             <>
+              <RecipientPicker recipients={initial.recipients} selected={selectedEmails} onToggle={toggleEmail} />
               <button
                 onClick={sendQuotation}
-                disabled={sending || items.length === 0}
+                disabled={sending || items.length === 0 || selectedEmails.length === 0}
                 className="px-5 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
               >
-                {sending ? 'Sending…' : '✉ Send to Customer'}
+                {sending ? 'Sending…' : selectedEmails.length > 1 ? `✉ Send to ${selectedEmails.length} recipients` : '✉ Send to Customer'}
               </button>
               {items.length === 0 && (
                 <p className="text-xs text-gray-400">Add at least one item to send.</p>
@@ -838,13 +866,14 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
             </p>
           )}
           {status === 'sent' && (
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="space-y-2.5">
               <p className="text-sm text-purple-700 font-medium">
                 ✓ Sent {initial.sentAt ? `on ${new Date(initial.sentAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
               </p>
+              <RecipientPicker recipients={initial.recipients} selected={selectedEmails} onToggle={toggleEmail} />
               <button
                 onClick={resendQuotation}
-                disabled={resending}
+                disabled={resending || selectedEmails.length === 0}
                 className="text-xs text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg hover:bg-purple-50 disabled:opacity-50 transition-colors"
               >
                 {resending ? 'Resending…' : '↺ Resend email + WhatsApp'}
@@ -912,6 +941,54 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
             ))}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Recipient multi-select: the company email + every contact email on file.
+ * The sender ticks who should receive the quotation. Shown for both the initial
+ * send (approved) and the resend (sent). Falls back to a hint when no email exists.
+ */
+function RecipientPicker({
+  recipients,
+  selected,
+  onToggle,
+}: {
+  recipients: QuotationRecipient[]
+  selected:   string[]
+  onToggle:   (email: string) => void
+}) {
+  if (recipients.length === 0) {
+    return (
+      <p className="text-xs text-amber-600">
+        No email on file for this company or its contacts. Add one on the company / contact record, then send.
+      </p>
+    )
+  }
+  return (
+    <div className="w-full max-w-md border border-gray-200 rounded-xl p-3 bg-gray-50">
+      <p className="text-xs font-semibold text-gray-600 mb-2">Email recipients</p>
+      <div className="space-y-1.5">
+        {recipients.map(r => (
+          <label key={r.email} className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selected.includes(r.email)}
+              onChange={() => onToggle(r.email)}
+              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-gray-800">{r.label}</span>
+            <span className="text-gray-400 text-xs truncate">· {r.email}</span>
+            {r.kind === 'company' && (
+              <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded shrink-0">company</span>
+            )}
+          </label>
+        ))}
+      </div>
+      {selected.length === 0 && (
+        <p className="text-[11px] text-red-500 mt-2">Select at least one recipient.</p>
       )}
     </div>
   )
