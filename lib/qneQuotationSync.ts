@@ -17,6 +17,7 @@
 
 import { prisma }                                from '@/lib/prisma'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
+import { rtfToPlainText }                         from '@/lib/rtf'
 import { Prisma }                                from '@/generated/prisma/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ type RawQuotationItem = {
   stockCode?:     string | null
   description?:   string | null
   desc2?:         string | null
+  note?:          string | null   // RTF blob — real text for SVC/service lines whose description is "."
   itemName?:      string | null
   uom?:           string | null
   qty?:           number | null
@@ -178,7 +180,11 @@ export async function syncQneQuotations(fromDate?: string): Promise<QuotationSyn
 
         for (const item of rawItems) {
           const stockCode   = item.stock ?? item.itemCode ?? item.stockCode ?? null
-          const description = item.description ?? item.desc2 ?? item.itemName ?? stockCode ?? ''
+          // SVC/service lines carry "." as description; the real text is RTF in `note`.
+          const rawDesc     = (item.description ?? '').trim()
+          const description = (rawDesc && rawDesc !== '.')
+            ? rawDesc
+            : ((item.desc2 ?? '').trim() || rtfToPlainText(item.note).slice(0, 500) || (item.itemName ?? '').trim() || stockCode || '')
           const qty         = item.qty ?? item.quantity ?? item.unitQty ?? 0
           const unitPrice   = item.unitPrice ?? item.unitSellPrice ?? 0
           const lineTotal   = item.netAmount ?? item.amount ?? item.lineTotal ?? (qty * unitPrice)

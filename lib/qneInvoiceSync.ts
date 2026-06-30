@@ -15,6 +15,7 @@
 
 import { prisma }                                from '@/lib/prisma'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
+import { rtfToPlainText }                         from '@/lib/rtf'
 import { Prisma }                                from '@/generated/prisma/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -199,7 +200,11 @@ export async function syncQneInvoices(
 
         for (const item of rawItems) {
           const stockCode  = item.itemCode?.trim() ?? null
-          const description = item.description ?? item.itemName ?? stockCode ?? 'Unknown'
+          // SVC/service lines carry "." — real text is RTF in `note`.
+          const rawDesc    = (item.description ?? '').trim()
+          const description = (rawDesc && rawDesc !== '.')
+            ? rawDesc
+            : (rtfToPlainText((item as { note?: string | null }).note).slice(0, 500) || item.itemName?.trim() || stockCode || 'Unknown')
           const qty        = item.qty ?? item.quantity ?? item.unitQty ?? 0
           const unitPrice  = item.unitPrice ?? item.unitSellPrice ?? 0
           const lineTotal  = item.amount ?? item.lineTotal ?? (qty * unitPrice)

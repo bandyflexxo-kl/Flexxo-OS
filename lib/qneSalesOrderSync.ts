@@ -7,6 +7,7 @@
 
 import { prisma }                                from '@/lib/prisma'
 import { qneLogin, qneGet, QneUnavailableError } from '@/lib/qneClient'
+import { rtfToPlainText }                         from '@/lib/rtf'
 import { Prisma }                                from '@/generated/prisma/client'
 
 export type SalesOrderSyncResult = {
@@ -66,7 +67,10 @@ function resolveItemCode(i: RawSOItem): string | null {
   return (i.itemCode ?? i.stockCode ?? null) as string | null
 }
 function resolveDescription(i: RawSOItem): string {
-  return ((i.description ?? i.itemName ?? '') as string)
+  // SVC/service lines carry "." — real text is RTF in `note`.
+  const raw = ((i.description ?? '') as string).trim()
+  if (raw && raw !== '.') return raw
+  return rtfToPlainText(i.note as string | null | undefined).slice(0, 500) || ((i.itemName ?? '') as string).trim()
 }
 function resolveQty(i: RawSOItem): number {
   return Number(i.qty ?? i.quantity ?? i.unitQty ?? 0)
