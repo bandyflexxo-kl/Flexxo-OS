@@ -104,7 +104,9 @@ export default function OrderDetail({ initial }: { initial: OrderDetailProps }) 
   const [quoteData,   setQuoteData]   = useState<QuoteData | null>(null)
   const [quoteError,  setQuoteError]  = useState<string | null>(null)
 
-  const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
+  // Director / SuperAdmin are top management — full order actions in the UI too
+  // (the order APIs already allow them via isPrivilegedRole).
+  const isPrivileged = ['Admin', 'Manager', 'Director', 'SuperAdmin'].includes(initial.userRole)
   const statusSteps  = getStatusSteps(status)
   const currentIdx   = statusSteps.indexOf(status)
 

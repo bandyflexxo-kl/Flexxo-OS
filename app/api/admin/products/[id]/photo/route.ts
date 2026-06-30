@@ -144,9 +144,11 @@ export async function DELETE(
   const filename = parts[1]
 
   if (filename) {
+    // Strip stray non-ASCII (BOM/zero-width) from the key — see uploadProductPhoto.
+    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').replace(/[^\x20-\x7E]/g, '')
     const delRes = await fetch(
       `${urlObj.protocol}//${urlObj.host}/storage/v1/object/product-photos/${filename}`,
-      { method: 'DELETE', headers: { Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
+      { method: 'DELETE', headers: { Authorization: `Bearer ${serviceKey}` } }
     )
     if (!delRes.ok) console.warn(`Supabase delete ${filename}: ${delRes.status}`)
   }

@@ -6,7 +6,11 @@ export async function uploadProductPhoto(
   buffer:    Buffer,
   mimeType:  string,
 ): Promise<string> {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // Strip any non-ASCII (BOM / zero-width / whitespace) that can slip into an env
+  // var when pasted into the Vercel dashboard. Header values must be ByteString
+  // (chars ≤ 255); a stray U+FEFF makes `Authorization: Bearer <key>` throw
+  // "Cannot convert argument to a ByteString …". Keys are pure ASCII, so this is safe.
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').replace(/[^\x20-\x7E]/g, '')
   if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY not set')
 
   const ext      = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'

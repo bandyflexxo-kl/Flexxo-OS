@@ -128,7 +128,9 @@ export default function QuotationBuilder({ initial }: { initial: QuotationBuilde
   const [showRejectForm,  setShowRejectForm]   = useState(false)
   const [actionError,     setActionError]      = useState<string | null>(null)
 
-  const isPrivileged = initial.userRole === 'Admin' || initial.userRole === 'Manager'
+  // Director / SuperAdmin are top management — they approve too (the approve API
+  // already allows them via isPrivilegedRole; this is the UI button gate).
+  const isPrivileged = ['Admin', 'Manager', 'Director', 'SuperAdmin'].includes(initial.userRole)
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
