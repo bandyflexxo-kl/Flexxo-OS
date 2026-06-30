@@ -1,27 +1,17 @@
 /**
  * /shop/dashboard — B2B Client Home
  *
- * Performance architecture:
- *   ─ Fast data (DB): user profile, orders, AND the top metric cards
- *     (Total Spent / Invoices / Outstanding) — rendered immediately, inline,
- *     from data already in our DB (qne_invoices aggregate + cached balance).
- *   ─ Slow data (live QNE via Radmin VPN — aging buckets, monthly breakdown):
- *     streamed in below via React Suspense so the page is NEVER blocked.
- *
- * IMPORTANT: the metric cards used to be Suspense-wrapped async components that
- * called live QNE. On Vercel there is no Radmin VPN, so that call always stalled
- * to its ~10s login timeout before falling back — making the dashboard feel slow.
- * They now read straight from the DB and appear instantly. Only the below-fold
- * aging / monthly-spend sections still call fetchQneFinancialDataCached (deduped
- * via unstable_cache); they simply omit themselves when QNE is unreachable.
+ * 100% DB-sourced: every card, metric, and section reads ONLY from our synced
+ * DB (qne_invoices aggregate, cached outstanding balance, portal orders) — never
+ * from live QNE. There is no Radmin VPN on Vercel, so a live QNE call would just
+ * stall to its timeout and leave skeletons spinning. The whole page renders
+ * synchronously from the DB and appears instantly.
  */
 
-import { Suspense }              from 'react'
 import { redirect }              from 'next/navigation'
 import Link                      from 'next/link'
 import { prisma }                from '@/lib/prisma'
 import { getOptionalShopSession } from '@/lib/session'
-import { fetchQneFinancialDataCached } from '@/lib/qneFinancial'
 import AccountSection            from './AccountSection'
 import QuickReorderSection, {
   type FrequentItem,
@@ -406,12 +396,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Metric cards (pulled up over hero) ────────────────────────── */}
-      {/*
-        3 cards render immediately (DB data).
-        Outstanding card streams in via Suspense — shows skeleton while
-        QNE financial data loads. No spinner blocks the rest of the page.
-      */}
+      {/* ── Metric cards (pulled up over hero) — all 4 render instantly from DB ── */}
       <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
@@ -435,20 +420,6 @@ export default async function DashboardPage() {
             </div>
           )}
 
-          {/* Orders / Invoices — instant from DB */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
-            <p className="text-xs text-gray-400 font-medium">{dashCountIsInvoices ? 'Invoices' : 'Orders Placed'}</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{dashCount}</p>
-            {!dashCountIsInvoices && totalOrders > 0
-              ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">all time (portal orders)</p>
-              : null}
-            {dashCountIsInvoices && (
-              <Link href="/shop/invoices" className="mt-auto pt-1.5 text-[11px] font-semibold text-green-600 hover:text-green-700">
-                View all invoices →
-              </Link>
-            )}
-          </div>
-
           {/* Outstanding — instant from DB (cached QNE balance) */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">Outstanding</p>
@@ -469,9 +440,23 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* Vouchers — static */}
+          {/* Orders / Invoices — instant from DB */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
+            <p className="text-xs text-gray-400 font-medium">{dashCountIsInvoices ? 'Invoices' : 'Orders Placed'}</p>
+            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{dashCount}</p>
+            {!dashCountIsInvoices && totalOrders > 0
+              ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">all time (portal orders)</p>
+              : null}
+            {dashCountIsInvoices && (
+              <Link href="/shop/invoices" className="mt-auto pt-1.5 text-[11px] font-semibold text-green-600 hover:text-green-700">
+                View all invoices →
+              </Link>
+            )}
+          </div>
+
+          {/* My Rewards — static (loyalty launching soon) */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-400 font-medium">Vouchers</p>
+            <p className="text-xs text-gray-400 font-medium">My Rewards</p>
             <p className="text-lg font-bold text-gray-300 mt-1">0</p>
             <p className="text-[10px] text-green-500 mt-0.5 font-medium">Loyalty launching soon</p>
           </div>
@@ -481,12 +466,6 @@ export default async function DashboardPage() {
 
       <div className="max-w-3xl mx-auto px-4 mt-6 space-y-5">
 
-        {/* ── Payment alert (streams in, shown only if outstanding > 0) ─ */}
-        {company?.qneCustomerCode && (
-          <Suspense fallback={null}>
-            <PaymentAlertBanner qneCustomerCode={company.qneCustomerCode} />
-          </Suspense>
-        )}
 
         {/* ── Loyalty progress bar (if has spend) ───────────────────── */}
         {effectiveSpent > 0 && partnerTier.nextTier && partnerTier.nextAt && (
@@ -508,61 +487,6 @@ export default async function DashboardPage() {
             <p className="text-[10px] text-gray-400 mt-1">
               MYR {(partnerTier.nextAt - effectiveSpent).toLocaleString('en-MY', { maximumFractionDigits: 0 })} more to reach {partnerTier.nextTier} Partner
             </p>
-          </div>
-        )}
-
-        {/* ── Account Manager ───────────────────────────────────────── */}
-        {salesperson && (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 bg-green-50 border-b border-green-100 flex items-center gap-2">
-              <span className="text-green-600 text-sm">🤝</span>
-              <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Your Dedicated Account Manager</p>
-            </div>
-            <div className="px-4 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                  <span className="text-sm font-bold text-green-700">
-                    {salesperson.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">{salesperson.name}</p>
-                  <p className="text-xs text-gray-400">Flexxo Account Manager</p>
-                  {salesperson.mobileNo && (
-                    <p className="text-xs text-gray-500 mt-0.5">{salesperson.mobileNo}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2 shrink-0">
-                {spWaHref && (
-                  <a
-                    href={spWaHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.122.55 4.116 1.517 5.845L0 24l6.338-1.487A11.936 11.936 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.896 0-3.671-.504-5.201-1.385l-.373-.22-3.863.907.921-3.773-.24-.389A9.945 9.945 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
-                    </svg>
-                    WhatsApp
-                  </a>
-                )}
-                {salesperson.mobileNo && (
-                  <a
-                    href={`tel:${salesperson.mobileNo}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    📞 Call
-                  </a>
-                )}
-              </div>
-            </div>
-            <div className="px-4 pb-3">
-              <p className="text-[11px] text-gray-400 italic">
-                &ldquo;Need something urgently? Missing an item? Special pricing? Reach out directly — we respond within the hour.&rdquo;
-              </p>
-            </div>
           </div>
         )}
 
@@ -617,20 +541,6 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* ── QNE invoices + aging — streams in via Suspense ────────── */}
-        {/*
-          These sections only render when QNE data is available.
-          Suspense fallback is null — sections simply don't exist until
-          QNE responds (rather than showing a placeholder that "flashes in").
-          If QNE is unreachable, QneInvoicesAging returns null — sections
-          are silently omitted.
-        */}
-        {company?.qneCustomerCode && (
-          <Suspense fallback={<QneInvoicesSkeleton />}>
-            <QneInvoicesAging qneCustomerCode={company.qneCustomerCode} />
-          </Suspense>
-        )}
-
         {/* ── Recent Orders ─────────────────────────────────────────── */}
         {recentOrders.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -670,13 +580,6 @@ export default async function DashboardPage() {
               ))}
             </div>
           </div>
-        )}
-
-        {/* ── QNE Invoice History — streams in, shown when QNE has data ── */}
-        {company?.qneCustomerCode && (
-          <Suspense fallback={<QneInvoiceHistorySkeleton />}>
-            <QneInvoiceHistory qneCustomerCode={company.qneCustomerCode} />
-          </Suspense>
         )}
 
         {/* ── Monthly Spending Chart (CRM orders only — hidden when QNE chart covers it) */}
@@ -833,385 +736,9 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* No orders yet — onboarding CTA */}
-        {totalOrders === 0 && (
-          <div className="bg-white border border-dashed border-green-300 rounded-xl p-6 text-center">
-            <p className="text-2xl mb-2">👋</p>
-            <p className="text-sm font-semibold text-gray-800">Welcome to Flexxo!</p>
-            <p className="text-xs text-gray-500 mt-1 mb-4 max-w-xs mx-auto">
-              You&rsquo;re all set. Browse our catalogue or reach out to{' '}
-              {salesperson?.name?.split(' ')[0] ?? 'your account manager'} to place your first order.
-            </p>
-            <Link
-              href="/shop/products"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors"
-            >
-              Explore Products →
-            </Link>
-          </div>
-        )}
-
         {/* ── Account (change password + sign out) ─────────────────── */}
         <AccountSection />
 
-      </div>
-    </div>
-  )
-}
-
-// ── Streaming async Server Components ────────────────────────────────────────
-//
-// These components are rendered in <Suspense> boundaries in DashboardPage.
-// They execute concurrently in the background while the main page HTML is
-// already streaming to the client.  When they complete, their HTML is
-// flushed into the stream and injected into the correct position in the DOM.
-//
-// Both call fetchQneFinancialDataCached with the same key — unstable_cache
-// deduplicates concurrent requests so QNE is only contacted once.
-
-/** QNE invoice history — monthly chart + stats, streams in via Suspense */
-async function QneInvoiceHistory({ qneCustomerCode }: { qneCustomerCode: string }) {
-  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
-  try {
-    fin = await fetchQneFinancialDataCached(qneCustomerCode)
-  } catch {
-    return null
-  }
-
-  const { monthlySpend, invoiceStats } = fin
-  if (!monthlySpend.some(m => m.amount > 0)) return null
-
-  const max = Math.max(...monthlySpend.map(m => m.amount), 1)
-
-  // Month-on-month delta: compare last full month vs the month before it
-  // monthlySpend[5] = current month (may be partial), [4] = last full month, [3] = month before
-  const currentMonthAmt = monthlySpend[5]?.amount ?? 0
-  const prevMonthAmt    = monthlySpend[4]?.amount ?? 0
-  const prevPrevAmt     = monthlySpend[3]?.amount ?? 0
-  // Use last full month vs month before for a more meaningful delta
-  const deltaBase   = prevPrevAmt
-  const deltaTarget = prevMonthAmt
-  const deltaSign   = deltaTarget >= deltaBase ? 1 : -1
-  const deltaPct    = deltaBase > 0 ? Math.abs(((deltaTarget - deltaBase) / deltaBase) * 100) : null
-  const prevMonthName = monthlySpend[4]?.month ?? ''
-  const prevPrevName  = monthlySpend[3]?.month ?? ''
-
-  // Date range for the 6-month window
-  const now   = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
-  const rangeStr = `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
-        <span className="text-sm">📈</span>
-        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Monthly Spending</p>
-        <span className="ml-auto text-[10px] text-green-500 font-medium">● Live from QNE</span>
-      </div>
-
-      {/* Summary stats row */}
-      <div className="px-4 pt-3 pb-0 flex gap-6 text-xs">
-        <div>
-          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">6-Month Total</p>
-          <p className="font-bold text-gray-900 text-sm mt-0.5">
-            MYR {invoiceStats.totalAmount.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Invoices</p>
-          <p className="font-bold text-gray-900 text-sm mt-0.5">{invoiceStats.count}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Avg / Invoice</p>
-          <p className="font-bold text-gray-900 text-sm mt-0.5">
-            MYR {invoiceStats.count > 0
-              ? (invoiceStats.totalAmount / invoiceStats.count).toLocaleString('en-MY', { maximumFractionDigits: 0 })
-              : '0'}
-          </p>
-        </div>
-        {/* Month-on-month delta */}
-        {deltaPct !== null && prevMonthAmt > 0 && (
-          <div className="ml-auto text-right">
-            <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">
-              {prevMonthName} vs {prevPrevName}
-            </p>
-            <p className={`font-bold text-sm mt-0.5 ${deltaSign >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-              {deltaSign >= 0 ? '↑' : '↓'} {deltaPct.toFixed(0)}%
-            </p>
-          </div>
-        )}
-        {/* Current month spend (partial) */}
-        {currentMonthAmt > 0 && (
-          <div className="text-right">
-            <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">
-              {monthlySpend[5]?.month} (so far)
-            </p>
-            <p className="font-bold text-gray-900 text-sm mt-0.5">
-              MYR {currentMonthAmt >= 1000 ? `${(currentMonthAmt / 1000).toFixed(1)}k` : currentMonthAmt.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-            </p>
-          </div>
-        )}
-      </div>
-      {/* Date range context */}
-      <p className="px-4 pt-1.5 text-[10px] text-gray-400">{rangeStr}</p>
-
-      {/* Bar chart */}
-      <div className="px-4 pt-3 pb-3">
-        <div className="flex items-end gap-1.5 h-20">
-          {monthlySpend.map(m => {
-            const heightPct = m.amount > 0 ? Math.max((m.amount / max) * 100, 8) : 2
-            return (
-              <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5">
-                {m.amount > 0 && (
-                  <p className="text-[9px] text-gray-500 font-medium leading-none mb-0.5">
-                    {m.amount >= 1000 ? `${(m.amount / 1000).toFixed(1)}k` : Math.round(m.amount).toString()}
-                  </p>
-                )}
-                <div
-                  className="w-full rounded-t bg-green-500"
-                  style={{ height: `${heightPct}%`, opacity: m.amount > 0 ? 1 : 0.15, minHeight: '2px' }}
-                />
-              </div>
-            )
-          })}
-        </div>
-        <div className="flex gap-1.5 mt-1.5">
-          {monthlySpend.map(m => (
-            <p key={m.month} className="flex-1 text-center text-[9px] text-gray-400 truncate">{m.month}</p>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Skeleton for QNE invoice history while loading */
-function QneInvoiceHistorySkeleton() {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
-      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
-        <div className="h-3 bg-gray-200 rounded w-32" />
-        <div className="ml-auto h-2.5 bg-gray-100 rounded w-20" />
-      </div>
-      <div className="px-4 py-4">
-        <div className="flex gap-6 mb-4">
-          {[1,2,3].map(i => <div key={i} className="space-y-1"><div className="h-2 bg-gray-100 rounded w-16" /><div className="h-4 bg-gray-200 rounded w-20" /></div>)}
-        </div>
-        <div className="flex items-end gap-1.5 h-20">
-          {[1,2,3,4,5,6].map(i => (
-            <div key={i} className="flex-1 rounded-t bg-gray-100" style={{ height: `${[40,65,30,80,55,70][i-1]}%` }} />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Outstanding metric card — streams in live QNE balance */
-/** Single invoice table row — module-level to avoid defining components inside async functions */
-function InvoiceTableRow({ inv }: {
-  inv: { invoiceNo: string; invoiceDate: string; dueDate: string | null; amount: number }
-}) {
-  const overdue = inv.dueDate && new Date(inv.dueDate) < new Date()
-  return (
-    <tr className="border-b border-gray-50 last:border-0">
-      <td className="px-4 py-2.5 font-mono text-gray-800">{inv.invoiceNo}</td>
-      <td className="px-4 py-2.5 text-gray-500">
-        {inv.invoiceDate
-          ? new Date(inv.invoiceDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
-          : '—'}
-      </td>
-      <td className={`px-4 py-2.5 font-medium ${overdue ? 'text-red-600' : 'text-gray-600'}`}>
-        {inv.dueDate
-          ? new Date(inv.dueDate).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })
-          : '—'}
-        {overdue && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 py-0.5 rounded">Overdue</span>}
-      </td>
-      <td className="px-4 py-2.5 text-right font-semibold text-gray-800">
-        MYR {inv.amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </td>
-    </tr>
-  )
-}
-
-/** QNE invoice table + aging breakdown — streams in after fast content */
-async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }) {
-  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
-  try {
-    fin = await fetchQneFinancialDataCached(qneCustomerCode)
-  } catch {
-    return null // QNE unreachable — sections silently omitted
-  }
-
-  const allInvoices    = fin.recentInvoices
-  const topInvoices    = allInvoices.slice(0, 10)
-  const olderInvoices  = allInvoices.slice(10)
-  const aging          = fin.aging
-
-  if (allInvoices.length === 0 && (!aging || aging.totalOutstanding === 0)) return null
-
-  return (
-    <>
-      {/* Recent Invoices moved to /shop/invoices (DB-backed list + per-invoice PDF). */}
-
-      {/* ── Aging Breakdown + Credit Limit ──────────────────────── */}
-      {aging && aging.totalOutstanding > 0 && (() => {
-        const total = aging.totalOutstanding || 1
-        const bars: { label: string; val: number; color: string }[] = [
-          { label: 'Current', val: aging.current,        color: 'bg-green-400' },
-          { label: '1–30d',   val: aging.overdue30,      color: 'bg-yellow-400' },
-          { label: '31–60d',  val: aging.overdue60,      color: 'bg-orange-400' },
-          { label: '61–90d',  val: aging.overdue90,      color: 'bg-red-400' },
-          { label: '90d+',    val: aging.overdueAbove90, color: 'bg-red-600' },
-        ].filter(b => b.val > 0)
-
-        return (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">📅</span>
-                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Payment Aging</p>
-              </div>
-              <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
-            </div>
-            <div className="px-4 py-4">
-              <div className="h-3 rounded-full overflow-hidden flex mb-3">
-                {bars.map(b => (
-                  <div
-                    key={b.label}
-                    className={`${b.color} h-full transition-all`}
-                    style={{ width: `${Math.round((b.val / total) * 100)}%` }}
-                    title={`${b.label}: MYR ${b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}`}
-                  />
-                ))}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
-                {bars.map(b => (
-                  <div key={b.label} className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${b.color}`} />
-                    <span className="text-[11px] text-gray-500">{b.label}</span>
-                    <span className="text-[11px] font-semibold text-gray-700 ml-auto tabular-nums">
-                      MYR {b.val.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {aging.creditLimit !== null && aging.creditLimit > 0 && (
-                <div className="mt-4 pt-3 border-t border-gray-50">
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-gray-500 font-medium">Credit Utilisation</span>
-                    <span className="tabular-nums text-gray-700 font-semibold">
-                      MYR {aging.totalOutstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                      {' / '}
-                      MYR {aging.creditLimit.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        aging.totalOutstanding / aging.creditLimit > 0.8 ? 'bg-red-500' :
-                        aging.totalOutstanding / aging.creditLimit > 0.5 ? 'bg-amber-400' : 'bg-green-400'
-                      }`}
-                      style={{ width: `${Math.min(100, Math.round((aging.totalOutstanding / aging.creditLimit) * 100))}%` }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {Math.round((aging.totalOutstanding / aging.creditLimit) * 100)}% of credit limit used
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      })()}
-    </>
-  )
-}
-
-/**
- * Payment alert banner — streams in via Suspense, renders only when outstanding > 0.
- * Shows: total owed, oldest overdue invoice, 90d+ bucket if any.
- */
-async function PaymentAlertBanner({ qneCustomerCode }: { qneCustomerCode: string }) {
-  let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
-  try {
-    fin = await fetchQneFinancialDataCached(qneCustomerCode)
-  } catch {
-    return null
-  }
-
-  const outstanding = fin.customer.currentBalance
-  if (!outstanding || outstanding <= 0) return null
-
-  const aging = fin.aging
-
-  // Find oldest overdue invoice from stored invoices
-  const today = new Date()
-  const overdueInvoices = fin.recentInvoices.filter(
-    inv => inv.dueDate && new Date(inv.dueDate) < today
-  )
-  const oldestOverdue = overdueInvoices.sort(
-    (a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime()
-  )[0]
-
-  const has90d  = aging && aging.overdueAbove90 > 0
-  const hasOver = overdueInvoices.length > 0 || has90d
-
-  return (
-    <div className={`rounded-xl px-4 py-3.5 flex items-start gap-3 border ${
-      has90d         ? 'bg-red-50 border-red-200'
-      : hasOver      ? 'bg-amber-50 border-amber-200'
-      :                'bg-blue-50 border-blue-200'
-    }`}>
-      <span className={`text-base mt-0.5 shrink-0 ${has90d ? 'text-red-500' : hasOver ? 'text-amber-500' : 'text-blue-500'}`}>
-        {has90d ? '🔴' : hasOver ? '⚠️' : 'ℹ️'}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold ${has90d ? 'text-red-900' : hasOver ? 'text-amber-900' : 'text-blue-900'}`}>
-          MYR {outstanding.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} outstanding balance
-        </p>
-        <div className={`text-xs mt-0.5 space-y-0.5 ${has90d ? 'text-red-700' : hasOver ? 'text-amber-700' : 'text-blue-700'}`}>
-          {oldestOverdue && (
-            <p>
-              Oldest overdue: <span className="font-medium">{oldestOverdue.invoiceNo}</span>
-              {' — due '}
-              <span className="font-medium">
-                {new Date(oldestOverdue.dueDate!).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </span>
-            </p>
-          )}
-          {has90d && aging && (
-            <p className="font-medium text-red-700">
-              MYR {aging.overdueAbove90.toLocaleString('en-MY', { maximumFractionDigits: 0 })} is 90+ days overdue — please settle urgently
-            </p>
-          )}
-          {!hasOver && (
-            <p>All invoices are current — thank you!</p>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Skeleton shown while QNE invoices + aging load */
-function QneInvoicesSkeleton() {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
-      <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-2">
-        <div className="w-4 h-4 bg-gray-200 rounded" />
-        <div className="h-3 bg-gray-200 rounded w-32" />
-      </div>
-      <div className="px-4 py-4 space-y-2.5">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="flex items-center gap-3">
-            <div className="h-3 bg-gray-200 rounded flex-1" />
-            <div className="h-3 bg-gray-100 rounded w-12" />
-            <div className="h-3 bg-gray-100 rounded w-12" />
-            <div className="h-3 bg-gray-200 rounded w-20 ml-auto" />
-          </div>
-        ))}
       </div>
     </div>
   )
