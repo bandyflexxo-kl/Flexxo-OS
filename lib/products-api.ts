@@ -46,7 +46,9 @@ export type ProductListItem = {
 // ── Cache config ──────────────────────────────────────────────────────────────
 
 const TTL_SECONDS = 86_400   // 24 hours
-const REDIS_KEY   = (tier: 'retail' | 'b2b') => `flexxo:products:v1:${tier}`
+// v2 (30 Jun 2026): retail markup changed 1.20 → 1.35. Bumping the version
+// abandons the old cached prices so the new deploy recomputes at ×1.35 on first hit.
+const REDIS_KEY   = (tier: 'retail' | 'b2b') => `flexxo:products:v2:${tier}`
 
 // ── Core DB query (no cache) ──────────────────────────────────────────────────
 
@@ -91,7 +93,7 @@ async function queryProducts(tier: 'retail' | 'b2b'): Promise<ProductListItem[]>
   return products.map(p => {
     // Priority 1: customSellingPrice (per-product admin override)
     // Priority 2: tiered gross-margin from supplier cost price
-    // Priority 3: QNE last-sale × 1.20 (fallback when no cost price uploaded yet)
+    // Priority 3: QNE last-sale × RETAIL_MARKUP (fallback when no cost price uploaded yet)
     const custom     = p.customSellingPrice ? Number(p.customSellingPrice).toFixed(2) : null
     const costPrice  = p.priceVersions[0]?.costPrice ?? null
     const fromCost   = costPrice ? tieredSellingPrice(costPrice.toNumber(), rates) : null

@@ -4,12 +4,13 @@
  * All tools are read-only DB queries — never write.
  */
 import { prisma } from '@/lib/prisma'
+import { RETAIL_MARKUP } from '@/lib/qnePriceSync'
 
 export type ToolResult = Record<string, unknown>
 
 function displayPrice(qneLastSalePrice: { toNumber: () => number } | null): string | null {
   if (!qneLastSalePrice) return null
-  return (qneLastSalePrice.toNumber() * 1.2).toFixed(2)
+  return (qneLastSalePrice.toNumber() * RETAIL_MARKUP).toFixed(2)
 }
 
 // ── search_products ─────────────────────────────────────────────────────────

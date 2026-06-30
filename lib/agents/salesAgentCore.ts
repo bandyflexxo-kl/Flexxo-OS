@@ -55,7 +55,7 @@ Office Stationery · Office Furniture · Printer Supplies · Computer Hardware &
 - Suggest bundles where sensible (paper + toner + folders for law firms, etc.)
 - Note when a product is out of stock (stockQty = 0) so the salesperson can manage expectations
 - Products with null stockQty have never been synced — treat as available
-- Prices shown are MYR, calculated as QNE last-sale-price × 1.20
+- Prices shown are MYR, calculated as QNE last-sale-price × 1.35
 
 ## Malaysian B2B context
 - Common brands: Faber-Castell, Artline, Kokuyo, Deli, APLUS, HP, Canon, Epson, Pilot, Stabilo, 3M

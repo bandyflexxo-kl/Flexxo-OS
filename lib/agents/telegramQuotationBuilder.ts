@@ -10,6 +10,7 @@
  *   ...
  */
 import { prisma } from '@/lib/prisma'
+import { RETAIL_MARKUP } from '@/lib/qnePriceSync'
 import { parseItemList, matchProductsForLines } from '@/lib/smartOrder'
 import { esc } from '@/lib/telegramBot'
 import { notifyByRole } from '@/lib/telegramNotify'
@@ -113,10 +114,10 @@ export async function buildQuotationFromTelegram(
     const qty   = line.qty
 
     const lastSaleNum = match.sellingPrice
-      ? parseFloat(match.sellingPrice) / 1.20  // reverse the ×1.20 to get cost
+      ? parseFloat(match.sellingPrice) / RETAIL_MARKUP  // reverse the markup to get cost
       : null
 
-    const unitPrice = lastSaleNum !== null ? lastSaleNum * 1.20 : 0
+    const unitPrice = lastSaleNum !== null ? lastSaleNum * RETAIL_MARKUP : 0
     const lineTotal = unitPrice * qty
     subtotal += lineTotal
 
@@ -130,7 +131,7 @@ export async function buildQuotationFromTelegram(
         qty:         qty,
         unitCost:    lastSaleNum !== null ? lastSaleNum : 0,
         unitPrice:   unitPrice,
-        marginPct:   lastSaleNum !== null ? 0.2 : 0,
+        marginPct:   lastSaleNum !== null ? (RETAIL_MARKUP - 1) : 0,
         lineTotal:   lineTotal,
         sortOrder:   i,
       },

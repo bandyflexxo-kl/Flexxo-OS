@@ -6,7 +6,7 @@
  * Writes: products.qneLastSalePrice  ← stores purchase price from QNE
  *         products.qneLastSalePriceAt
  *
- * Display formula: purchasePrice × 1.20, rounded UP to nearest RM 0.10
+ * Display formula: purchasePrice × 1.35, rounded UP to nearest RM 0.10
  * (shown to ALL visitors — logged-in B2B and guest browsing)
  *
  * QNE READ-ONLY: this function only calls GET endpoints — never writes to QNE.
@@ -34,7 +34,7 @@ export type PriceSyncResult = {
  * Source:  GET /api/Stocks  →  stock.purchasePrice
  * Matching: stock.stockCode → product.qneItemCode (case-insensitive)
  *
- * Display formula (in calcDisplayPrice): purchasePrice × 1.20
+ * Display formula (in calcDisplayPrice): purchasePrice × 1.35
  * rounded UP to nearest RM 0.10.
  *
  * If VPN is inactive, throws QneUnavailableError.
@@ -116,7 +116,7 @@ export async function syncQnePrices(
     await prisma.product.update({
       where: { id: product.id },
       data: {
-        qneLastSalePrice:   price,          // stores purchase price (base for ×1.20)
+        qneLastSalePrice:   price,          // stores purchase price (base for RETAIL_MARKUP)
         qneLastSalePriceAt: new Date(),
       },
     })
@@ -133,14 +133,21 @@ export async function syncQnePrices(
 }
 
 /**
- * Display price = purchasePrice × 1.20, rounded UP to nearest RM 0.10.
- * e.g. 8.93 × 1.20 = 10.716 → RM 10.80
+ * Retail markup applied to the QNE last purchase price to get the shop display
+ * price. SINGLE SOURCE OF TRUTH — imported by the sales agent + telegram quote
+ * builder so every surface prices identically. (Was 1.20; 1.35 from 30 Jun 2026.)
+ */
+export const RETAIL_MARKUP = 1.35
+
+/**
+ * Display price = purchasePrice × RETAIL_MARKUP, rounded UP to nearest RM 0.10.
+ * e.g. 8.93 × 1.35 = 12.0555 → RM 12.10
  *
  * Uses integer arithmetic (cents) to avoid floating-point drift.
  */
 export function calcDisplayPrice(purchasePrice: number | null): number | null {
   if (!purchasePrice || purchasePrice <= 0) return null
-  const withMargin = purchasePrice * 1.20
+  const withMargin = purchasePrice * RETAIL_MARKUP
   // multiply by 10 to get "dimes", ceil, divide back — ceiling to nearest RM 0.10
   return Math.ceil(withMargin * 10) / 10
 }
