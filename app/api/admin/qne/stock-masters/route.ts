@@ -9,7 +9,7 @@
 import { z } from 'zod'
 import { verifySession } from '@/lib/session'
 import {
-  fetchStockMasters,
+  fetchStockMastersCached,
   createBrand,
   createCategory,
   createGroup,
@@ -22,14 +22,10 @@ export async function GET() {
   if (!['Admin', 'Director'].includes(session.role))
     return Response.json({ error: 'Forbidden' }, { status: 403 })
 
-  try {
-    const masters = await fetchStockMasters()
-    return Response.json(masters)
-  } catch (err) {
-    if (err instanceof QneUnavailableError)
-      return Response.json({ error: 'QNE unreachable — connect the Radmin VPN and retry.' }, { status: 503 })
-    return Response.json({ error: err instanceof Error ? err.message : 'Failed to load QNE masters' }, { status: 502 })
-  }
+  // Read from the DB cache (qne_stock_masters) — works WITHOUT the Radmin VPN.
+  // Populate/refresh it via POST /api/admin/qne/sync-stock-masters (VPN required).
+  const masters = await fetchStockMastersCached()
+  return Response.json(masters)
 }
 
 const CreateMasterSchema = z.object({

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import QneSyncPanel from '@/components/admin/QneSyncPanel'
 import QnePriceSyncPanel from '@/components/admin/QnePriceSyncPanel'
 import QneProductSyncPanel from '@/components/admin/QneProductSyncPanel'
+import QneMasterSyncPanel from '@/components/admin/QneMasterSyncPanel'
 import QneDocumentSyncPanel from '@/components/admin/QneDocumentSyncPanel'
 
 export default async function AdminPage() {
@@ -189,6 +190,7 @@ export default async function AdminPage() {
         <QneSyncPanel recentSyncs={recentSyncs} pendingCount={pendingCount} />
         <QnePriceSyncPanel />
         <QneProductSyncPanel />
+        <QneMasterSyncPanel />
         <QneDocumentSyncPanel />
       </div>
     </div>

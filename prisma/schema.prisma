@@ -937,6 +937,21 @@ model QneQuotationItem {
   @@map("qne_quotation_items")
 }
 
+/// DB cache of QNE's stock taxonomy (brands/categories/groups/uoms) so the
+/// New Product modal dropdowns work without the Radmin VPN. Populated by
+/// syncQneStockMasters() (VPN required); read VPN-free by the product form.
+model QneStockMaster {
+  id          String   @id @default(uuid())
+  type        String   // 'brand' | 'category' | 'group' | 'uom'
+  code        String
+  description String?
+  syncedAt    DateTime @default(now()) @map("synced_at")
+
+  @@unique([type, code])
+  @@index([type])
+  @@map("qne_stock_masters")
+}
+
 model QneSalesOrder {
   id           String   @id @default(uuid())
   docNo        String   @unique @map("doc_no")

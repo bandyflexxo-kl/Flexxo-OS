@@ -9,6 +9,7 @@ type Masters = {
   brands:     { classCode: string;    description: string | null }[]
   categories: { categoryCode: string; description: string | null }[]
   groups:     { groupCode: string;    description: string | null }[]
+  uoms?:      string[]
 }
 type DuplicateReport = {
   codeInQne: boolean
@@ -342,7 +343,10 @@ export default function NewProductModal({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Base UOM <span className="text-red-500">*</span></label>
-                  <input value={baseUOM} onChange={e => setBaseUOM(e.target.value.toUpperCase())} placeholder="e.g. RIM, PCS" className={field} />
+                  <input value={baseUOM} onChange={e => setBaseUOM(e.target.value.toUpperCase())} placeholder="e.g. RIM, PCS" list="uom-options" className={field} />
+                  <datalist id="uom-options">
+                    {(masters?.uoms ?? []).map(u => <option key={u} value={u} />)}
+                  </datalist>
                   {err('baseUOM') && <p className="text-xs text-red-600 mt-1">{err('baseUOM')}</p>}
                 </div>
                 <div>
