@@ -1,6 +1,8 @@
 import { sendGenericEmail } from '@/lib/email'
 
 const APP_URL = process.env.NEXTAUTH_URL ?? 'https://flexxo-os.vercel.app'
+// Email images must be a publicly-reachable URL — never localhost.
+const LOGO_URL = `${APP_URL.includes('localhost') ? 'https://flexxo-os.vercel.app' : APP_URL}/flexxo-logo.png`
 
 export async function sendPortalWelcomeEmail(params: {
   to:          string
@@ -17,14 +19,11 @@ export async function sendPortalWelcomeEmail(params: {
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
 
   <!-- Header -->
-  <div style="background:#1d4ed8;padding:24px 32px;border-radius:12px 12px 0 0;">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;">
-        <span style="color:#fff;font-size:18px;font-weight:bold;">F</span>
-      </div>
-      <h1 style="color:#fff;margin:0;font-size:20px;font-weight:700;">Flexxo Shop</h1>
+  <div style="background:#1f9d55;padding:26px 32px;border-radius:12px 12px 0 0;text-align:center;">
+    <div style="display:inline-block;background:#ffffff;padding:10px 22px;border-radius:10px;">
+      <img src="${LOGO_URL}" alt="Flexxo" width="150" style="height:auto;display:block;border:0;" />
     </div>
-    <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your exclusive B2B ordering portal</p>
+    <p style="color:#d1fae5;margin:14px 0 0;font-size:14px;">Your exclusive B2B ordering portal</p>
   </div>
 
   <!-- Body -->
@@ -72,7 +71,7 @@ export async function sendPortalWelcomeEmail(params: {
     <!-- CTA button -->
     <div style="text-align:center;margin-bottom:24px;">
       <a href="${loginUrl}"
-         style="display:inline-block;background:#1d4ed8;color:#fff;padding:14px 36px;border-radius:8px;font-weight:700;font-size:15px;text-decoration:none;letter-spacing:0.01em;">
+         style="display:inline-block;background:#1f9d55;color:#fff;padding:14px 36px;border-radius:8px;font-weight:700;font-size:15px;text-decoration:none;letter-spacing:0.01em;">
         Log In to Flexxo Shop →
       </a>
     </div>
