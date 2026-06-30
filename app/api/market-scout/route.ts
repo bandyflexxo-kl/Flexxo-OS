@@ -12,6 +12,10 @@ import { verifySession }  from '@/lib/session'
 import { scoutProducts }  from '@/lib/marketScout'
 import { z }              from 'zod'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const Schema = z.object({
   products: z.array(z.string().min(1).max(200)).min(1).max(20),
 })

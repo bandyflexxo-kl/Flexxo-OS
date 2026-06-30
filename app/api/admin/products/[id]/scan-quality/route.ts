@@ -2,6 +2,10 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import Anthropic from '@anthropic-ai/sdk'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(

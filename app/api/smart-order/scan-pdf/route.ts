@@ -15,6 +15,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import { verifySession } from '@/lib/session'
 import { parseItemList, matchProductsForLines, type DeliveryInfo } from '@/lib/smartOrder'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const BodySchema = z.object({
   pdfBase64: z.string().min(1, 'pdfBase64 required'),
   companyId: z.string().uuid().optional(),

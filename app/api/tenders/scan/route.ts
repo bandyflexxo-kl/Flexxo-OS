@@ -15,6 +15,10 @@ import { verifySession } from '@/lib/session'
 import { canCreateTender } from '@/lib/tenderAccess'
 import { scanTenderPdf, scanTenderImage, scanTenderText } from '@/lib/tenderScan'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const BodySchema = z.object({
   kind:     z.enum(['pdf', 'image', 'text']),
   data:     z.string().min(1, 'data required'),

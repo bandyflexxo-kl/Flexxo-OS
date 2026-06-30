@@ -6,6 +6,10 @@ import { z }                   from 'zod'
 import { verifySession }       from '@/lib/session'
 import { runOperationAgent, OPS_TOOL_DESCRIPTIONS, type ChatMessage } from '@/lib/agents/operationAgentCore'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const MessageSchema = z.object({
   role:    z.enum(['user', 'assistant']),
   content: z.string(),

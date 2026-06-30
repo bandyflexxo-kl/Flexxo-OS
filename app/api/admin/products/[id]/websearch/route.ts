@@ -4,6 +4,10 @@ import { getBrandSite }  from '@/lib/brandSites'
 import Anthropic         from '@anthropic-ai/sdk'
 import { z }             from 'zod'
 
+// Vercel: allow long Claude calls. Default (~10s) kills the function mid-call,
+// returning an empty body → client res.json() throws "Unexpected end of JSON input".
+export const maxDuration = 60
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const BodySchema = z.object({
