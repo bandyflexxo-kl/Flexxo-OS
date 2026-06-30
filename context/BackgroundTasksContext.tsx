@@ -151,7 +151,16 @@ export function BackgroundTasksProvider({ children, role }: { children: ReactNod
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ url: imageUrl }),
     })
-      .then(r => r.json())
+      .then(async r => {
+        // Read defensively: a timed-out/crashed function returns an empty body,
+        // and a blind r.json() would throw "Unexpected end of JSON input". Also
+        // honour a non-OK status so a failed save isn't shown as "clean ✓".
+        const raw = await r.text()
+        let d: { flagged?: boolean; reason?: string; error?: string } = {}
+        try { d = raw ? JSON.parse(raw) : {} } catch { /* empty/non-JSON body */ }
+        if (!r.ok) throw new Error(d.error ?? (raw === '' ? 'The server took too long applying the photo — please try again.' : `Apply failed (HTTP ${r.status})`))
+        return d
+      })
       .then((d: { flagged?: boolean; reason?: string; error?: string }) => {
         const message = d.flagged
           ? `Still flagged — ${d.reason ?? 'try another method'}`
