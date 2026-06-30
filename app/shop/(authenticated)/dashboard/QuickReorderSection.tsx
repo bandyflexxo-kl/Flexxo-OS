@@ -30,7 +30,15 @@ type ItemState = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function QuickReorderSection({ frequentItems }: { frequentItems: FrequentItem[] }) {
+export default function QuickReorderSection({
+  frequentItems,
+  branchOptions = [],
+  itemsByBranch,
+}: {
+  frequentItems: FrequentItem[]
+  branchOptions?: { id: string; name: string }[]
+  itemsByBranch?: Record<string, FrequentItem[]>
+}) {
   const router = useRouter()
 
   const [open,  setOpen]  = useState(false)
@@ -39,19 +47,32 @@ export default function QuickReorderSection({ frequentItems }: { frequentItems: 
   const [busy,  setBusy]  = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done,  setDone]  = useState(false)
+  const [branch, setBranch] = useState('all')   // A3: which branch's history to view
+
+  // The active item source = the selected branch's history (falls back to all).
+  const activeItems = (itemsByBranch?.[branch] ?? frequentItems)
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
-  function openDrawer() {
-    setItems(frequentItems.map(item => ({
+  function seedItems(source: FrequentItem[]) {
+    setItems(source.map(item => ({
       productId: item.productId,
       qty:       Math.max(1, item.lastQty),
       selected:  true,
     })))
+  }
+
+  function openDrawer() {
+    seedItems(activeItems)
     setSearch('')
     setError(null)
     setDone(false)
     setOpen(true)
+  }
+
+  function changeBranch(id: string) {
+    setBranch(id)
+    seedItems(itemsByBranch?.[id] ?? frequentItems)
   }
 
   function closeDrawer() {
@@ -79,12 +100,12 @@ export default function QuickReorderSection({ frequentItems }: { frequentItems: 
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  // Items visible in current search (subset of frequentItems)
+  // Items visible in current search (subset of the active branch's items)
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return frequentItems
-    return frequentItems.filter(fi => fi.name.toLowerCase().includes(q))
-  }, [frequentItems, search])
+    if (!q) return activeItems
+    return activeItems.filter(fi => fi.name.toLowerCase().includes(q))
+  }, [activeItems, search])
 
   const visibleIds = useMemo(
     () => new Set(visibleItems.map(fi => fi.productId)),
@@ -212,6 +233,19 @@ export default function QuickReorderSection({ frequentItems }: { frequentItems: 
 
         {/* Search + controls */}
         <div className="px-4 py-3 border-b border-gray-100 space-y-2.5 shrink-0 bg-white">
+          {branchOptions.length > 0 && (
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Branch order history</label>
+              <select
+                value={branch}
+                onChange={e => changeBranch(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100"
+              >
+                <option value="all">All branches</option>
+                {branchOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="relative">
             <svg
               className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"

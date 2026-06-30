@@ -275,6 +275,7 @@ export default async function DashboardPage() {
         select:  {
           id: true, referenceNo: true, status: true,
           totalAmount: true, createdAt: true,
+          quotation: { select: { deliveryAddressId: true } },   // A3: which branch this order delivered to
           items: {
             select: {
               productId: true, qty: true, unitPrice: true, lineTotal: true,
@@ -341,6 +342,20 @@ export default async function DashboardPage() {
   const smartReorders  = computeSmartReorders(orders)
   const frequentItems  = computeFrequentItems(orders)
   const categoryBreak  = computeCategoryBreakdown(orders)
+
+  // A3: branch-scoped reorder — let the customer view past items per delivery branch.
+  const branchRows = company
+    ? await prisma.companyAddress.findMany({
+        where:   { companyId: company.id, isActive: true },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        select:  { id: true, branchName: true, label: true },
+      })
+    : []
+  const branchOptions: { id: string; name: string }[] = branchRows.map(b => ({ id: b.id, name: b.branchName || b.label || 'Branch' }))
+  const itemsByBranch: Record<string, FrequentItem[]> = { all: frequentItems }
+  for (const b of branchRows) {
+    itemsByBranch[b.id] = computeFrequentItems(orders.filter(o => o.quotation?.deliveryAddressId === b.id))
+  }
   const monthlySpend   = computeMonthlySpending(orders)
 
   const recentOrders: RecentOrder[] = orders.slice(0, 3).map(o => ({
@@ -743,7 +758,7 @@ export default async function DashboardPage() {
           with checkboxes + qty spinners → bulk-adds to cart in one click.
           When there's no order history yet, the drawer shows an empty state.
         */}
-        <QuickReorderSection frequentItems={frequentItems} />
+        <QuickReorderSection frequentItems={frequentItems} branchOptions={branchOptions} itemsByBranch={itemsByBranch} />
 
         {/* ── Quick Actions ─────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
