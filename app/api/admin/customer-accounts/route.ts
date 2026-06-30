@@ -79,6 +79,17 @@ export async function POST(request: Request) {
     return newUser
   })
 
+  // B6.2: new-customer 15% welcome discount — applied to the company only if it
+  // doesn't already have a discount set (admin can adjust it in customer-discounts).
+  try {
+    await prisma.company.updateMany({
+      where: { id: customerCompanyId, discountPct: null },
+      data:  { discountPct: 15 },
+    })
+  } catch (err) {
+    console.error('[customer-accounts] Failed to set welcome discount:', err)
+  }
+
   // Auto-convert any open account request with this email — the admin
   // shouldn't have to go back and click "Mark Converted" manually.
   try {

@@ -124,6 +124,7 @@ model Company {
   outstandingBalance   Decimal?  @map("outstanding_balance")
   creditLimit          Decimal?  @map("credit_limit")
   overdueAmount        Decimal?  @map("overdue_amount")
+  discountPct          Decimal?  @map("discount_pct") @db.Decimal(5, 2)   // standing customer discount % applied to their quotes
   outstandingUpdatedAt DateTime? @map("outstanding_updated_at")
   isDuplicateSuspect   Boolean   @default(false) @map("is_duplicate_suspect")
   mergedIntoId         String?   @map("merged_into_id")

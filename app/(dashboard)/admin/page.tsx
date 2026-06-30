@@ -109,6 +109,14 @@ export default async function AdminPage() {
             </div>
             <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
           </Link>
+          <Link href="/admin/customer-discounts" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
+            <span className="text-2xl">🏷️</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Customer Discounts</p>
+              <p className="text-xs text-gray-500 mt-0.5">Per-customer discount %</p>
+            </div>
+            <span className="ml-auto text-gray-300 group-hover:translate-x-0.5 transition-transform">→</span>
+          </Link>
           <Link href="/admin/settings" className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5 hover:bg-gray-50 hover:border-gray-300 transition-colors group">
             <span className="text-2xl">⚙️</span>
             <div>

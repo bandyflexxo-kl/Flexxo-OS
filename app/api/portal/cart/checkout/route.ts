@@ -64,18 +64,22 @@ export async function POST(request: Request) {
   const count    = await prisma.quotation.count({ where: { status: { not: 'cart' } } })
   const refNo    = `QT-${year}-${String(count + 1).padStart(4, '0')}`
 
-  const quotation = await prisma.$transaction(async tx => {
-    // B5: add a flat RM25 delivery charge when the items subtotal is below RM300.
-    const cartItems = await tx.quotationItem.findMany({ where: { quotationId: cart.id }, select: { lineTotal: true, productId: true } })
-    let subtotal = cartItems.reduce((s, i) => s.plus(i.lineTotal), new Prisma.Decimal(0))
+  // B7: this company's standing discount % (e.g. the 15% new-customer welcome).
+  const discCompany = await prisma.company.findUnique({ where: { id: session.customerCompanyId }, select: { discountPct: true } })
+  const discountPct = discCompany?.discountPct ? Number(discCompany.discountPct) : 0
 
+  const quotation = await prisma.$transaction(async tx => {
+    const cartItems     = await tx.quotationItem.findMany({ where: { quotationId: cart.id }, select: { lineTotal: true, productId: true } })
+    const goodsSubtotal = cartItems.reduce((s, i) => s.plus(i.lineTotal), new Prisma.Decimal(0))
+
+    // B5: flat RM25 delivery charge when the goods subtotal is below RM300.
+    let deliveryFee = new Prisma.Decimal(0)
     const deliveryProduct = await tx.product.findFirst({
       where:  { qneItemCode: { equals: 'DELIVERYFEE', mode: 'insensitive' } },
       select: { id: true, name: true, brand: true, unit: true },
     })
     const alreadyHasFee = deliveryProduct ? cartItems.some(i => i.productId === deliveryProduct.id) : false
-
-    if (deliveryProduct && !alreadyHasFee && subtotal.lessThan(DELIVERY_FREE_THRESHOLD)) {
+    if (deliveryProduct && !alreadyHasFee && goodsSubtotal.lessThan(DELIVERY_FREE_THRESHOLD)) {
       await tx.quotationItem.create({
         data: {
           quotationId: cart.id,
@@ -91,15 +95,20 @@ export async function POST(request: Request) {
           sortOrder:   cartItems.length,
         },
       })
-      subtotal = subtotal.plus(DELIVERY_FEE_AMOUNT)
+      deliveryFee = new Prisma.Decimal(DELIVERY_FEE_AMOUNT)
     }
+
+    // B7: customer discount applies to the goods only (not the delivery charge).
+    const subtotal       = goodsSubtotal.plus(deliveryFee)
+    const discountAmount = goodsSubtotal.times(discountPct).dividedBy(100).toDecimalPlaces(2)
+    const totalAmount    = subtotal.minus(discountAmount)
 
     const updated = await tx.quotation.update({
       where: { id: cart.id },
       data:  {
         status: 'pending_review', referenceNo: refNo, poNumber, costCentre,
         deliveryAddressId, deliveryAddress, deliveryRecipient, deliveryPhone,
-        subtotal, totalAmount: subtotal,
+        subtotal, discountAmount, totalAmount,
       },
     })
     await tx.quotationStatusHistory.create({
