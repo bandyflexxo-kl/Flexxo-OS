@@ -865,7 +865,7 @@ async function TotalSpentCard({
   const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
   const rangeLabel = useCached
-    ? '⚠ cached · QNE invoice history'
+    ? ''
     : isQne
       ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
       : 'lifetime (portal orders)'
@@ -876,7 +876,7 @@ async function TotalSpentCard({
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
         {amount > 0 ? `MYR ${(amount / 1000).toFixed(1)}k` : 'MYR 0'}
       </p>
-      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p>
+      {rangeLabel ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p> : null}
     </div>
   )
 }
@@ -914,7 +914,7 @@ async function OrdersCard({
   const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
   const rangeLabel = useCached
-    ? '⚠ cached · QNE invoices'
+    ? ''
     : isQne
       ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
       : 'all time (portal orders)'
@@ -923,7 +923,7 @@ async function OrdersCard({
     <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
       <p className="text-xs text-gray-400 font-medium">{isInvoices ? 'Invoices' : 'Orders Placed'}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{count}</p>
-      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p>
+      {rangeLabel ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p> : null}
     </div>
   )
 }
