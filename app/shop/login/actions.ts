@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { Prisma } from '@/generated/prisma/client'
 import { redirect } from 'next/navigation'
 import bcrypt from 'bcryptjs'
 import { headers } from 'next/headers'
@@ -154,17 +155,29 @@ export async function shopLoginAction(state: LoginState, formData: FormData): Pr
 
 // ── Request Business Account ───────────────────────────────────────────────
 
+// A2: a request can carry 1–3 contacts; only Full Name is required per contact
+// (matching the CMS contact form). The first contact's email becomes the request
+// email / future portal login.
+const RequestContactSchema = z.object({
+  fullName:        z.string().trim().min(2, 'Contact name is required.'),
+  position:        z.string().trim().max(120).optional().or(z.literal('')),
+  department:      z.string().trim().max(120).optional().or(z.literal('')),
+  email:           z.string().trim().email('Enter a valid email.').optional().or(z.literal('')),
+  phone:           z.string().trim().max(40).optional().or(z.literal('')),
+  whatsapp:        z.string().trim().max(40).optional().or(z.literal('')),
+  influenceLevel:  z.string().trim().max(40).optional().or(z.literal('')),
+  isDecisionMaker: z.boolean().optional(),
+})
+
 const AccountRequestSchema = z.object({
-  fullName:    z.string().min(2,  { message: 'Please enter your full name.' }),
-  companyName: z.string().min(2,  { message: 'Please enter your company name.' }),
-  email:       z.string().email({ message: 'Please enter a valid email address.' }),
-  phone:       z.string().optional(),
+  companyName: z.string().trim().min(2, { message: 'Please enter your company name.' }),
   message:     z.string().max(500).optional(),
+  contacts:    z.array(RequestContactSchema).min(1, 'Add at least one contact.').max(3, 'Up to 3 contacts only.'),
 })
 
 export type AccountRequestState = {
   success?:  boolean
-  errors?:   { fullName?: string; companyName?: string; email?: string; phone?: string }
+  errors?:   { companyName?: string; contacts?: string }
   message?:  string
 } | undefined
 
@@ -172,54 +185,65 @@ export async function requestAccountAction(
   state: AccountRequestState,
   formData: FormData,
 ): Promise<AccountRequestState> {
+  let contactsRaw: unknown = []
+  try { contactsRaw = JSON.parse(String(formData.get('contacts') ?? '[]')) } catch { contactsRaw = [] }
+
   const parsed = AccountRequestSchema.safeParse({
-    fullName:    formData.get('fullName'),
     companyName: formData.get('companyName'),
-    email:       formData.get('email'),
-    phone:       formData.get('phone') || undefined,
     message:     formData.get('message') || undefined,
+    contacts:    contactsRaw,
   })
 
   if (!parsed.success) {
     const fe = parsed.error.flatten().fieldErrors
-    return {
-      errors: {
-        fullName:    fe.fullName?.[0],
-        companyName: fe.companyName?.[0],
-        email:       fe.email?.[0],
-        phone:       fe.phone?.[0],
-      },
-    }
+    return { errors: { companyName: fe.companyName?.[0], contacts: fe.contacts?.[0] } }
   }
 
-  const { fullName, companyName, email, phone, message } = parsed.data
+  const { companyName, message, contacts } = parsed.data
+  const primary = contacts[0]
+  if (!primary.email) {
+    return { errors: { contacts: 'The first contact needs an email — it becomes the portal login.' } }
+  }
 
-  // T4-4(a): Save to database immediately (T5-5(d) equivalent)
+  // Save to DB immediately. Top-level fullName/email/phone mirror the primary
+  // contact (back-compat); the full list lives in `contacts`.
   await prisma.accountRequest.create({
-    data: { fullName, companyName, email, phone, message },
+    data: {
+      fullName:    primary.fullName,
+      companyName,
+      email:       primary.email,
+      phone:       primary.phone || null,
+      message:     message ?? null,
+      contacts:    contacts as unknown as Prisma.InputJsonValue,
+    },
   })
 
-  // T4-4(a2): Push notification to all Admins/Managers — fire-and-forget
+  // Push notification to all Admins/Managers — fire-and-forget
   sendPushToManagers({
     title: 'New Account Request',
-    body:  `${companyName} — ${fullName}`,
+    body:  `${companyName} — ${primary.fullName}${contacts.length > 1 ? ` (+${contacts.length - 1} more)` : ''}`,
     url:   '/admin/account-requests',
   }).catch(() => undefined)
 
-  // T4-4(b): Notify Flexxo team — fire-and-forget (never block on email)
+  const contactsText = contacts
+    .map((c, i) => `  ${i + 1}. ${c.fullName}${c.position ? ` (${c.position})` : ''}${c.email ? ` — ${c.email}` : ''}${c.phone ? ` — ${c.phone}` : ''}`)
+    .join('\n')
+  const contactsHtml = contacts
+    .map((c, i) => `<tr${i % 2 ? ' style="background:#f9fafb"' : ''}><td style="padding:8px;font-weight:bold;color:#374151">Contact ${i + 1}</td><td style="padding:8px">${c.fullName}${c.position ? ` · ${c.position}` : ''}${c.department ? ` · ${c.department}` : ''}${c.email ? `<br><a href="mailto:${c.email}">${c.email}</a>` : ''}${c.phone ? `<br>☎ ${c.phone}` : ''}${c.whatsapp ? `<br>WA ${c.whatsapp}` : ''}${c.isDecisionMaker ? ' <strong>(Decision Maker)</strong>' : ''}</td></tr>`)
+    .join('')
+
+  // Notify Flexxo team — fire-and-forget (never block on email)
   try {
     await sendGenericEmail({
       to:      process.env.ADMIN_EMAIL ?? 'admin@flexxo.com.my',
       subject: `New Account Request — ${companyName}`,
-      text:    `New B2B Account Request\nName: ${fullName}\nCompany: ${companyName}\nEmail: ${email}${phone ? `\nPhone: ${phone}` : ''}${message ? `\nMessage: ${message}` : ''}`,
+      text:    `New B2B Account Request\nCompany: ${companyName}\nContacts:\n${contactsText}${message ? `\nMessage: ${message}` : ''}`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:600px">
           <h2 style="color:#16a34a">New B2B Account Request</h2>
           <table style="width:100%;border-collapse:collapse">
-            <tr><td style="padding:8px;font-weight:bold;color:#374151">Name</td><td style="padding:8px">${fullName}</td></tr>
-            <tr style="background:#f9fafb"><td style="padding:8px;font-weight:bold;color:#374151">Company</td><td style="padding:8px">${companyName}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;color:#374151">Email</td><td style="padding:8px"><a href="mailto:${email}">${email}</a></td></tr>
-            ${phone ? `<tr style="background:#f9fafb"><td style="padding:8px;font-weight:bold;color:#374151">Phone</td><td style="padding:8px">${phone}</td></tr>` : ''}
+            <tr><td style="padding:8px;font-weight:bold;color:#374151">Company</td><td style="padding:8px">${companyName}</td></tr>
+            ${contactsHtml}
             ${message ? `<tr><td style="padding:8px;font-weight:bold;color:#374151">Message</td><td style="padding:8px">${message}</td></tr>` : ''}
           </table>
           <p style="color:#6b7280;font-size:13px;margin-top:16px">

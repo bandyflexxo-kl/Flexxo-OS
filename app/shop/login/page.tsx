@@ -159,12 +159,29 @@ function ForgotPasswordHint() {
 }
 
 // ── Request Business Account form — T4-4 ─────────────────────────────────────
+type ReqContact = {
+  fullName: string; position: string; department: string; email: string
+  phone: string; whatsapp: string; influenceLevel: string; isDecisionMaker: boolean
+}
+const blankContact = (): ReqContact => ({
+  fullName: '', position: '', department: '', email: '',
+  phone: '', whatsapp: '', influenceLevel: '', isDecisionMaker: false,
+})
+
 function RequestAccountSection() {
   const [state, action, pending] = useActionState<AccountRequestState, FormData>(
     requestAccountAction,
     undefined,
   )
   const [open, setOpen] = useState(false)
+  const [contacts, setContacts] = useState<ReqContact[]>([blankContact()])
+
+  const setContact = (i: number, patch: Partial<ReqContact>) =>
+    setContacts(cs => cs.map((c, idx) => idx === i ? { ...c, ...patch } : c))
+  const addContact    = () => setContacts(cs => cs.length < 3 ? [...cs, blankContact()] : cs)
+  const removeContact = (i: number) => setContacts(cs => cs.filter((_, idx) => idx !== i))
+
+  const fieldCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition'
 
   if (state?.success) {
     return (
@@ -205,73 +222,69 @@ function RequestAccountSection() {
       {open && (
         <form action={action} className="mt-4 space-y-3">
           <p className="text-xs text-gray-500 pb-1">
-            Fill in your details and we&apos;ll get you set up within 1 business day.
+            Add up to 3 contacts for your company — we&apos;ll set you up within 1 business day.
           </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Full Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="fullName"
-                required
-                autoComplete="name"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-                placeholder="Ahmad Bin Ali"
-              />
-              {state?.errors?.fullName && (
-                <p className="text-xs text-red-600 mt-0.5" role="alert">{state.errors.fullName}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Phone Number
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                autoComplete="tel"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-                placeholder="012-345 6789"
-              />
-            </div>
-          </div>
+          {/* Hidden field carries the contacts array to the server action */}
+          <input type="hidden" name="contacts" value={JSON.stringify(contacts)} />
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
               Company Name <span className="text-red-500">*</span>
             </label>
-            <input
-              type="text"
-              name="companyName"
-              required
-              autoComplete="organization"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-              placeholder="Your Company Sdn Bhd"
-            />
+            <input type="text" name="companyName" required autoComplete="organization" className={fieldCls} placeholder="Your Company Sdn Bhd" />
             {state?.errors?.companyName && (
               <p className="text-xs text-red-600 mt-0.5" role="alert">{state.errors.companyName}</p>
             )}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Work Email <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              name="email"
-              required
-              autoComplete="email"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-              placeholder="you@company.com"
-            />
-            {state?.errors?.email && (
-              <p className="text-xs text-red-600 mt-0.5" role="alert">{state.errors.email}</p>
-            )}
-          </div>
+          {/* Contact repeater (1–3) */}
+          {contacts.map((c, i) => (
+            <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">
+                  {i === 0 ? 'Primary contact (portal login)' : `Contact ${i + 1}`}
+                </span>
+                {i > 0 && (
+                  <button type="button" onClick={() => removeContact(i)} className="text-xs text-red-500 hover:text-red-600">Remove</button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={c.fullName} onChange={e => setContact(i, { fullName: e.target.value })} required className={fieldCls} placeholder="Full Name *" />
+                <input value={c.position} onChange={e => setContact(i, { position: e.target.value })} className={fieldCls} placeholder="Position" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={c.department} onChange={e => setContact(i, { department: e.target.value })} className={fieldCls} placeholder="Department" />
+                <input type="email" value={c.email} onChange={e => setContact(i, { email: e.target.value })} required={i === 0} className={fieldCls} placeholder={i === 0 ? 'Email * (login)' : 'Email'} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={c.phone} onChange={e => setContact(i, { phone: e.target.value })} className={fieldCls} placeholder="Phone" />
+                <input value={c.whatsapp} onChange={e => setContact(i, { whatsapp: e.target.value })} className={fieldCls} placeholder="WhatsApp" />
+              </div>
+              <div className="grid grid-cols-2 gap-2 items-center">
+                <select value={c.influenceLevel} onChange={e => setContact(i, { influenceLevel: e.target.value })} className={fieldCls}>
+                  <option value="">Influence level…</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input type="checkbox" checked={c.isDecisionMaker} onChange={e => setContact(i, { isDecisionMaker: e.target.checked })} className="rounded border-gray-300 text-green-600" />
+                  Decision Maker
+                </label>
+              </div>
+            </div>
+          ))}
+
+          {contacts.length < 3 && (
+            <button type="button" onClick={addContact} className="text-xs font-medium text-green-600 hover:text-green-700">
+              + Add another contact ({contacts.length}/3)
+            </button>
+          )}
+
+          {state?.errors?.contacts && (
+            <p className="text-xs text-red-600 mt-0.5" role="alert">{state.errors.contacts}</p>
+          )}
 
           {state?.message && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" role="alert">

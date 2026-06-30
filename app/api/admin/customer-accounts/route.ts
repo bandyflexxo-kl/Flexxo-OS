@@ -90,6 +90,46 @@ export async function POST(request: Request) {
     console.error('[customer-accounts] Failed to auto-convert account request:', err)
   }
 
+  // A2: materialise the request's contacts (up to 3) as Contact rows on the
+  // company — so the multi-contact info captured at request time isn't lost.
+  try {
+    const req = await prisma.accountRequest.findFirst({
+      where:   { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { createdAt: 'desc' },
+      select:  { contacts: true },
+    })
+    const list = Array.isArray(req?.contacts)
+      ? (req.contacts as Array<{ fullName?: string; position?: string; department?: string; email?: string; phone?: string; whatsapp?: string; influenceLevel?: string; isDecisionMaker?: boolean }>)
+      : []
+    if (list.length > 0) {
+      await prisma.$executeRaw`SELECT set_config('app.current_user_id', ${session.userId}, false)`
+      for (const c of list.slice(0, 3)) {
+        if (!c.fullName?.trim()) continue
+        const dupe = c.email
+          ? await prisma.contact.findFirst({ where: { companyId: customerCompanyId, email: { equals: c.email, mode: 'insensitive' } }, select: { id: true } })
+          : null
+        if (dupe) continue
+        await prisma.contact.create({
+          data: {
+            companyId:       customerCompanyId,
+            name:            c.fullName.trim(),
+            position:        c.position || null,
+            department:      c.department || null,
+            email:           c.email || null,
+            phone:           c.phone || null,
+            whatsapp:        c.whatsapp || null,
+            influenceLevel:  c.influenceLevel || null,
+            isDecisionMaker: !!c.isDecisionMaker,
+            isActive:        true,
+            createdById:     session.userId,
+          },
+        })
+      }
+    }
+  } catch (err) {
+    console.error('[customer-accounts] Failed to create contacts from request:', err)
+  }
+
   // Send welcome email with login credentials (outside transaction — failure is
   // non-fatal but REPORTED so the admin knows to share the login manually).
   let emailSent = false
