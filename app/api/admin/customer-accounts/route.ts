@@ -90,7 +90,10 @@ export async function POST(request: Request) {
     console.error('[customer-accounts] Failed to auto-convert account request:', err)
   }
 
-  // Send welcome email with login credentials (outside transaction — failure is non-fatal)
+  // Send welcome email with login credentials (outside transaction — failure is
+  // non-fatal but REPORTED so the admin knows to share the login manually).
+  let emailSent = false
+  let emailError: string | null = null
   try {
     await sendPortalWelcomeEmail({
       to:          email,
@@ -98,10 +101,15 @@ export async function POST(request: Request) {
       companyName: company.name,
       password,    // plain-text password, captured before hashing
     })
+    emailSent = true
   } catch (err) {
-    console.error('[customer-accounts] Failed to send welcome email:', err)
+    emailError = err instanceof Error ? err.message : String(err)
+    console.error('[customer-accounts] Failed to send welcome email:', emailError)
     // Account was created successfully — do not fail the request
   }
 
-  return Response.json({ id: user.id, name: user.name, email: user.email }, { status: 201 })
+  return Response.json(
+    { id: user.id, name: user.name, email: user.email, emailSent, emailError },
+    { status: 201 },
+  )
 }

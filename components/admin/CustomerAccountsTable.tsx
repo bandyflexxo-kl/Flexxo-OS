@@ -35,6 +35,7 @@ export default function CustomerAccountsTable({
   const [busy,     setBusy]     = useState<Set<string>>(new Set())
   const [error,    setError]    = useState<string | null>(null)
   const [success,  setSuccess]  = useState<string | null>(null)
+  const [warning,  setWarning]  = useState<string | null>(null)
 
   const [form, setForm] = useState({
     name:      prefill?.name      ?? '',
@@ -63,7 +64,7 @@ export default function CustomerAccountsTable({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ name: form.name, email: form.email, password: form.password, customerCompanyId: form.companyId }),
       })
-      const data = await res.json() as CustomerAccount & { error?: unknown }
+      const data = await res.json() as CustomerAccount & { emailSent?: boolean; error?: unknown }
       if (!res.ok) {
         setFormError(typeof data.error === 'string' ? data.error : 'Failed to create account.')
         return
@@ -80,7 +81,14 @@ export default function CustomerAccountsTable({
       }])
       setShowNew(false)
       setForm({ name: '', email: '', password: '', companyId: '' })
-      flash(`Portal account created for ${data.name}`)
+      setWarning(null)
+      if (data.emailSent) {
+        flash(`Portal account created — login details emailed to ${data.email}`)
+      } else {
+        // Account created, but the credentials email didn't go out — make it obvious
+        // so the admin shares the login manually instead of assuming the email sent.
+        setWarning(`Account created for ${data.name}, but the welcome email to ${data.email} could NOT be sent. Please share the login email + password with them directly.`)
+      }
     } finally {
       setCreating(false)
     }
@@ -103,6 +111,12 @@ export default function CustomerAccountsTable({
     <div className="space-y-4">
       {error   && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
       {success && <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">{success}</div>}
+      {warning && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-start justify-between gap-3">
+          <span>⚠️ {warning}</span>
+          <button onClick={() => setWarning(null)} className="text-amber-500 hover:text-amber-700 text-base leading-none shrink-0">×</button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{accounts.length} portal account{accounts.length !== 1 ? 's' : ''}</p>
