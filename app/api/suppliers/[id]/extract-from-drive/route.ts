@@ -7,6 +7,9 @@ import type { Prisma } from '@/generated/prisma/client'
 import crypto from 'crypto'
 import * as XLSX from 'xlsx'
 
+// Vercel: Claude/Serper calls exceed the ~10s default → empty response → client JSON error.
+export const maxDuration = 60
+
 const Schema = z.object({
   fileId:        z.string().min(1),
   fileName:      z.string().min(1),

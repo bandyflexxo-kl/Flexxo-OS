@@ -4,6 +4,9 @@ import { getRedis } from '@/lib/redis'
 import { uploadProductPhoto } from '@/lib/supabaseStorage'
 import { scanPhotoUrl } from '@/lib/photoQuality'
 
+// Vercel: Claude/Serper calls exceed the ~10s default → empty response → client JSON error.
+export const maxDuration = 60
+
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
 
 async function invalidateCache() {

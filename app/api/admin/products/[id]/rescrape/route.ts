@@ -3,6 +3,9 @@ import { prisma }        from '@/lib/prisma'
 import { getBrandSite }  from '@/lib/brandSites'
 import { z }             from 'zod'
 
+// Vercel: Claude/Serper calls exceed the ~10s default → empty response → client JSON error.
+export const maxDuration = 60
+
 const JUNK_RE = /\b(with\s+printing|customize|customise|customization|customisation|printing|order\s+form|delivery\s+order|running\s+number|paper\s+colour|paper\s+color|colour|authorized|signature|2ply|3ply|4ply|bks|digits|2up|3up)\b/gi
 
 const BodySchema = z.object({

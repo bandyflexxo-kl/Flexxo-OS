@@ -328,9 +328,13 @@ function ResolvePanel({
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ site, hint }),
           })
-          const d1 = await r1.json() as { candidates?: { imageUrl: string; title: string }[]; error?: string }
+          // Read defensively — a timed-out/crashed function returns an empty body,
+          // and a blind r1.json() would throw "Unexpected end of JSON input".
+          const raw = await r1.text()
+          let d1: { candidates?: { imageUrl: string; title: string }[]; error?: string } = {}
+          try { d1 = raw ? JSON.parse(raw) : {} } catch { /* empty/non-JSON body */ }
           if (!r1.ok || !d1.candidates?.length) {
-            throw new Error(d1.error ?? 'No results found on official brand site')
+            throw new Error(d1.error ?? (raw === '' ? 'The image search took too long and timed out — please try again.' : 'No results found on official brand site'))
           }
           return { type: 'candidates' as const, candidates: d1.candidates }
         },

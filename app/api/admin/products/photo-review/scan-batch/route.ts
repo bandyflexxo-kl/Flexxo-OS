@@ -2,6 +2,9 @@ import { verifySession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { scanPhotoUrl } from '@/lib/photoQuality'
 
+// Vercel: Claude/Serper calls exceed the ~10s default → empty response → client JSON error.
+export const maxDuration = 60
+
 const MAX_BATCH = 10
 
 type BatchResult = {
