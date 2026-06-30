@@ -13,7 +13,7 @@ export default async function ShopInvoicesPage() {
       where:   { companyId: session.customerCompanyId },
       orderBy: { docDate: 'desc' },
       take:    PAGE_CAP,
-      select:  { id: true, docNo: true, docDate: true, totalAmount: true, _count: { select: { items: true } } },
+      select:  { id: true, docNo: true, docDate: true, totalAmount: true },
     }),
     prisma.qneInvoice.count({ where: { companyId: session.customerCompanyId } }),
   ])
@@ -45,7 +45,6 @@ export default async function ShopInvoicesPage() {
               <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
                 <th className="px-4 py-3 font-medium">Invoice No.</th>
                 <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Items</th>
                 <th className="px-4 py-3 font-medium text-right">Amount</th>
                 <th className="px-4 py-3 font-medium text-right">PDF</th>
               </tr>
@@ -55,7 +54,6 @@ export default async function ShopInvoicesPage() {
                 <tr key={inv.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-2.5 font-mono text-sm font-medium text-gray-900">{inv.docNo}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-xs">{fmtDate(inv.docDate)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{inv._count.items}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-gray-900 tabular-nums">MYR {money(Number(inv.totalAmount))}</td>
                   <td className="px-4 py-2.5 text-right">
                     <a href={`/api/portal/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"

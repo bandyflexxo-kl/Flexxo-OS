@@ -2,17 +2,18 @@
  * /shop/dashboard — B2B Client Home
  *
  * Performance architecture:
- *   ─ Fast data (DB): user profile, orders, metrics — rendered immediately
- *   ─ Slow data (QNE via Radmin VPN): balance, invoices, aging — streamed in
- *     via React Suspense so the page is NEVER blocked by a QNE call.
+ *   ─ Fast data (DB): user profile, orders, AND the top metric cards
+ *     (Total Spent / Invoices / Outstanding) — rendered immediately, inline,
+ *     from data already in our DB (qne_invoices aggregate + cached balance).
+ *   ─ Slow data (live QNE via Radmin VPN — aging buckets, monthly breakdown):
+ *     streamed in below via React Suspense so the page is NEVER blocked.
  *
- * Two async Server Components are Suspense-wrapped:
- *   <OutstandingCard>   — Outstanding metric card (streams into the grid)
- *   <QneInvoicesAging>  — Recent Invoices + Aging sections (stream in below)
- *
- * Both call fetchQneFinancialDataCached — Next.js unstable_cache
- * deduplicates concurrent requests with the same key, so QNE is only
- * contacted once per render regardless of how many components need the data.
+ * IMPORTANT: the metric cards used to be Suspense-wrapped async components that
+ * called live QNE. On Vercel there is no Radmin VPN, so that call always stalled
+ * to its ~10s login timeout before falling back — making the dashboard feel slow.
+ * They now read straight from the DB and appear instantly. Only the below-fold
+ * aging / monthly-spend sections still call fetchQneFinancialDataCached (deduped
+ * via unstable_cache); they simply omit themselves when QNE is unreachable.
  */
 
 import { Suspense }              from 'react'
@@ -20,10 +21,7 @@ import { redirect }              from 'next/navigation'
 import Link                      from 'next/link'
 import { prisma }                from '@/lib/prisma'
 import { getOptionalShopSession } from '@/lib/session'
-import {
-  fetchQneFinancialDataCached,
-  QneUnavailableError,
-}                                from '@/lib/qneFinancial'
+import { fetchQneFinancialDataCached } from '@/lib/qneFinancial'
 import AccountSection            from './AccountSection'
 import QuickReorderSection, {
   type FrequentItem,
@@ -318,6 +316,16 @@ export default async function DashboardPage() {
   // so the partner tier / loyalty bar reflect a customer's true volume.
   const effectiveSpent = totalSpent > 0 ? totalSpent : dbInvoiceTotal
 
+  // Top-of-page metric cards are rendered INLINE (synchronous) from data we
+  // already have in the DB — NOT via a live QNE fetch. On Vercel there is no
+  // Radmin VPN, so any live QNE call just stalls until its login timeout (~10s)
+  // before falling back to exactly these values. Sourcing them straight from the
+  // DB makes the cards appear instantly with the rest of the shell.
+  const dashTotalIsInvoices = totalSpent === 0 && dbInvoiceTotal > 0
+  const dashCount           = totalOrders > 0 ? totalOrders : dbInvoiceCount
+  const dashCountIsInvoices = totalOrders === 0 && dbInvoiceCount > 0
+  const dashOutstanding     = company?.outstandingBalance != null ? Number(company.outstandingBalance) : null
+
   const partnerTier    = getPartnerTier(effectiveSpent)
   const smartReorders  = computeSmartReorders(orders)
   const frequentItems  = computeFrequentItems(orders)
@@ -381,31 +389,50 @@ export default async function DashboardPage() {
       <div className="max-w-3xl mx-auto px-4 -mt-8 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
-          {/* Total Spent — prefers QNE invoice total when CRM is zero */}
-          <Suspense fallback={<StatCardSkeleton label="Total Spent" />}>
-            <TotalSpentCard
-              crmTotal={totalSpent}
-              qneCustomerCode={company?.qneCustomerCode}
-              fallbackTotal={dbInvoiceTotal}
-            />
-          </Suspense>
+          {/* Total Spent — instant from DB (portal orders, else synced QNE invoices) */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <p className="text-xs text-gray-400 font-medium">Total Spent</p>
+            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
+              {effectiveSpent > 0 ? `MYR ${(effectiveSpent / 1000).toFixed(1)}k` : 'MYR 0'}
+            </p>
+            {!dashTotalIsInvoices && totalSpent > 0
+              ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">lifetime (portal orders)</p>
+              : null}
+          </div>
 
-          {/* Orders / Invoices — prefers QNE invoice count when CRM is zero */}
-          <Suspense fallback={<StatCardSkeleton label="Invoices" />}>
-            <OrdersCard
-              crmCount={totalOrders}
-              qneCustomerCode={company?.qneCustomerCode}
-              fallbackCount={dbInvoiceCount}
-            />
-          </Suspense>
+          {/* Orders / Invoices — instant from DB */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
+            <p className="text-xs text-gray-400 font-medium">{dashCountIsInvoices ? 'Invoices' : 'Orders Placed'}</p>
+            <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{dashCount}</p>
+            {!dashCountIsInvoices && totalOrders > 0
+              ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">all time (portal orders)</p>
+              : null}
+            {dashCountIsInvoices && (
+              <Link href="/shop/invoices" className="mt-auto pt-1.5 text-[11px] font-semibold text-green-600 hover:text-green-700">
+                View all invoices →
+              </Link>
+            )}
+          </div>
 
-          {/* Outstanding — streams in from QNE (skeleton while loading) */}
-          <Suspense fallback={<OutstandingCardSkeleton />}>
-            <OutstandingCard
-              qneCustomerCode={company?.qneCustomerCode}
-              fallbackBalance={company?.outstandingBalance}
-            />
-          </Suspense>
+          {/* Outstanding — instant from DB (cached QNE balance) */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <p className="text-xs text-gray-400 font-medium">Outstanding</p>
+            {dashOutstanding !== null ? (
+              <>
+                <p className={`text-lg font-bold mt-1 tabular-nums ${dashOutstanding > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                  MYR {dashOutstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                  as of {new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-gray-300 mt-1">—</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">contact manager</p>
+              </>
+            )}
+          </div>
 
           {/* Vouchers — static */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
@@ -807,132 +834,6 @@ export default async function DashboardPage() {
 // Both call fetchQneFinancialDataCached with the same key — unstable_cache
 // deduplicates concurrent requests so QNE is only contacted once.
 
-// ── Stat card skeleton (used while QNE loads) ─────────────────────────────────
-function StatCardSkeleton({ label }: { label: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm animate-pulse">
-      <p className="text-xs text-gray-400 font-medium">{label}</p>
-      <div className="h-6 bg-gray-200 rounded-md w-20 mt-1 mb-1" />
-      <div className="h-2.5 bg-gray-100 rounded-md w-14" />
-    </div>
-  )
-}
-
-// ── Stat card "temporarily unavailable" state ─────────────────────────────────
-// Shown when a customer's figures live only in QNE and QNE is unreachable.
-// Better than a misleading "MYR 0 / 0 orders" — makes clear the data couldn't
-// be loaded right now, rather than implying the customer has spent nothing.
-function StatCardUnavailable({ label }: { label: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-      <p className="text-xs text-gray-400 font-medium">{label}</p>
-      <p className="text-lg font-bold text-gray-300 mt-1">—</p>
-      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">Temporarily unavailable</p>
-    </div>
-  )
-}
-
-/** Total Spent card — shows QNE invoice total when CRM is zero */
-async function TotalSpentCard({
-  crmTotal,
-  qneCustomerCode,
-  fallbackTotal,
-}: {
-  crmTotal:         number
-  qneCustomerCode:  string | null | undefined
-  fallbackTotal:    number
-}) {
-  let qneTotal: number | null = null
-  let isQne = false
-  let qneFailed = false
-
-  if (crmTotal === 0 && qneCustomerCode) {
-    try {
-      const fin  = await fetchQneFinancialDataCached(qneCustomerCode)
-      qneTotal   = fin.invoiceStats.totalAmount
-      isQne      = true
-    } catch { qneFailed = true }
-  }
-
-  // Live QNE unreachable (Vercel/localhost have no Radmin VPN) → fall back to the
-  // QNE invoice total already synced into our DB, instead of a dead "unavailable".
-  const useCached = qneFailed && fallbackTotal > 0
-  if (qneFailed && fallbackTotal === 0) return <StatCardUnavailable label="Total Spent" />
-
-  const amount = useCached ? fallbackTotal : isQne ? (qneTotal ?? 0) : crmTotal
-
-  const now   = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
-  const rangeLabel = useCached
-    ? ''
-    : isQne
-      ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
-      : 'lifetime (portal orders)'
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-      <p className="text-xs text-gray-400 font-medium">Total Spent</p>
-      <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">
-        {amount > 0 ? `MYR ${(amount / 1000).toFixed(1)}k` : 'MYR 0'}
-      </p>
-      {rangeLabel ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p> : null}
-    </div>
-  )
-}
-
-/** Orders / Invoices card — shows QNE invoice count when CRM is zero */
-async function OrdersCard({
-  crmCount,
-  qneCustomerCode,
-  fallbackCount,
-}: {
-  crmCount:         number
-  qneCustomerCode:  string | null | undefined
-  fallbackCount:    number
-}) {
-  let qneCount: number | null = null
-  let isQne = false
-  let qneFailed = false
-
-  if (crmCount === 0 && qneCustomerCode) {
-    try {
-      const fin = await fetchQneFinancialDataCached(qneCustomerCode)
-      qneCount  = fin.invoiceStats.count
-      isQne     = true
-    } catch { qneFailed = true }
-  }
-
-  // Live QNE unreachable → fall back to the cached QNE invoice count in our DB.
-  const useCached = qneFailed && fallbackCount > 0
-  if (qneFailed && fallbackCount === 0) return <StatCardUnavailable label="Orders Placed" />
-
-  const count      = useCached ? fallbackCount : isQne ? (qneCount ?? 0) : crmCount
-  const isInvoices = isQne || useCached
-
-  const now   = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-  const days  = Math.round((now.getTime() - start.getTime()) / 86_400_000)
-  const rangeLabel = useCached
-    ? ''
-    : isQne
-      ? `${start.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} – today · ${days} days`
-      : 'all time (portal orders)'
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
-      <p className="text-xs text-gray-400 font-medium">{isInvoices ? 'Invoices' : 'Orders Placed'}</p>
-      <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{count}</p>
-      {rangeLabel ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p> : null}
-      {isInvoices && (
-        <Link href="/shop/invoices" className="mt-auto pt-1.5 text-[11px] font-semibold text-green-600 hover:text-green-700">
-          View all invoices →
-        </Link>
-      )}
-    </div>
-  )
-}
-
 /** QNE invoice history — monthly chart + stats, streams in via Suspense */
 async function QneInvoiceHistory({ qneCustomerCode }: { qneCustomerCode: string }) {
   let fin: Awaited<ReturnType<typeof fetchQneFinancialDataCached>>
@@ -1073,64 +974,6 @@ function QneInvoiceHistorySkeleton() {
 }
 
 /** Outstanding metric card — streams in live QNE balance */
-async function OutstandingCard({
-  qneCustomerCode,
-  fallbackBalance,
-}: {
-  qneCustomerCode: string | null | undefined
-  fallbackBalance:  Decimal | null | undefined
-}) {
-  let outstanding: number | null = null
-  let paymentTerm: string | null = null
-  let isCached = false
-
-  if (qneCustomerCode) {
-    try {
-      const fin = await fetchQneFinancialDataCached(qneCustomerCode)
-      outstanding = fin.customer.currentBalance
-      paymentTerm = fin.customer.paymentTerm
-    } catch (e) {
-      if (e instanceof QneUnavailableError && fallbackBalance != null) {
-        outstanding = Number(fallbackBalance)
-        isCached = true
-      }
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-      <p className="text-xs text-gray-400 font-medium">Outstanding</p>
-      {outstanding !== null ? (
-        <>
-          <p className={`text-lg font-bold mt-1 tabular-nums ${outstanding > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-            MYR {outstanding.toLocaleString('en-MY', { maximumFractionDigits: 0 })}
-          </p>
-          <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
-            {isCached ? '⚠ cached' : '● live'} · as of {new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-            {paymentTerm && ` · ${paymentTerm}`}
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="text-lg font-bold text-gray-300 mt-1">—</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">contact manager</p>
-        </>
-      )}
-    </div>
-  )
-}
-
-/** Skeleton placeholder shown in the Outstanding card slot while QNE loads */
-function OutstandingCardSkeleton() {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm animate-pulse">
-      <p className="text-xs text-gray-400 font-medium">Outstanding</p>
-      <div className="h-6 bg-gray-200 rounded-md w-20 mt-1 mb-1" />
-      <div className="h-2.5 bg-gray-100 rounded-md w-14" />
-    </div>
-  )
-}
-
 /** Single invoice table row — module-level to avoid defining components inside async functions */
 function InvoiceTableRow({ inv }: {
   inv: { invoiceNo: string; invoiceDate: string; dueDate: string | null; amount: number }

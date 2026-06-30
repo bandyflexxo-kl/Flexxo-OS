@@ -48,16 +48,22 @@ type RawQuotationHeader = {
 }
 
 type RawQuotationItem = {
+  // QNE quotation detail line ("details" array) uses `stock` for the stock code,
+  // `amount`/`netAmount` for line totals, `uom` for unit. Older defensive aliases kept.
+  stock?:         string | null   // ← actual QNE stock-code field on a quotation line
   itemCode?:      string | null
   stockCode?:     string | null
   description?:   string | null
+  desc2?:         string | null
   itemName?:      string | null
+  uom?:           string | null
   qty?:           number | null
   quantity?:      number | null
   unitQty?:       number | null
   unitPrice?:     number | null
   unitSellPrice?: number | null
   amount?:        number | null
+  netAmount?:     number | null
   lineTotal?:     number | null
   [key: string]:  unknown
 }
@@ -156,20 +162,26 @@ export async function syncQneQuotations(fromDate?: string): Promise<QuotationSyn
       })
       result.quotationsUpserted++
 
-      // Fetch detail for line items
+      // Fetch detail for line items — key on the QNE internal id (GUID), NOT the
+      // docNo. Quotation docNos look like "KL2606/0077"; the slash is not a valid
+      // path segment (even URL-encoded, QNE's route doesn't match it) so the old
+      // `/Quotations/{docNo}` form 404'd every time → the catch swallowed it →
+      // zero line items ever synced. /Quotations/{id} mirrors /SalesInvoices/{id}.
       try {
-        const detail = await qneGet(`/Quotations/${encodeURIComponent(docNo)}`, token) as RawQuotationDetail
+        const quotationId = (h.id as string | null | undefined)?.trim() || docNo
+        const detail = await qneGet(`/Quotations/${encodeURIComponent(quotationId)}`, token) as RawQuotationDetail
         const rawItems = detail.items ?? detail.details ?? []
+        if (rawItems.length === 0) result.errors.push(`Items for ${docNo}: detail returned no items`)
 
         // Replace all items for this quotation
         await prisma.qneQuotationItem.deleteMany({ where: { quotationId: upserted.id } })
 
         for (const item of rawItems) {
-          const stockCode   = item.itemCode ?? item.stockCode ?? null
-          const description = item.description ?? item.itemName ?? stockCode ?? ''
+          const stockCode   = item.stock ?? item.itemCode ?? item.stockCode ?? null
+          const description = item.description ?? item.desc2 ?? item.itemName ?? stockCode ?? ''
           const qty         = item.qty ?? item.quantity ?? item.unitQty ?? 0
           const unitPrice   = item.unitPrice ?? item.unitSellPrice ?? 0
-          const lineTotal   = item.amount ?? item.lineTotal ?? (qty * unitPrice)
+          const lineTotal   = item.netAmount ?? item.amount ?? item.lineTotal ?? (qty * unitPrice)
           const productId   = stockCode ? (productByCode.get(stockCode) ?? null) : null
 
           await prisma.qneQuotationItem.create({
