@@ -920,10 +920,15 @@ async function OrdersCard({
       : 'all time (portal orders)'
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex flex-col">
       <p className="text-xs text-gray-400 font-medium">{isInvoices ? 'Invoices' : 'Orders Placed'}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{count}</p>
       {rangeLabel ? <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{rangeLabel}</p> : null}
+      {isInvoices && (
+        <Link href="/shop/invoices" className="mt-auto pt-1.5 text-[11px] font-semibold text-green-600 hover:text-green-700">
+          View all invoices →
+        </Link>
+      )}
     </div>
   )
 }
@@ -1170,51 +1175,7 @@ async function QneInvoicesAging({ qneCustomerCode }: { qneCustomerCode: string }
 
   return (
     <>
-      {/* ── Recent Invoices ──────────────────────────────────────── */}
-      {allInvoices.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-sm">🧾</span>
-              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                Recent Invoices
-                <span className="ml-1.5 font-normal text-gray-400">({allInvoices.length} total)</span>
-              </p>
-            </div>
-            <span className="text-[10px] text-green-500 font-medium">● Live from QNE</span>
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-gray-400 border-b border-gray-50">
-                <th className="px-4 py-2 text-left font-medium">Invoice</th>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Due</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topInvoices.map(inv => <InvoiceTableRow key={inv.invoiceNo} inv={inv} />)}
-            </tbody>
-          </table>
-
-          {/* Expandable older invoices */}
-          {olderInvoices.length > 0 && (
-            <details className="group">
-              <summary className="px-4 py-2.5 text-xs text-green-600 font-medium cursor-pointer hover:bg-gray-50 border-t border-gray-50 flex items-center gap-1 select-none list-none [&::-webkit-details-marker]:hidden">
-                <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-                View all {olderInvoices.length} older invoices
-              </summary>
-              <table className="w-full text-xs">
-                <tbody>
-                  {olderInvoices.map(inv => <InvoiceTableRow key={inv.invoiceNo} inv={inv} />)}
-                </tbody>
-              </table>
-            </details>
-          )}
-        </div>
-      )}
+      {/* Recent Invoices moved to /shop/invoices (DB-backed list + per-invoice PDF). */}
 
       {/* ── Aging Breakdown + Credit Limit ──────────────────────── */}
       {aging && aging.totalOutstanding > 0 && (() => {
