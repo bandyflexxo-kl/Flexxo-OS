@@ -1,4 +1,5 @@
 import { redirect }           from 'next/navigation'
+import Link                    from 'next/link'
 import { verifySession }       from '@/lib/session'
 import { prisma }              from '@/lib/prisma'
 import { companyOwnerFilter }  from '@/lib/authorization'
@@ -43,7 +44,20 @@ export default async function QuotationsPage() {
 
   return (
     <div>
-      <Topbar title="Quotations" actions={<NewQuotationButton />} />
+      <Topbar
+        title="Quotations"
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/quotations/lotuss"
+              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              🛒 Lotus&apos;s Price Match
+            </Link>
+            <NewQuotationButton />
+          </div>
+        }
+      />
       <div className="p-6 space-y-5">
 
         {/* Stats row */}

@@ -1,0 +1,70 @@
+/**
+ * lib/lotussSearch.ts — find Lotus's (lotuss.com.my) products for a query.
+ *
+ * Lotus's is a JS-rendered store with a private commerce API, so price/image
+ * can't be scraped server-side. We instead use Serper (Google) to return the
+ * real Lotus's product PAGES (name + link) via a site: search, plus a best-effort
+ * product image via Serper Images. Price is entered by the salesperson.
+ */
+
+const SERPER_SEARCH = 'https://google.serper.dev/search'
+const SERPER_IMAGES = 'https://google.serper.dev/images'
+const SITE = 'lotuss.com.my'
+
+export type LotussResult = {
+  name:  string   // cleaned product name from the Lotus's page title
+  link:  string   // lotuss.com.my/en/product/... URL
+  image: string | null
+}
+
+function key(): string {
+  return (process.env.SERPER_API_KEY ?? '').replace(/[^\x20-\x7E]/g, '')
+}
+
+/** Strip the "| Lotus's Shop Online …" / " - Lotus's" suffixes from a page title. */
+function cleanTitle(t: string): string {
+  return t
+    .replace(/\s*[|\-–]\s*Lotus['’]?s.*$/i, '')
+    .replace(/\s*[|\-–]\s*Shop Online.*$/i, '')
+    .trim()
+}
+
+async function serper(url: string, body: unknown): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await fetch(url, {
+      method:  'POST',
+      headers: { 'X-API-KEY': key(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(20_000),
+    })
+    if (!r.ok) return null
+    return await r.json() as Record<string, unknown>
+  } catch { return null }
+}
+
+/** First relevant product image for a name (best-effort; null if none). */
+async function imageFor(name: string): Promise<string | null> {
+  const d = await serper(SERPER_IMAGES, { q: name, gl: 'my', num: 3 })
+  const imgs = (d?.images ?? []) as { imageUrl?: string }[]
+  return imgs.find(i => i.imageUrl?.startsWith('http'))?.imageUrl ?? null
+}
+
+/**
+ * Top-N Lotus's products for a query (default 3). Name + link are reliable;
+ * image is best-effort. Runs image lookups in parallel.
+ */
+export async function searchLotuss(query: string, count = 3): Promise<LotussResult[]> {
+  if (!key()) return []
+  const d = await serper(SERPER_SEARCH, { q: `${query} site:${SITE}`, gl: 'my', num: Math.max(count + 3, 8) })
+  const organic = (d?.organic ?? []) as { title?: string; link?: string }[]
+
+  const picks = organic
+    .filter(o => o.link?.includes('/product/'))    // only product pages, not category/home
+    .slice(0, count)
+    .map(o => ({ name: cleanTitle(o.title ?? ''), link: o.link! }))
+
+  const withImages = await Promise.all(
+    picks.map(async p => ({ ...p, image: await imageFor(p.name || query) })),
+  )
+  return withImages
+}
