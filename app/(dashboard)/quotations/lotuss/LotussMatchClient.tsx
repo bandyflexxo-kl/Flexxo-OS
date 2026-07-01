@@ -10,8 +10,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
-type Result = { name: string; link: string; image: string | null }
-type Row = { term: string; results: Result[]; loading: boolean; selected: number | null; price: string }
+type Result = { id: string; name: string; link: string; image: string | null }
+type Row = {
+  term: string; results: Result[]; visible: number; page: number
+  loading: boolean; moreLoading: boolean; exhausted: boolean
+  selected: number | null; price: string
+}
 type FinalRow = { searchItem: string; name: string; link: string; image: string | null; price: number }
 type History = { id: string; dateISO: string; title: string; rows: FinalRow[] }
 
@@ -59,21 +63,25 @@ export default function LotussMatchClient() {
       if (!r.ok) { setError(typeof d.error === 'string' ? d.error : 'Could not read the list.'); return }
       const items: string[] = d.items ?? []
       if (!items.length) { setError('No items found.'); return }
-      const init: Row[] = items.map(t => ({ term: t, results: [], loading: true, selected: null, price: '' }))
+      const init: Row[] = items.map(t => ({ term: t, results: [], visible: 3, page: 1, loading: true, moreLoading: false, exhausted: false, selected: null, price: '' }))
       setRows(init); setPhase('review')
       void pool(items, 3, async (q, idx) => { await searchOne(idx, q) })
     } catch { setError('Something went wrong reading the list.') }
     finally { setBusy(false) }
   }
 
+  // Fresh search for one row (initial + "Find again"): replaces results, resets paging.
   async function searchOne(idx: number, query: string) {
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, loading: true } : r))
+    setRows(prev => prev.map((r, i) => i === idx ? { ...r, loading: true, exhausted: false } : r))
     try {
-      const r = await fetch('/api/lotuss/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, count: 3 }) })
+      const r = await fetch('/api/lotuss/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, page: 1 }) })
       const d = await r.json().catch(() => ({ results: [] }))
-      setRows(prev => prev.map((row, i) => i === idx ? { ...row, results: d.results ?? [], loading: false, selected: null } : row))
+      const results: Result[] = d.results ?? []
+      setRows(prev => prev.map((row, i) => i === idx
+        ? { ...row, results, visible: 3, page: 1, loading: false, moreLoading: false, exhausted: results.length === 0, selected: null }
+        : row))
     } catch {
-      setRows(prev => prev.map((row, i) => i === idx ? { ...row, results: [], loading: false } : row))
+      setRows(prev => prev.map((row, i) => i === idx ? { ...row, results: [], loading: false, exhausted: true } : row))
     }
   }
 
@@ -90,6 +98,36 @@ export default function LotussMatchClient() {
 
   // ── Review actions ──────────────────────────────────────────────────────────
   const setRow = (i: number, patch: Partial<Row>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+
+  // "＋ Show 3 more": first reveal already-fetched items for free, then (once the
+  // current page's pool is used up) fetch the next Serper page, deduping by id.
+  const HARD_CAP = 12
+  async function showMore(idx: number) {
+    const row = rows[idx]
+    if (!row) return
+    // 1) reveal more from the held pool — no network call
+    if (row.visible < row.results.length) {
+      setRow(idx, { visible: Math.min(row.visible + 3, row.results.length, HARD_CAP) })
+      return
+    }
+    // 2) pool exhausted — fetch the next page (unless we've hit the cap or the end)
+    if (row.exhausted || row.results.length >= HARD_CAP) return
+    setRow(idx, { moreLoading: true })
+    try {
+      const exclude = row.results.map(r => r.id)
+      const r = await fetch('/api/lotuss/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: row.term, page: row.page + 1, exclude }) })
+      const d = await r.json().catch(() => ({ results: [] }))
+      const incoming: Result[] = d.results ?? []
+      setRows(prev => prev.map((rw, i) => {
+        if (i !== idx) return rw
+        const fresh   = incoming.filter(x => !rw.results.some(e => e.id === x.id))
+        const results = [...rw.results, ...fresh].slice(0, HARD_CAP)
+        return { ...rw, results, page: rw.page + 1, moreLoading: false, exhausted: fresh.length === 0, visible: Math.min(rw.visible + (fresh.length ? 3 : 0), results.length) }
+      }))
+    } catch {
+      setRow(idx, { moreLoading: false })
+    }
+  }
 
   function confirmList() {
     const chosen = rows.filter(r => r.selected !== null && r.results[r.selected])
@@ -184,7 +222,7 @@ export default function LotussMatchClient() {
                 <p className="text-xs text-gray-400 px-1 py-3">No Lotus&apos;s match — edit the term and Find again.</p>
               ) : (
                 <div className="grid sm:grid-cols-3 gap-2.5">
-                  {row.results.map((res, ri) => (
+                  {row.results.slice(0, row.visible).map((res, ri) => (
                     <label key={ri}
                       className={`block rounded-xl border p-2.5 cursor-pointer transition-colors ${row.selected === ri ? 'border-green-500 bg-green-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
                       <div className="flex items-start gap-2">
@@ -201,6 +239,18 @@ export default function LotussMatchClient() {
                     </label>
                   ))}
                 </div>
+              )}
+
+              {/* Show more / no-more — only once there's at least one result */}
+              {!row.loading && row.results.length > 0 && (
+                row.exhausted && row.visible >= row.results.length ? (
+                  <p className="text-[11px] text-gray-400 mt-2.5 px-1">No more Lotus&apos;s results.</p>
+                ) : row.visible < HARD_CAP ? (
+                  <button onClick={() => void showMore(i)} disabled={row.moreLoading}
+                    className="mt-2.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                    {row.moreLoading ? 'Loading…' : '＋ Show 3 more'}
+                  </button>
+                ) : null
               )}
 
               {row.selected !== null && (

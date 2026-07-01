@@ -26,6 +26,7 @@ const SERPER_IMAGES = 'https://google.serper.dev/images'
 const SITE = 'lotuss.com.my'
 
 export type LotussResult = {
+  id:    string   // numeric Lotus's product id (used for dedup across pages)
   name:  string   // cleaned product name from the Lotus's page title
   link:  string   // canonical lotuss.com.my/p/{id} URL (resolves via redirect)
   image: string | null
@@ -114,38 +115,51 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 /**
- * The N Lotus's products most similar to a query (default 3). We search with the
- * bare domain as a keyword (the `site:` operator misses many items), collect the
- * unique Lotus's product pages, rank them by token-Jaccard similarity to the
- * query, and return the top N. Name + link are reliable; image is best-effort.
- * Returns [] only when Serper surfaces no Lotus's product page at all.
+ * One page of Lotus's products for a query, ranked by similarity to the query.
+ *
+ * The candidate pool per Google page is naturally small and NOT expandable by
+ * `num` (num=15 and num=30 return the same set), so "Show more" works by paging:
+ * the caller shows the returned pool 3-at-a-time, and requests the next Serper
+ * `page` (passing the ids it already has via `exclude`) only when it runs out.
+ *
+ * We collect the unique Lotus's product pages on this page, drop any `exclude`d
+ * ids (dedup across pages), rank by token-Jaccard similarity, and return the full
+ * ranked pool (capped at `max`) — name + link reliable, image best-effort.
+ * Returns [] when Serper surfaces no new Lotus's product page for the query/page.
  */
-export async function searchLotuss(query: string, count = 3): Promise<LotussResult[]> {
+export async function searchLotuss(
+  query: string,
+  opts: { page?: number; exclude?: string[]; max?: number } = {},
+): Promise<LotussResult[]> {
   if (!key()) return []
-  const d = await serper(SERPER_SEARCH, { q: `${query} ${SITE}`, gl: 'my', num: 15 })
+  const page    = opts.page ?? 1
+  const exclude = new Set(opts.exclude ?? [])
+  const max     = opts.max ?? 10
+
+  const d = await serper(SERPER_SEARCH, { q: `${query} ${SITE}`, gl: 'my', num: 20, ...(page > 1 ? { page } : {}) })
   const organic = (d?.organic ?? []) as { title?: string; link?: string }[]
 
-  // Collect unique Lotus's product candidates (dedupe by numeric product id).
+  // Collect unique Lotus's product candidates (dedupe by id, drop excluded ids).
   const seen = new Set<string>()
-  const candidates: { name: string; link: string }[] = []
+  const candidates: { id: string; name: string; link: string }[] = []
   for (const o of organic) {
     if (!o.link?.includes(SITE)) continue
     if (!(o.link.includes('/product/') || o.link.includes('/p/'))) continue
     const link = toProductUrl(o.link)
     if (!link) continue
     const id = link.split('/p/')[1]
-    if (seen.has(id)) continue
+    if (seen.has(id) || exclude.has(id)) continue
     seen.add(id)
-    candidates.push({ name: cleanTitle(o.title ?? ''), link })
+    candidates.push({ id, name: cleanTitle(o.title ?? ''), link })
   }
   if (candidates.length === 0) return []
 
-  // Rank by token-Jaccard similarity to the query → the N most similar.
+  // Rank by token-Jaccard similarity to the query → most similar first.
   const qTokens = tokenise(query)
   const ranked = candidates
     .map(c => ({ c, score: jaccard(qTokens, tokenise(c.name)) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, count)
+    .slice(0, max)
     .map(r => r.c)
 
   return Promise.all(
