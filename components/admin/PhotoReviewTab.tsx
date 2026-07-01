@@ -740,6 +740,25 @@ export default function PhotoReviewTab() {
     finally   { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n }) }
   }
 
+  // ── Manually flag a clean/locked photo (mis-clean or AI miss) ─────────────
+  async function flagOne(id: string) {
+    setBusyIds(prev => new Set([...prev, id]))
+    try {
+      const res = await fetch(`/api/admin/products/${id}/flag-photo`, { method: 'POST' })
+      if (!res.ok) { setError('Could not flag this photo.'); return }
+      setData(prev => prev ? {
+        ...prev,
+        products: prev.products.map(p =>
+          p.id === id
+            ? { ...p, photoQualityFlagged: true, photoApprovedByAdmin: false,
+                photoApprovalPending: false, photoQualityNote: 'Manually flagged' }
+            : p
+        ),
+      } : null)
+    } catch { setError('Could not flag this photo.') }
+    finally   { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n }) }
+  }
+
   // ── Approve pending (Director only) ──────────────────────────────────────
   async function approveOne(id: string) {
     setBusyIds(prev => new Set([...prev, id]))
@@ -1069,6 +1088,20 @@ export default function PhotoReviewTab() {
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Manual flag — for clean or locked photos a reviewer knows are wrong */}
+                      {(p.photoQualityFlagged === false || p.photoApprovedByAdmin) && !p.photoApprovalPending && (
+                        <button
+                          onClick={() => void flagOne(p.id)}
+                          disabled={busy || isTaskBusy}
+                          title="Flag this photo as unacceptable — re-opens it for review"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
                           </svg>
                         </button>
                       )}
