@@ -5,6 +5,12 @@
  * can't be scraped server-side. We instead use Serper (Google) to return the
  * real Lotus's product PAGES (name + link) via a site: search, plus a best-effort
  * product image via Serper Images. Price is entered by the salesperson.
+ *
+ * URL fix (Jul 2026): Google/Serper still index the DEPRECATED `/product/{id}`
+ * URL scheme, which now 404s ("Page not found") on lotuss.com.my. The live site
+ * uses `/p/{slug}-{id}`, and `/p/{id}` (id only) auto-redirects to the canonical
+ * slug. So we extract the numeric product id from Serper's stale link and rebuild
+ * it as `https://www.lotuss.com.my/p/{id}` — verified to resolve in-browser.
  */
 
 const SERPER_SEARCH = 'https://google.serper.dev/search'
@@ -13,12 +19,25 @@ const SITE = 'lotuss.com.my'
 
 export type LotussResult = {
   name:  string   // cleaned product name from the Lotus's page title
-  link:  string   // lotuss.com.my/en/product/... URL
+  link:  string   // canonical lotuss.com.my/p/{id} URL (resolves via redirect)
   image: string | null
 }
 
 function key(): string {
   return (process.env.SERPER_API_KEY ?? '').replace(/[^\x20-\x7E]/g, '')
+}
+
+/**
+ * Pull the Lotus's numeric product id out of a Serper link and return the
+ * working product URL. Handles `/product/75134502`, `/product/slug-74700251`,
+ * and `/p/slug-75149123` — the id is the last run of 6+ digits in the path.
+ * Returns null when no id can be found (caller falls back to the raw link).
+ */
+function toProductUrl(link: string): string | null {
+  const path = link.split(/[?#]/)[0]
+  const runs = path.match(/\d{6,}/g)
+  const id = runs?.[runs.length - 1]
+  return id ? `https://www.${SITE}/p/${id}` : null
 }
 
 /** Strip the "| Lotus's Shop Online …" / " - Lotus's" suffixes from a page title. */
@@ -59,9 +78,9 @@ export async function searchLotuss(query: string, count = 3): Promise<LotussResu
   const organic = (d?.organic ?? []) as { title?: string; link?: string }[]
 
   const picks = organic
-    .filter(o => o.link?.includes('/product/'))    // only product pages, not category/home
+    .filter(o => o.link && (o.link.includes('/product/') || o.link.includes('/p/')))  // product pages only
     .slice(0, count)
-    .map(o => ({ name: cleanTitle(o.title ?? ''), link: o.link! }))
+    .map(o => ({ name: cleanTitle(o.title ?? ''), link: toProductUrl(o.link!) ?? o.link! }))
 
   const withImages = await Promise.all(
     picks.map(async p => ({ ...p, image: await imageFor(p.name || query) })),
