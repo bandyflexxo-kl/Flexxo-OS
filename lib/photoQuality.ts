@@ -12,6 +12,23 @@ const SCAN_PROMPT = `Inspect this product photo. Flag it if it contains ANY of:
 Respond with JSON only — no markdown, no explanation outside the JSON:
 {"flagged": true|false, "reason": "one short sentence"}`
 
+/**
+ * When we know the product's OWN brand (e.g. the APLUS photo hunt), that brand's
+ * name/logo on the packaging is EXPECTED and must not trip the competitor check —
+ * only other brands / retailers / printing overlays should flag.
+ */
+function scanPromptFor(ownBrand?: string | null): string {
+  if (!ownBrand?.trim()) return SCAN_PROMPT
+  return `Inspect this product photo. The product's OWN brand is "${ownBrand.trim()}" — its name and logo on the packaging are EXPECTED and correct; do NOT flag them. Flag the photo only if it contains ANY of:
+1. A DIFFERENT company's logo, brand name, or trademark — a competitor or reseller, NOT "${ownBrand.trim()}" (e.g. "THYE HIN", "Office Plus", "TP" rainbow logo)
+2. Overlay text advertising a printing/customization service (e.g. "Customize Printing", "2ply 3ply 4ply", "Up to 7 Digits Running Number", "Paper Colour")
+3. Website URLs or contact details from another business
+4. Obvious watermark text from another shop or supplier
+
+Respond with JSON only — no markdown, no explanation outside the JSON:
+{"flagged": true|false, "reason": "one short sentence"}`
+}
+
 export async function scanProductPhoto(
   productId: string
 ): Promise<{ flagged: boolean; reason: string }> {
@@ -26,7 +43,8 @@ export async function scanProductPhoto(
 
 export async function scanPhotoUrl(
   productId: string,
-  photoUrl:  string
+  photoUrl:  string,
+  ownBrand?: string | null,   // whitelist this brand's own logo/name (won't flag)
 ): Promise<{ flagged: boolean; reason: string }> {
   const imgRes = await fetch(photoUrl, { signal: AbortSignal.timeout(15_000) })
   if (!imgRes.ok) throw new Error(`Photo download failed: ${imgRes.status}`)
@@ -43,7 +61,7 @@ export async function scanPhotoUrl(
       role:    'user',
       content: [
         { type: 'image', source: { type: 'base64', media_type: mimeType, data: buf.toString('base64') } },
-        { type: 'text',  text: SCAN_PROMPT },
+        { type: 'text',  text: scanPromptFor(ownBrand) },
       ],
     }],
   })

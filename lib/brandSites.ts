@@ -13,9 +13,11 @@ export const BRAND_OFFICIAL_SITES: Record<string, string> = {
   'SCOTCH-BRITE':       '3m.com',
 
   // ── Malaysian / SEA brands ─────────────────────────────────────────────────
-  'APLUS':              'aplus.com.my',
-  'A-PLUS':             'aplus.com.my',
-  'A PLUS':             'aplus.com.my',
+  // APLUS has no manufacturer site (aplus.com.my is an unrelated e-invoice
+  // software company). STP is the retailer carrying the full APLUS range.
+  'APLUS':              'stpstationery.com.my',
+  'A-PLUS':             'stpstationery.com.my',
+  'A PLUS':             'stpstationery.com.my',
   'ARTLINE':            'artline.com.au',
   'MONAMI':             'monamiglobal.com',
   'DELI':               'deli.com',

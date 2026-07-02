@@ -5,6 +5,7 @@ import Link from 'next/link'
 import ProductCatalogTable from '@/components/admin/ProductCatalogTable'
 import PhotoReviewTab from '@/components/admin/PhotoReviewTab'
 import CatalogHealthTab from '@/components/admin/CatalogHealthTab'
+import AplusPhotosTab from '@/components/admin/AplusPhotosTab'
 import NewProductButton from '@/components/admin/NewProductButton'
 import { calculateSellingPrice, roundPrice } from '@/lib/pricing'
 
@@ -170,6 +171,16 @@ export default async function AdminProductsPage({
           >
             Catalog Health
           </Link>
+          <Link
+            href="/admin/products?tab=aplus-photos"
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === 'aplus-photos'
+                ? 'border-green-600 text-green-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            APLUS Photos
+          </Link>
         </div>
 
         {/* Tab content */}
@@ -216,6 +227,8 @@ export default async function AdminProductsPage({
         {tab === 'photos' && <PhotoReviewTab />}
 
         {tab === 'health' && <CatalogHealthTab />}
+
+        {tab === 'aplus-photos' && <AplusPhotosTab />}
       </div>
     </div>
   )
