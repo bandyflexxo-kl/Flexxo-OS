@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const inv = await prisma.qneInvoice.findFirst({
     where:  { id, companyId: session.customerCompanyId },   // scoped to the logged-in company
     select: {
-      docNo: true, docDate: true, totalAmount: true,
+      docNo: true, docDate: true, totalAmount: true, customerCode: true,
       company: {
         select: {
           name: true,
@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
             select: { line1: true, line2: true, city: true, postcode: true, state: true } },
         },
       },
-      items: { select: { stockCode: true, description: true, qty: true, unitPrice: true } },
+      items: { select: { stockCode: true, description: true, qty: true, unitPrice: true, product: { select: { unit: true } } } },
     },
   })
   if (!inv) return Response.json({ error: 'Invoice not found' }, { status: 404 })
@@ -34,13 +34,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     docType: 'INV',
     docNo:   inv.docNo,
     date:    new Date(inv.docDate).toLocaleDateString('en-GB'),   // DD/MM/YYYY like QNE
+    customerCode: inv.customerCode,
     customer: {
       name:         inv.company?.name ?? 'Customer',
       addressLines: [a?.line1, a?.line2, [a?.postcode, a?.city].filter(Boolean).join(' '), a?.state].filter(Boolean) as string[],
     },
     items: inv.items.map(it => {
       const qty = Number(it.qty), price = Number(it.unitPrice)
-      return { code: it.stockCode ?? '', description: it.description, qty, uom: '', unitPrice: price, amount: qty * price, netAmount: qty * price }
+      return { code: it.stockCode ?? '', description: it.description, qty, uom: it.product?.unit ?? '', unitPrice: price, amount: qty * price, netAmount: qty * price }
     }),
     subTotal: Number(inv.totalAmount),
     netTotal: Number(inv.totalAmount),
