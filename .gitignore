@@ -60,3 +60,21 @@ flexxo-os-*.json
 kch-cats.json
 photo-gap-report.csv
 group
+
+# local scratch — analysis scripts, data dumps, one-off test scripts (never committed).
+# NOTE: .ts is not blanket-ignored because many reusable _*.ts scripts ARE tracked,
+# so one-off scratch .ts files are listed explicitly here.
+scripts/*.py
+scripts/*.csv
+*.xlsx
+scripts/_qne_products_dump.json
+scripts/_aeonDashCheck.ts
+scripts/_backfillBranch.ts
+scripts/_clearAeonQneCache.ts
+scripts/_deliveryTestCleanup.ts
+scripts/_mintSession.ts
+scripts/_mintShopSession.ts
+scripts/_qnePdfInvestigate.ts
+scripts/_seedDemoTender.ts
+scripts/_seedDemoTenders.ts
+scripts/_testWelcomeEmail.ts
