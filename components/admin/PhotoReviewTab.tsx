@@ -785,11 +785,13 @@ export default function PhotoReviewTab() {
     try {
       const res = await fetch(`/api/admin/products/${id}/request-photo-approval`, { method: 'DELETE' })
       if (!res.ok) { setError('Reject failed'); return }
+      // Reject removes the photo → the product no longer belongs in this list
+      // (which only shows products WITH a photo). Drop the row + adjust counts.
       setData(prev => prev ? {
         ...prev,
-        products: prev.products.map(p =>
-          p.id === id ? { ...p, photoApprovalPending: false } : p
-        ),
+        total:                Math.max(0, prev.total - 1),
+        pendingApprovalTotal: Math.max(0, prev.pendingApprovalTotal - 1),
+        products:             prev.products.filter(p => p.id !== id),
       } : null)
     } catch { setError('Reject failed') }
     finally   { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n }) }
@@ -1068,7 +1070,7 @@ export default function PhotoReviewTab() {
                           <button
                             onClick={() => void rejectApprovalOne(p.id)}
                             disabled={busy}
-                            title="Reject — keep photo as flagged"
+                            title="Reject — remove this photo (product returns to no-photo)"
                             className="px-2 py-1 rounded-lg text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors"
                           >
                             Reject
