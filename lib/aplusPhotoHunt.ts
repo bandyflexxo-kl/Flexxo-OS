@@ -79,6 +79,40 @@ function jaccard(a: string, b: string): number {
   return inter / (A.size + B.size - inter)
 }
 
+/**
+ * The numeric core of a code — longest run of ≥3 digits. "CS363"→"363",
+ * "PL3000"→"3000", "NCH300"→"300". Retailers often drop Flexxo's letter prefix
+ * (STP lists CS363 as bare "363"), so we match on this too, not just the full code.
+ */
+function codeCore(code: string | null): string | null {
+  const runs = (code ?? '').match(/\d{3,}/g)
+  return runs ? runs[runs.length - 1] : null
+}
+
+// Generic words stripped when building the short "variant" query — leaves the
+// distinctive attribute words (colour, finish) that pin the right SKU.
+const GENERIC_WORDS = new Set([
+  'aplus', 'a3', 'a4', 'a5', 'gsm', 'color', 'colour', 'paper', 'card',
+  'sheet', 'sheets', 'pkt', 'pcs', 'box', 'ream', 'set', 'pack', 'the', 'and', 'with',
+])
+
+/** Distinctive variant words from a name — brand, code, sizes, generic terms removed.
+ *  "APLUS CS363 A4 80GSM COLOR PAPER CYBER YELLOW 450'S" → "cyber yellow". */
+function variantWords(name: string, code: string | null): string {
+  const codeN = code ? norm(code) : ''
+  const core  = codeCore(code) ?? ''
+  return [...tokenise(name)]
+    .filter(t => {
+      const tu = t.toUpperCase()
+      if (GENERIC_WORDS.has(t)) return false
+      if (/^\d+$/.test(t)) return false        // pure numbers (450, 100)
+      if (/^\d+gsm$/.test(t)) return false      // 80gsm, 160gsm
+      if (tu === codeN || tu === core) return false
+      return true
+    })
+    .join(' ')
+}
+
 function domainRank(hay: string): number {
   const h = hay.toLowerCase()
   if (h.includes(STP_DOMAIN)) return 0
@@ -87,7 +121,7 @@ function domainRank(hay: string): number {
 }
 
 type SerperImage = { imageUrl?: string; title?: string; source?: string; link?: string; domain?: string }
-type Candidate = { imageUrl: string; title: string; where: string; rank: number; hasCode: boolean; jac: number }
+type Candidate = { imageUrl: string; title: string; where: string; brand: boolean; codeHit: boolean; rank: number; jac: number }
 
 async function searchImages(query: string): Promise<SerperImage[]> {
   try {
@@ -103,21 +137,31 @@ async function searchImages(query: string): Promise<SerperImage[]> {
   } catch { return [] }
 }
 
-/** Rank candidates: STP-first, exact-code preferred, then name similarity. */
-function rankCandidates(imgs: SerperImage[], code: string | null, name: string): Candidate[] {
+/**
+ * Rank candidates. Priority order (own brand FIRST — an APLUS-branded photo
+ * beats a competitor's even when the competitor's spec text matches better):
+ *   1. APLUS present in source/title
+ *   2. code hit (full code OR numeric core)
+ *   3. domain (STP > known MY retailer > other)
+ *   4. name similarity
+ */
+function rankCandidates(imgs: SerperImage[], code: string | null, core: string | null, name: string): Candidate[] {
   const codeN = code ? norm(code) : ''
   return imgs
     .filter(i => i.imageUrl?.startsWith('http'))
     .map(i => {
-      const where   = `${i.source ?? ''} ${i.domain ?? ''} ${i.link ?? ''} ${i.title ?? ''}`
-      const hasCode = codeN.length >= 3 && norm(where).includes(codeN)
+      const where = `${i.source ?? ''} ${i.domain ?? ''} ${i.link ?? ''} ${i.title ?? ''}`
+      const w     = norm(where)
+      const codeHit = (codeN.length >= 3 && w.includes(codeN)) || (!!core && w.includes(core))
       return {
         imageUrl: i.imageUrl!, title: i.title ?? '', where,
-        rank: domainRank(where), hasCode, jac: jaccard(name, i.title ?? ''),
+        brand: w.includes('APLUS'), codeHit,
+        rank: domainRank(where), jac: jaccard(name, i.title ?? ''),
       }
     })
     .sort((a, b) => {
-      if (a.hasCode !== b.hasCode) return a.hasCode ? -1 : 1   // exact-code first
+      if (a.brand !== b.brand) return a.brand ? -1 : 1         // own brand first
+      if (a.codeHit !== b.codeHit) return a.codeHit ? -1 : 1    // then code / core hit
       if (a.rank !== b.rank) return a.rank - b.rank             // then STP > known > other
       return b.jac - a.jac                                      // then name similarity
     })
@@ -138,22 +182,41 @@ export async function huntAplusPhotoForProduct(productId: string): Promise<HuntR
   if (!product) return { productId, name: '', code: null, tier: 'none', reason: 'Product not found' }
 
   const code = aplusCode(product.qneItemCode, product.internalSku)
+  const core = codeCore(code)
   const base = { productId, name: product.name, code }
 
   if (!key()) return { ...base, tier: 'none', reason: 'SERPER_API_KEY missing' }
 
-  const query   = `APLUS ${code ?? ''} ${product.name}`.replace(/\s+/g, ' ').trim()
-  const ranked  = rankCandidates(await searchImages(query), code, product.name)
+  // Multi-query for recall: the full name catches exact-spec items; the short
+  // "APLUS {code-core} {variant}" query surfaces the APLUS-branded listing (STP
+  // labels e.g. "363", not "CS363"). Merge + dedupe candidates from both.
+  const variant = variantWords(product.name, code)
+  const queries = [
+    `APLUS ${code ?? ''} ${product.name}`.replace(/\s+/g, ' ').trim(),
+    `APLUS ${core ?? code ?? ''} ${variant}`.replace(/\s+/g, ' ').trim(),
+  ].filter((q, i, a) => q.length > 5 && a.indexOf(q) === i)
+
+  const merged = new Map<string, SerperImage>()
+  for (const q of queries) {
+    for (const img of await searchImages(q)) {
+      if (img.imageUrl && !merged.has(img.imageUrl)) merged.set(img.imageUrl, img)
+    }
+  }
+  const ranked = rankCandidates([...merged.values()], code, core, product.name)
   if (ranked.length === 0) return { ...base, tier: 'none', reason: 'No image results' }
 
-  // Choose the acceptable pool: exact-code hits, else name matches ≥ threshold.
-  const exact   = ranked.filter(c => c.hasCode)
-  const similar = ranked.filter(c => !c.hasCode && c.jac >= JACCARD_MIN)
-  const tier: HuntTier = exact.length ? 'exact' : similar.length ? 'similar' : 'none'
-  const pool = exact.length ? exact : similar
-  if (tier === 'none' || pool.length === 0) {
-    return { ...base, tier: 'none', reason: 'No confident match (no code hit, name similarity below threshold)' }
+  // Tier from the best-ranked candidate (brand-first sort already applied):
+  //   exact   = APLUS-branded AND code/core hit
+  //   similar = APLUS-branded, or a code / name match worth a human check
+  const best = ranked[0]
+  const tier: HuntTier =
+    best.brand && best.codeHit         ? 'exact'
+    : best.brand || best.codeHit || best.jac >= JACCARD_MIN ? 'similar'
+    : 'none'
+  if (tier === 'none') {
+    return { ...base, tier: 'none', reason: 'No confident match (no APLUS-branded / code / name hit)' }
   }
+  const pool = ranked   // sorted brand-first; try in order until one downloads
 
   // Try candidates in order until one downloads (sites often block hotlinking).
   for (const cand of pool.slice(0, 4)) {
