@@ -308,18 +308,21 @@ export default async function DashboardPage() {
     spendTo   = range._max.docDate
   }
 
-  // Effective spend prefers real portal orders, else the cached QNE history —
-  // so the partner tier / loyalty bar reflect a customer's true volume.
-  const effectiveSpent = totalSpent > 0 ? totalSpent : dbInvoiceTotal
+  // Effective spend = whichever source tells the fuller story. QNE invoices are
+  // the accounting record (years of history); portal orders eventually become QNE
+  // invoices too, so summing both would double-count — and preferring portal
+  // orders outright meant one small first order (e.g. RM1.8k) silently REPLACED
+  // RM190k of invoice history on the card and the partner tier.
+  const effectiveSpent = Math.max(totalSpent, dbInvoiceTotal)
 
   // Top-of-page metric cards are rendered INLINE (synchronous) from data we
   // already have in the DB — NOT via a live QNE fetch. On Vercel there is no
   // Radmin VPN, so any live QNE call just stalls until its login timeout (~10s)
   // before falling back to exactly these values. Sourcing them straight from the
   // DB makes the cards appear instantly with the rest of the shell.
-  const dashTotalIsInvoices = totalSpent === 0 && dbInvoiceTotal > 0
-  const dashCount           = totalOrders > 0 ? totalOrders : dbInvoiceCount
-  const dashCountIsInvoices = totalOrders === 0 && dbInvoiceCount > 0
+  const dashTotalIsInvoices = dbInvoiceTotal > 0 && dbInvoiceTotal >= totalSpent
+  const dashCountIsInvoices = dbInvoiceCount > 0 && dbInvoiceCount >= totalOrders
+  const dashCount           = dashCountIsInvoices ? dbInvoiceCount : totalOrders
   const dashOutstanding     = company?.outstandingBalance != null ? Number(company.outstandingBalance) : null
 
   // "From when to when" label for Total Spent — the span of the synced invoices.
