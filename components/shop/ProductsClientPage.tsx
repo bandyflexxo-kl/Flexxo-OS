@@ -376,6 +376,9 @@ export default function ProductsClientPage({
   // out of view (sentinel-based), so categories stay reachable at the top.
   const catBarSentinelRef = useRef<HTMLDivElement>(null)
   const [stickyCats, setStickyCats] = useState(false)
+  // Horizontal chip row inside the sticky bar — the auto-centre effect looks
+  // up the active chip in here (via [data-active-chip="true"]) and centres it.
+  const stickyChipRowRef = useRef<HTMLDivElement>(null)
 
   // ── Search dropdown ───────────────────────────────────────────────
   const [dropdownOpen,   setDropdownOpen]   = useState(false)
@@ -713,6 +716,16 @@ export default function ProductsClientPage({
     return () => observer.disconnect()
   }, [])
 
+  // ── Sticky bar: auto-centre the active chip ──────────────────────
+  // Runs when the bar appears and whenever the category changes while it is
+  // shown, so the highlighted chip is always in view. block:'nearest' keeps
+  // the page's vertical scroll position untouched (the bar is fixed).
+  useEffect(() => {
+    if (!stickyCats) return
+    const el = stickyChipRowRef.current?.querySelector<HTMLElement>('[data-active-chip="true"]')
+    el?.scrollIntoView({ inline: 'center', block: 'nearest' })
+  }, [stickyCats, activeCategory])
+
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
 
@@ -770,6 +783,29 @@ export default function ProductsClientPage({
     'Safety Kits':                  '🦺',
   }
 
+  // Short labels for the mobile tiles + sticky chips — the full parent names
+  // ("Computer Hardware & Software") don't fit a 5-column grid or a compact
+  // chip. Desktop sidebar keeps the full names.
+  const MOBILE_LABEL: Record<string, string> = {
+    'Office Stationery': 'Stationery',
+    'Printer Supplies': 'Printer',
+    'Office Furniture': 'Furniture',
+    'Computer Hardware & Software': 'Computers',
+    'Office Machine': 'Machines',
+    'Office Equipment': 'Equipment',
+    'Office Security': 'Security',
+    'Safety Kits': 'Safety',
+    'Breakroom': 'Breakroom',
+    'Janitorial': 'Janitorial',
+  }
+  const mobileLabel = (name: string) => MOBILE_LABEL[name] ?? name
+
+  // Mobile ordering: biggest categories first (both the tile grid and the
+  // sticky chips). Desktop sidebar keeps the original categoryTree order.
+  const mobileCats = [...categoryTree].sort(
+    (a, b) => (countByCategory.get(b.id) ?? 0) - (countByCategory.get(a.id) ?? 0),
+  )
+
   return (
     <div className="flex gap-6 lg:gap-8">
 
@@ -781,8 +817,9 @@ export default function ProductsClientPage({
           className="lg:hidden fixed top-14 left-0 right-0 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm"
           style={{ zIndex: Z.stickyNav }}
         >
-          <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-2">
+          <div ref={stickyChipRowRef} className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-2">
             <button
+              data-active-chip={!activeCategory}
               onClick={() => { selectCategory(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-semibold border touch-manipulation transition-all ${
                 !activeCategory ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'
@@ -790,22 +827,59 @@ export default function ProductsClientPage({
             >
               🏪 All
             </button>
-            {categoryTree.map(cat => {
+            {mobileCats.map(cat => {
               const active = activeCategory === cat.id || parentOfChild.get(activeCategory) === cat.id
               return (
                 <button
                   key={cat.id}
+                  data-active-chip={active}
                   onClick={() => { selectCategory(cat.id); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                   className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold border touch-manipulation transition-all ${
                     active ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'
                   }`}
                 >
                   <span>{CAT_EMOJI[cat.name] ?? '📋'}</span>
-                  <span className="whitespace-nowrap">{cat.name}</span>
+                  <span className="whitespace-nowrap">{mobileLabel(cat.name)}</span>
                 </button>
               )
             })}
           </div>
+
+          {/* Subcategory row — the active parent's children, so the user can
+              narrow the filter without scrolling back to the top. No
+              scroll-to-top on tap: the user is browsing results. */}
+          {(() => {
+            const activeParentId = parentOfChild.get(activeCategory) ?? activeCategory
+            const parentNode     = categoryTree.find(c => c.id === activeParentId)
+            if (!parentNode || parentNode.children.length === 0) return null
+            return (
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pb-2">
+                <button
+                  onClick={() => selectCategory(parentNode.id)}
+                  className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap touch-manipulation transition-all ${
+                    activeCategory === parentNode.id
+                      ? 'bg-green-100 text-green-700 border border-green-300'
+                      : 'border border-gray-200 text-gray-500 bg-white'
+                  }`}
+                >
+                  All {mobileLabel(parentNode.name)}
+                </button>
+                {parentNode.children.map(sub => (
+                  <button
+                    key={sub.id}
+                    onClick={() => selectCategory(sub.id)}
+                    className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap touch-manipulation transition-all ${
+                      activeCategory === sub.id
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : 'border border-gray-200 text-gray-500 bg-white'
+                    }`}
+                  >
+                    {sub.name}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -901,51 +975,41 @@ export default function ProductsClientPage({
       {/* ── Main content ──────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
 
-        {/* ── Category grid — mobile only (all visible, no horizontal scroll) ── */}
+        {/* ── Category tiles — mobile only (all visible, no horizontal scroll) ── */}
         <div className="lg:hidden">
-          {/* "All Products" spans full width */}
-          <button
-            onClick={() => selectCategory('')}
-            className={`w-full flex items-center justify-between px-3.5 py-2 mb-2 rounded-xl text-xs font-semibold transition-all border touch-manipulation ${
-              !activeCategory
-                ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">🏪 All Products</span>
-            {allProducts && (
-              <span className={`tabular-nums text-[10px] ${!activeCategory ? 'text-green-100' : 'text-gray-400'}`}>
-                {allProducts.length.toLocaleString()}
-              </span>
-            )}
-          </button>
+          {/* Clear-filter chip — replaces the old full-width "All Products" row;
+              only rendered while a category filter is active */}
+          {activeCategory && (
+            <button
+              onClick={() => selectCategory('')}
+              className="mb-2 inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white text-xs text-gray-600 px-3 py-1.5 touch-manipulation"
+            >
+              × All products
+            </button>
+          )}
 
-          {/* 2-column grid — all 10 parent categories visible at once */}
-          <div className="grid grid-cols-2 gap-2">
-            {categoryTree.map(cat => {
-              const count  = countByCategory.get(cat.id) ?? 0
+          {/* 5-column icon tile grid — all 10 parents in 2 compact rows,
+              short labels, no counts (counts live in the desktop sidebar) */}
+          <div className="grid grid-cols-5 gap-x-1 gap-y-2">
+            {mobileCats.map(cat => {
               const active = activeCategory === cat.id || parentOfChild.get(activeCategory) === cat.id
-              const emoji  = CAT_EMOJI[cat.name] ?? '📋'
               return (
                 <button
                   key={cat.id}
                   onClick={() => selectCategory(cat.id)}
                   title={cat.name}
-                  className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border touch-manipulation text-left ${
-                    active
-                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300 hover:bg-green-50'
-                  }`}
+                  className="text-center touch-manipulation"
                 >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="shrink-0">{emoji}</span>
-                    <span className="truncate leading-snug">{cat.name}</span>
+                  <span className={`w-9 h-9 mx-auto rounded-xl flex items-center justify-center text-[17px] transition-colors ${
+                    active ? 'bg-green-600' : 'bg-green-50'
+                  }`}>
+                    {CAT_EMOJI[cat.name] ?? '📋'}
                   </span>
-                  {allProducts && count > 0 && (
-                    <span className={`tabular-nums text-[10px] shrink-0 ml-auto pl-1 ${active ? 'text-green-100' : 'text-gray-400'}`}>
-                      {count}
-                    </span>
-                  )}
+                  <span className={`block mt-1 text-[11px] leading-tight ${
+                    active ? 'text-green-700 font-semibold' : 'text-gray-600'
+                  }`}>
+                    {mobileLabel(cat.name)}
+                  </span>
                 </button>
               )
             })}
