@@ -372,6 +372,11 @@ export default function ProductsClientPage({
   const [displayCount, setDisplayCount] = useState(PAGE_SIZE)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
+  // Mobile sticky category bar: appears once the in-flow category grid scrolls
+  // out of view (sentinel-based), so categories stay reachable at the top.
+  const catBarSentinelRef = useRef<HTMLDivElement>(null)
+  const [stickyCats, setStickyCats] = useState(false)
+
   // ── Search dropdown ───────────────────────────────────────────────
   const [dropdownOpen,   setDropdownOpen]   = useState(false)
   const [highlightIdx,   setHighlightIdx]   = useState(-1)
@@ -693,6 +698,21 @@ export default function ProductsClientPage({
     return () => observer.disconnect()
   }, [displayCount, filtered.length])
 
+  // ── Mobile sticky category bar observer ──────────────────────────
+  // When the in-flow category grid (sentinel) leaves the viewport, show the
+  // fixed compact pill bar under the shop header. Bar itself is lg:hidden,
+  // so running the observer on desktop is harmless.
+  useEffect(() => {
+    const sentinel = catBarSentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setStickyCats(!entry.isIntersecting),
+      { rootMargin: '-56px 0px 0px 0px' },  // account for the sticky h-14 ShopNav
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [])
+
   const isLoading = allProducts === null && !loadError
   const activeCategoryName = categories.find(c => c.id === activeCategory)?.name
 
@@ -753,8 +773,45 @@ export default function ProductsClientPage({
   return (
     <div className="flex gap-6 lg:gap-8">
 
-      {/* ── Category sidebar — desktop only ───────────────────────── */}
-      <aside className="hidden lg:block w-48 shrink-0">
+      {/* ── Mobile sticky category bar — fixed under the h-14 ShopNav once the
+           in-flow category grid has scrolled away (position:fixed = out of flow,
+           so it never disturbs the layout). Tap = switch category + jump to top. ── */}
+      {stickyCats && (
+        <div
+          className="lg:hidden fixed top-14 left-0 right-0 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm"
+          style={{ zIndex: Z.stickyNav }}
+        >
+          <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-2">
+            <button
+              onClick={() => { selectCategory(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-semibold border touch-manipulation transition-all ${
+                !activeCategory ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'
+              }`}
+            >
+              🏪 All
+            </button>
+            {categoryTree.map(cat => {
+              const active = activeCategory === cat.id || parentOfChild.get(activeCategory) === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => { selectCategory(cat.id); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold border touch-manipulation transition-all ${
+                    active ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'
+                  }`}
+                >
+                  <span>{CAT_EMOJI[cat.name] ?? '📋'}</span>
+                  <span className="whitespace-nowrap">{cat.name}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Category sidebar — desktop only. Sticky below the h-14 ShopNav so it
+           stays pinned while the product grid scrolls; long trees scroll inside. ── */}
+      <aside className="hidden lg:block w-48 shrink-0 self-start sticky top-[4.5rem] max-h-[calc(100vh-5.5rem)] overflow-y-auto no-scrollbar pb-4">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 px-1">
           Categories
         </h2>
@@ -934,6 +991,10 @@ export default function ProductsClientPage({
               </div>
             )
           })()}
+
+          {/* Sentinel: once this point scrolls above the header, the fixed
+              category bar appears (and hides again when scrolled back up). */}
+          <div ref={catBarSentinelRef} className="h-px" aria-hidden="true" />
         </div>
 
         {/* ── Search bar with dropdown ──────────────────────────── */}
